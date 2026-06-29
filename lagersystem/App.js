@@ -543,6 +543,7 @@ export default function App() {
   };
 
   const taBortProdukt = (id) => {
+    if (inloggad?.roll !== 'admin') return;
     Alert.alert('Ta bort', 'Är du säker?', [
       { text: 'Avbryt', style: 'cancel' },
       { text: 'Ta bort', style: 'destructive', onPress: () => {
