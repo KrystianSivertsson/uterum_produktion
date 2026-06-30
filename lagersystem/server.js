@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const webpush = require('web-push');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '20mb' }));
 
 // Redirect HTTP → HTTPS (only when HTTPS server is running)
@@ -337,6 +338,12 @@ function pushChatNotification(message, senderUsername) {
 function broadcastOnline() {
   const online = [...clients.values()].map(u => u.namn);
   broadcast({ type: 'online', users: online });
+}
+
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.use((req, res) => res.sendFile(path.join(distPath, 'index.html')));
 }
 
 const PORT = process.env.PORT || 3001;

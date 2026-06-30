@@ -11,7 +11,7 @@ import * as FileSystem from 'expo-file-system';
 import { utils, write } from 'xlsx';
 
 const API = typeof window !== 'undefined'
-  ? window.location.origin
+  ? `${window.location.origin}/UterumLager`
   : 'http://localhost:3001';
 
 function urlBase64ToUint8Array(base64String) {
