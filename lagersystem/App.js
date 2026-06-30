@@ -723,7 +723,7 @@ export default function App() {
       setModalVisible(false);
     };
     if (redigeraProdukt) {
-      Alert.alert('Bekräfta ändring', `Spara ändringar på "${formNamn.trim()}"?`, [
+      Alert.alert('Spara ändring?', '', [
         { text: 'Avbryt', style: 'cancel' },
         { text: 'Spara', onPress: genomfor },
       ]);
