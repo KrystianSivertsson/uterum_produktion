@@ -606,11 +606,9 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
               <Text style={{ color: '#aaa', marginTop: 16, fontSize: 13 }}>Tryck var som helst för att stänga</Text>
             </TouchableOpacity>
           </Modal>
-          {inloggad.roll === 'admin' && (
-            <TouchableOpacity style={{ marginTop: 12, backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 8 }} onPress={onRedigera}>
-              <Text style={{ color: '#fff', fontWeight: '700' }}>✏️ Redigera</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={{ marginTop: 12, backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 8 }} onPress={onRedigera}>
+            <Text style={{ color: '#fff', fontWeight: '700' }}>📦 Registrera uttag</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Info */}
@@ -899,7 +897,7 @@ export default function App() {
           id: Date.now().toString(),
           namn: formNamn.trim(), artikel: formArtikel.trim(), antal,
           kategori: formKategori.trim(), minAntal, enhet: formEnhet,
-          bild: formBild, farger, langder,
+          bild: formBild, farger: fargerUttag, langder,
         }];
       }
       setProdukter(nyLista);
@@ -1121,6 +1119,48 @@ export default function App() {
                       <Text style={{ color: '#16a34a', fontSize: 13, fontWeight: '600' }}>{a.till}</Text>
                     </View>
                   ))}
+                  {entry.andringar.some(a => a.falt === 'Antal' || a.falt === 'Uttag') && (
+                    <TouchableOpacity
+                      style={{ marginTop: 10, alignSelf: 'flex-start', backgroundColor: '#fef3c7', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 5 }}
+                      onPress={() => {
+                        const antalAndring = entry.andringar.find(a => a.falt === 'Antal' || a.falt === 'Uttag');
+                        if (!antalAndring) return;
+                        const gammaltAntal = parseInt(antalAndring.fran) || 0;
+                        const bekrafta = () => {
+                          const nyLista = produkter.map(p => {
+                            if (p.id !== entry.produktId && p.namn !== entry.produktNamn) return p;
+                            return { ...p, antal: gammaltAntal };
+                          });
+                          setProdukter(nyLista);
+                          sparaProdukter(nyLista);
+                          const matchad = nyLista.find(p => p.id === entry.produktId || p.namn === entry.produktNamn);
+                          if (matchad && valdProdukt?.namn === entry.produktNamn) setValdProdukt(matchad);
+                          if (token && matchad) {
+                            fetch(`${API}/api/changes`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                              body: JSON.stringify({
+                                produktId: matchad.id,
+                                produktNamn: entry.produktNamn,
+                                andringar: [{ falt: 'Återställd', fran: antalAndring.till.split(' ')[0], till: antalAndring.fran }],
+                              }),
+                            }).then(() => {
+                              fetch(`${API}/api/changes`, { headers: { Authorization: `Bearer ${token}` } })
+                                .then(r => r.json()).then(setAndringslogg).catch(() => {});
+                            }).catch(() => {});
+                          }
+                        };
+                        if (Platform.OS === 'web') {
+                          if (window.confirm(`Återställ ${entry.produktNamn} till ${antalAndring.fran}?`)) bekrafta();
+                        } else {
+                          Alert.alert('Ångra ändring', `Återställ ${entry.produktNamn} till ${antalAndring.fran}?`, [
+                            { text: 'Avbryt', style: 'cancel' }, { text: 'Återställ', onPress: bekrafta }
+                          ]);
+                        }
+                      }}>
+                      <Text style={{ color: '#92400e', fontSize: 12, fontWeight: '600' }}>↩ Ångra</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ))}
             </ScrollView>
@@ -1276,7 +1316,7 @@ export default function App() {
         <View style={styles.modalBakgrund}>
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
           <View style={[styles.modalKort, { backgroundColor: c.modal, width: '100%', maxWidth: 480 }]}>
-            <Text style={[styles.modalTitel, { color: c.textRubrik }]}>{redigeraProdukt ? 'Redigera produkt' : 'Ny produkt'}</Text>
+            <Text style={[styles.modalTitel, { color: c.textRubrik }]}>{redigeraProdukt ? 'Registrera uttag' : 'Ny produkt'}</Text>
 
             <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]} placeholder="Produktnamn *" placeholderTextColor={c.textMuted}
               value={formNamn} onChangeText={setFormNamn} />
