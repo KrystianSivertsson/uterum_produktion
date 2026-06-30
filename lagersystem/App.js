@@ -565,10 +565,13 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
   const { c } = React.useContext(TemaContext);
   const totalMeter = (produkt.langder || []).reduce((s, l) => s + (l.langd * l.antal), 0);
   const fargSorterad = [...(produkt.farger || [])].sort((a, b) => a.farg.localeCompare(b.farg, 'sv'));
-  const artikelBildUrl = produkt.artikel ? `${API}/artikel-bilder/${produkt.artikel}.png` : null;
-  const [artikelBildFel, setArtikelBildFel] = useState(false);
+  const artikelBildPng = produkt.artikel ? `${API}/artikel-bilder/${produkt.artikel}.png` : null;
+  const artikelBildJpg = produkt.artikel ? `${API}/artikel-bilder/${produkt.artikel}.jpg` : null;
+  const [pngFel, setPngFel] = useState(false);
+  const [jpgFel, setJpgFel] = useState(false);
   const [bildStorModal, setBildStorModal] = useState(false);
-  const bildKalla = produkt.bild || (!artikelBildFel && artikelBildUrl ? artikelBildUrl : null);
+  const artikelBildUrl = !pngFel ? artikelBildPng : (!jpgFel ? artikelBildJpg : null);
+  const bildKalla = produkt.bild || artikelBildUrl;
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
@@ -584,7 +587,7 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
                 <Image source={{ uri: bildKalla }}
                   style={{ width: 220, height: 160, borderRadius: 12, borderWidth: 1, borderColor: c.kortBorder, backgroundColor: '#fff' }}
                   resizeMode="contain"
-                  onError={() => { if (!produkt.bild) setArtikelBildFel(true); }} />
+                  onError={() => { if (!produkt.bild) { if (!pngFel) setPngFel(true); else setJpgFel(true); } }} />
                 <Text style={{ color: c.textMuted, fontSize: 11, textAlign: 'center', marginTop: 4 }}>Tryck för att förstora</Text>
               </TouchableOpacity>
             : <View style={{ width: 220, height: 160, borderRadius: 12, backgroundColor: c.input, borderWidth: 1, borderColor: c.kortBorder, justifyContent: 'center', alignItems: 'center' }}>
