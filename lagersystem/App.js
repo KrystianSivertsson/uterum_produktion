@@ -573,6 +573,7 @@ export default function App() {
   const [formEnhet, setFormEnhet] = useState('st');
   const [visaAnvandare, setVisaAnvandare] = useState(false);
   const [visaChat, setVisaChat] = useState(false);
+  const [andringslogg, setAndringslogg] = useState([]);
   const [visaProfil, setVisaProfil] = useState(false);
   const [visaSidebar, setVisaSidebar] = useState(false);
   const [sorteringsKolumn, setSorteringsKolumn] = useState(null);
@@ -679,6 +680,14 @@ export default function App() {
   };
 
   const arRitning = RITNINGAR.some(r => r.id === aktivFlik);
+  const arAndringslogg = aktivFlik === '__andringar__';
+
+  useEffect(() => {
+    if (arAndringslogg && token && inloggad?.roll === 'admin') {
+      fetch(`${API}/api/changes`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json()).then(setAndringslogg).catch(() => {});
+    }
+  }, [arAndringslogg]);
 
   const oppnaLaggTill = () => {
     setRedigeraProdukt(null);
@@ -706,11 +715,25 @@ export default function App() {
     const genomfor = () => {
       let nyLista;
       if (redigeraProdukt) {
+        const gammal = redigeraProdukt;
+        const andringar = [];
+        if (gammal.namn !== formNamn.trim()) andringar.push({ falt: 'Namn', fran: gammal.namn, till: formNamn.trim() });
+        if (gammal.antal !== antal) andringar.push({ falt: 'Antal', fran: `${gammal.antal}${gammal.enhet||'st'}`, till: `${antal}${formEnhet}` });
+        if ((gammal.enhet||'st') !== formEnhet) andringar.push({ falt: 'Enhet', fran: gammal.enhet||'st', till: formEnhet });
+        if (gammal.kategori !== formKategori.trim()) andringar.push({ falt: 'Kategori', fran: gammal.kategori, till: formKategori.trim() });
+        if (gammal.minAntal !== minAntal) andringar.push({ falt: 'Varningsgräns', fran: String(gammal.minAntal), till: String(minAntal) });
         nyLista = produkter.map(p =>
           p.id === redigeraProdukt.id
             ? { ...p, namn: formNamn.trim(), antal, kategori: formKategori.trim(), minAntal, enhet: formEnhet }
             : p
         );
+        if (andringar.length > 0 && token) {
+          fetch(`${API}/api/changes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ produktId: redigeraProdukt.id, produktNamn: formNamn.trim(), andringar }),
+          }).catch(() => {});
+        }
       } else {
         nyLista = [...produkter, {
           id: Date.now().toString(),
@@ -879,6 +902,17 @@ export default function App() {
             </TouchableOpacity>
           ))}
 
+          {inloggad.roll === 'admin' && <>
+            <View style={styles.sidebarDivider} />
+            <TouchableOpacity
+              style={[styles.sidebarFlik, aktivFlik === '__andringar__' && styles.sidebarFlikAktiv]}
+              onPress={() => { setAktivFlik('__andringar__'); setSok(''); setVisaSidebar(false); }}>
+              <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, aktivFlik === '__andringar__' && styles.sidebarFlikTextAktiv]}>
+                🕐 Ändringslogg
+              </Text>
+            </TouchableOpacity>
+          </>}
+
           <View style={styles.sidebarDivider} />
 
           <TouchableOpacity style={styles.laggTillKnapp} onPress={oppnaLaggTill}>
@@ -894,7 +928,31 @@ export default function App() {
 
         {/* Innehåll */}
         <View style={[styles.innehall, { backgroundColor: c.bg }]}>
-          {arRitning && Platform.OS === 'web' && (() => {
+          {arAndringslogg && (
+            <ScrollView style={{ flex: 1 }}>
+              <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 16 }]}>🕐 Ändringslogg</Text>
+              {andringslogg.length === 0 && <Text style={{ color: c.textMuted, textAlign: 'center', marginTop: 40 }}>Inga ändringar loggade ännu.</Text>}
+              {andringslogg.map(entry => (
+                <View key={entry.id} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8 }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{entry.produktNamn}</Text>
+                    <Text style={{ color: c.textMuted, fontSize: 12 }}>{new Date(entry.tid).toLocaleString('sv-SE')}</Text>
+                  </View>
+                  <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 6 }}>Ändrad av: <Text style={{ color: c.text, fontWeight: '600' }}>{entry.user}</Text></Text>
+                  {entry.andringar.map((a, i) => (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                      <Text style={{ color: c.textMuted, fontSize: 13, minWidth: 90 }}>{a.falt}:</Text>
+                      <Text style={{ color: '#ef4444', fontSize: 13 }}>{a.fran}</Text>
+                      <Text style={{ color: c.textMuted, fontSize: 13 }}>→</Text>
+                      <Text style={{ color: '#16a34a', fontSize: 13, fontWeight: '600' }}>{a.till}</Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {arRitning && !arAndringslogg && Platform.OS === 'web' && (() => {
             const ritning = RITNINGAR.find(r => r.id === aktivFlik);
             return React.createElement('iframe', {
               key: ritning.id,
@@ -904,7 +962,7 @@ export default function App() {
             });
           })()}
 
-          {!arRitning && <>
+          {!arRitning && !arAndringslogg && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>

@@ -34,6 +34,7 @@ const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
 const TOKENS_FILE = path.join(DATA_DIR, 'tokens.json');
 const VAPID_FILE = path.join(DATA_DIR, 'vapid.json');
 const PUSH_SUBS_FILE = path.join(DATA_DIR, 'push_subs.json');
+const CHANGES_FILE = path.join(DATA_DIR, 'changes.json');
 
 // VAPID keys — generate once, reuse
 let vapidKeys;
@@ -62,6 +63,7 @@ if (!fs.existsSync(USERS_FILE)) {
 }
 if (!fs.existsSync(MESSAGES_FILE)) writeJSON(MESSAGES_FILE, []);
 if (!fs.existsSync(TOKENS_FILE)) writeJSON(TOKENS_FILE, {});
+if (!fs.existsSync(CHANGES_FILE)) writeJSON(CHANGES_FILE, []);
 
 // Auth middleware — accepts header OR query param (for iframe/PDF)
 const authMiddleware = (req, res, next) => {
@@ -168,6 +170,33 @@ app.delete('/api/push/subscribe', authMiddleware, (req, res) => {
   const subs = readJSON(PUSH_SUBS_FILE, {});
   delete subs[req.user.username];
   writeJSON(PUSH_SUBS_FILE, subs);
+  res.json({ ok: true });
+});
+
+// --- ÄNDRINGSLOGG ---
+app.get('/api/changes', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const changes = readJSON(CHANGES_FILE, []);
+  const { produktId } = req.query;
+  const result = produktId ? changes.filter(c => c.produktId === produktId) : changes;
+  res.json(result.slice(-200).reverse());
+});
+
+app.post('/api/changes', authMiddleware, (req, res) => {
+  const { produktId, produktNamn, andringar } = req.body;
+  if (!produktId || !andringar) return res.status(400).json({ error: 'Saknar data' });
+  const changes = readJSON(CHANGES_FILE, []);
+  changes.push({
+    id: Date.now().toString(),
+    tid: new Date().toISOString(),
+    user: req.user.namn,
+    username: req.user.username,
+    produktId,
+    produktNamn,
+    andringar,
+  });
+  if (changes.length > 1000) changes.splice(0, changes.length - 1000);
+  writeJSON(CHANGES_FILE, changes);
   res.json({ ok: true });
 });
 
