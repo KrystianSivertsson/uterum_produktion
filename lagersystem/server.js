@@ -398,17 +398,14 @@ function broadcast(data) {
 
 function pushChatNotification(message, senderUsername) {
   const subs = readJSON(PUSH_SUBS_FILE, {});
-  const onlineUsers = new Set([...clients.values()].map(u => u.username));
   Object.entries(subs).forEach(([username, sub]) => {
     if (username === senderUsername) return;
-    if (onlineUsers.has(username)) return; // redan i chatten, behöver ingen push
     const payload = JSON.stringify({
       title: `💬 ${message.user}`,
       body: message.text,
-      url: '/',
+      url: '/UterumLager/',
     });
     webpush.sendNotification(sub, payload).catch(() => {
-      // Ta bort ogiltiga prenumerationer
       const subs2 = readJSON(PUSH_SUBS_FILE, {});
       delete subs2[username];
       writeJSON(PUSH_SUBS_FILE, subs2);

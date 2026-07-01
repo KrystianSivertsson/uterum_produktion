@@ -800,8 +800,26 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [chatBubble, setChatBubble] = useState(null);
   const [olastaAntal, setOlastaAntal] = useState(0);
+  const [visaNotisbanner, setVisaNotisbannerState] = useState(false);
   const wsRef = useRef(null);
   const visaChatRef = useRef(false);
+
+  const spelaBjudljud = () => {
+    if (Platform.OS !== 'web') return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch {}
+  };
   const { width } = useWindowDimensions();
   const mobil = width < 768;
 
@@ -819,6 +837,7 @@ export default function App() {
       const data = JSON.parse(e.data);
       if (data.type === 'message') {
         setMeddelanden(prev => [...prev, data.message]);
+        spelaBjudljud();
         if (!visaChatRef.current) {
           setChatBubble(data.message);
           setOlastaAntal(n => n + 1);
@@ -855,14 +874,25 @@ export default function App() {
     setKollarSession(false);
   };
 
-  const loggaIn = (user, tok) => { setInloggad(user); setToken(tok); prenumereraPush(tok); };
+  const loggaIn = (user, tok) => {
+    setInloggad(user);
+    setToken(tok);
+    // Visa banner om notiser inte är aktiverade (kan inte auto-prompta utan klick)
+    if (Platform.OS === 'web' && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      setVisaNotisbannerState(true);
+    }
+  };
 
   const prenumereraPush = async (tok) => {
     if (Platform.OS !== 'web' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') return;
-      const reg = await navigator.serviceWorker.ready;
+      // Vänta max 5 sek på service worker
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('SW timeout')), 5000)),
+      ]);
       const keyRes = await fetch(`${API}/api/push/vapidkey`);
       const { publicKey } = await keyRes.json();
       const sub = await reg.pushManager.subscribe({
@@ -1637,6 +1667,24 @@ export default function App() {
         </>}
         </View>
       </View>
+
+      {/* Notisbanner — visas tills användaren aktiverar eller stänger */}
+      {visaNotisbanner && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 200,
+          backgroundColor: '#1e40af', flexDirection: 'row', alignItems: 'center',
+          paddingHorizontal: 16, paddingVertical: 10, gap: 12 }}>
+          <Text style={{ color: '#fff', flex: 1, fontSize: 13 }}>🔔 Aktivera notiser för att få meddelanden även när appen är stängd</Text>
+          <TouchableOpacity onPress={async () => {
+            await prenumereraPush(token);
+            setVisaNotisbannerState(false);
+          }} style={{ backgroundColor: '#fff', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 6 }}>
+            <Text style={{ color: '#1e40af', fontWeight: '700', fontSize: 13 }}>Aktivera</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setVisaNotisbannerState(false)}>
+            <Text style={{ color: '#93c5fd', fontSize: 18, paddingHorizontal: 4 }}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Chat floating panel */}
       {visaChat && <ChatPanel user={inloggad} onStang={() => setVisaChat(false)} meddelanden={meddelanden} online={onlineUsers} wsRef={wsRef} />}
