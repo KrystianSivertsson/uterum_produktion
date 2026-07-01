@@ -1072,6 +1072,12 @@ export default function App() {
     setToken(tok);
     // Lås upp AudioContext vid inloggningsklicket (användar-gesture krävs av Chrome)
     getAudioCtx();
+    // Be om mikrofonåtkomst direkt vid inloggning så webbläsaren sparar tillståndet
+    if (Platform.OS === 'web' && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(s => s.getTracks().forEach(t => t.stop()))
+        .catch(() => {});
+    }
     // Visa banner om notiser inte är aktiverade (kan inte auto-prompta utan klick)
     if (Platform.OS === 'web' && typeof Notification !== 'undefined' && Notification.permission === 'default') {
       setVisaNotisbannerState(true);
