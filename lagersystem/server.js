@@ -286,6 +286,19 @@ app.get('/api/ecw-filer/:ase60ProjectId/:id/ladda-ner', authMiddleware, (req, re
   res.sendFile(path.resolve(fil.filePath));
 });
 
+// Ta bort en ECW-fil (admin only)
+app.delete('/api/ecw-filer/:ase60ProjectId/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
+  const index = readJSON(ECW_INDEX_FILE, []);
+  const idx = index.findIndex(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Fil hittades ej' });
+  const fil = index[idx];
+  try { if (fs.existsSync(fil.filePath)) fs.unlinkSync(fil.filePath); } catch {}
+  index.splice(idx, 1);
+  writeJSON(ECW_INDEX_FILE, index);
+  res.json({ ok: true });
+});
+
 app.delete('/api/kunder/:id', authMiddleware, (req, res) => {
   const kunder = readJSON(KUNDER_FILE, []);
   const kvar = kunder.filter(k => k.id !== req.params.id);
