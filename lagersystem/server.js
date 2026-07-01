@@ -382,6 +382,21 @@ wss.on('connection', (ws, req) => {
         broadcast({ type: 'message', message });
         pushChatNotification(message, user.username);
       }
+      if (msg.type === 'ring') {
+        broadcastExcept(ws, { type: 'ring', fran: user.namn, avatar: user.avatar || '😀' });
+        // Push-notis till alla som inte är online
+        const subs = readJSON(PUSH_SUBS_FILE, {});
+        const onlineUsernames = new Set([...clients.keys()].map(c => clients.get(c).username));
+        Object.entries(subs).forEach(([username, sub]) => {
+          if (username === user.username) return;
+          if (onlineUsernames.has(username)) return;
+          webpush.sendNotification(sub, JSON.stringify({
+            title: `📞 ${user.namn} ringer!`,
+            body: 'Tryck för att öppna appen',
+            url: '/UterumLager/',
+          })).catch(() => {});
+        });
+      }
     } catch {}
   });
 
@@ -394,6 +409,11 @@ wss.on('connection', (ws, req) => {
 function broadcast(data) {
   const json = JSON.stringify(data);
   clients.forEach((_, ws) => { if (ws.readyState === 1) ws.send(json); });
+}
+
+function broadcastExcept(exceptWs, data) {
+  const json = JSON.stringify(data);
+  clients.forEach((_, ws) => { if (ws !== exceptWs && ws.readyState === 1) ws.send(json); });
 }
 
 function pushChatNotification(message, senderUsername) {

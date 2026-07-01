@@ -491,7 +491,7 @@ const pm = StyleSheet.create({
 });
 
 // ─── Chat panel ───────────────────────────────────────────────────────────────
-function ChatPanel({ user, onStang, meddelanden, online, wsRef }) {
+function ChatPanel({ user, onStang, meddelanden, online, wsRef, onRing }) {
   const { c } = React.useContext(TemaContext) || { c: LJUST };
   const [text, setText] = useState('');
   const listRef = useRef(null);
@@ -515,10 +515,13 @@ function ChatPanel({ user, onStang, meddelanden, online, wsRef }) {
   return (
     <View style={[cp.panel, { backgroundColor: c.modal, borderColor: c.kortBorder }]}>
       <View style={cp.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={cp.rubrik}>💬 Chat</Text>
           {online.length > 0 && <Text style={cp.online}>Online: {online.join(', ')}</Text>}
         </View>
+        <TouchableOpacity onPress={onRing} style={{ marginRight: 12, padding: 4 }}>
+          <Text style={{ fontSize: 20 }}>📞</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={onStang}><Text style={cp.stang}>✕</Text></TouchableOpacity>
       </View>
       <ScrollView ref={listRef} style={[cp.lista, { backgroundColor: c.bg }]} contentContainerStyle={{ padding: 12 }}>
@@ -801,6 +804,8 @@ export default function App() {
   const [chatBubble, setChatBubble] = useState(null);
   const [olastaAntal, setOlastaAntal] = useState(0);
   const [visaNotisbanner, setVisaNotisbannerState] = useState(false);
+  const [inkommandeSamtal, setInkommandeSamtal] = useState(null); // { fran, avatar }
+  const ringIntervalRef = useRef(null);
   const wsRef = useRef(null);
   const visaChatRef = useRef(false);
 
@@ -819,6 +824,38 @@ export default function App() {
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.3);
     } catch {}
+  };
+
+  const spelaRing = () => {
+    if (Platform.OS !== 'web') return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const playTone = (freq, start, dur) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
+        gain.gain.setValueAtTime(0, ctx.currentTime + start);
+        gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + start + 0.02);
+        gain.gain.setValueAtTime(0.4, ctx.currentTime + start + dur - 0.05);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + start + dur);
+        osc.start(ctx.currentTime + start);
+        osc.stop(ctx.currentTime + start + dur);
+      };
+      // Klassiskt telefon-ringmönster: två korta pip, paus
+      playTone(1000, 0, 0.15);
+      playTone(1000, 0.2, 0.15);
+    } catch {}
+  };
+
+  const startaRingjud = () => {
+    spelaRing();
+    ringIntervalRef.current = setInterval(spelaRing, 1800);
+  };
+
+  const stoppRingjud = () => {
+    if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null; }
   };
   const { width } = useWindowDimensions();
   const mobil = width < 768;
@@ -842,6 +879,12 @@ export default function App() {
           setChatBubble(data.message);
           setOlastaAntal(n => n + 1);
         }
+      }
+      if (data.type === 'ring') {
+        setInkommandeSamtal({ fran: data.fran, avatar: data.avatar });
+        startaRingjud();
+        // Auto-dismiss efter 30 sek
+        setTimeout(() => { setInkommandeSamtal(null); stoppRingjud(); }, 30000);
       }
       if (data.type === 'online') setOnlineUsers(data.users);
     };
@@ -1686,8 +1729,33 @@ export default function App() {
         </View>
       )}
 
+      {/* Inkommande samtal overlay */}
+      {inkommandeSamtal && (
+        <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)',
+          justifyContent: 'center', alignItems: 'center', zIndex: 300 }}>
+          <View style={{ backgroundColor: '#1a2235', borderRadius: 24, padding: 40,
+            alignItems: 'center', gap: 16, minWidth: 280, shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 30 }}>
+            <Text style={{ fontSize: 64 }}>{inkommandeSamtal.avatar}</Text>
+            <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>{inkommandeSamtal.fran}</Text>
+            <Text style={{ color: '#94a3b8', fontSize: 15 }}>ringer...</Text>
+            <TouchableOpacity
+              onPress={() => { stoppRingjud(); setInkommandeSamtal(null); setVisaChat(true); }}
+              style={{ backgroundColor: '#22c55e', borderRadius: 50, width: 64, height: 64,
+                justifyContent: 'center', alignItems: 'center', marginTop: 8 }}>
+              <Text style={{ fontSize: 28 }}>📞</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { stoppRingjud(); setInkommandeSamtal(null); }}
+              style={{ marginTop: 4 }}>
+              <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 14 }}>Avvisa</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Chat floating panel */}
-      {visaChat && <ChatPanel user={inloggad} onStang={() => setVisaChat(false)} meddelanden={meddelanden} online={onlineUsers} wsRef={wsRef} />}
+      {visaChat && <ChatPanel user={inloggad} onStang={() => setVisaChat(false)} meddelanden={meddelanden} online={onlineUsers} wsRef={wsRef}
+        onRing={() => { if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: 'ring' })); }} />}
       {!visaChat && <ChatBubble senasteMeddelande={chatBubble} antal={olastaAntal} onPress={() => setVisaChat(true)} />}
 
       {visaProfil && <ProfilModal user={inloggad} token={token} onStang={() => setVisaProfil(false)} onUppdatera={(u) => setInloggad(u)} prenumereraPush={prenumereraPush} />}
