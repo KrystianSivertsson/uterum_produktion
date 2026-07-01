@@ -31,7 +31,8 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {});
+          const base = window.location.pathname.startsWith('/UterumLager') ? '/UterumLager' : '';
+          navigator.serviceWorker.register(base + '/sw.js', { scope: base + '/' }).catch(() => {});
         });
       }
     </script>
