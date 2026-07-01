@@ -836,6 +836,11 @@ export default function App() {
   useEffect(() => {
     kollaSession();
     AsyncStorage.getItem(TEMA_KEY).then(v => { if (v) setTema(v); });
+    // Register service worker (Expo generates its own index.html so we do it here)
+    if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
+      const base = window.location.pathname.startsWith('/UterumLager') ? '/UterumLager' : '';
+      navigator.serviceWorker.register(base + '/sw.js', { scope: base + '/' }).catch(() => {});
+    }
   }, []);
   useEffect(() => { if (inloggad) laddaProdukter(); }, [inloggad]);
 
