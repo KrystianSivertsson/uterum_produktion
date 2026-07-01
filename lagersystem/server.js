@@ -11,6 +11,32 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '20mb' }));
 
+// Intern endpoint BEFORE redirect middleware — anropas av ASE60 server-till-server via localhost
+// Placeras här så att HTTP-anrop från localhost inte omdirigeras till HTTPS
+const _ECW_DIR_EARLY = path.join(__dirname, 'data', 'ecw');
+const _ECW_INDEX_EARLY = path.join(__dirname, 'data', 'ecw.json');
+const _readJSONEarly = (f, fb) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return fb; } };
+const _writeJSONEarly = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
+app.post('/api/ecw-filer/intern', (req, res) => {
+  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
+  const { projectId, projectName, filename, ecwBase64 } = req.body;
+  if (!projectId || !ecwBase64) return res.status(400).json({ error: 'Saknar data' });
+  if (!fs.existsSync(_ECW_DIR_EARLY)) fs.mkdirSync(_ECW_DIR_EARLY, { recursive: true });
+  const safeId = String(projectId).replace(/[^a-z0-9_-]/gi, '_');
+  const projDir = path.join(_ECW_DIR_EARLY, safeId);
+  if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
+  const ts = Date.now();
+  const safeFilename = String(filename || 'CNCDATA.ECW').replace(/[^a-z0-9._-]/gi, '_');
+  const filePath = path.join(projDir, `${ts}_${safeFilename}`);
+  fs.writeFileSync(filePath, Buffer.from(ecwBase64, 'base64'));
+  if (!fs.existsSync(_ECW_INDEX_EARLY)) _writeJSONEarly(_ECW_INDEX_EARLY, []);
+  const index = _readJSONEarly(_ECW_INDEX_EARLY, []);
+  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
+  if (index.length > 500) index.splice(0, index.length - 500);
+  _writeJSONEarly(_ECW_INDEX_EARLY, index);
+  res.json({ ok: true });
+});
+
 // Redirect HTTP → HTTPS (only when HTTPS server is running)
 app.use((req, res, next) => {
   if (req.protocol === 'http' && req.headers.host) {
@@ -237,30 +263,11 @@ app.get('/api/ase60-projekt', authMiddleware, async (req, res) => {
   }
 });
 
-// --- ECW-FILER (tas emot från ASE60 via intern server-till-server) ---
+// --- ECW-FILER (läsa/ladda ner — autentiserade endpoints) ---
 const ECW_DIR = path.join(DATA_DIR, 'ecw');
 const ECW_INDEX_FILE = path.join(DATA_DIR, 'ecw.json');
 if (!fs.existsSync(ECW_DIR)) fs.mkdirSync(ECW_DIR, { recursive: true });
 if (!fs.existsSync(ECW_INDEX_FILE)) writeJSON(ECW_INDEX_FILE, []);
-
-// Intern endpoint: ASE60 server POSTar hit efter ECW-export
-app.post('/api/ecw-filer/intern', (req, res) => {
-  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
-  const { projectId, projectName, filename, ecwBase64 } = req.body;
-  if (!projectId || !ecwBase64) return res.status(400).json({ error: 'Saknar data' });
-  const safeId = String(projectId).replace(/[^a-z0-9_-]/gi, '_');
-  const projDir = path.join(ECW_DIR, safeId);
-  if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
-  const ts = Date.now();
-  const safeFilename = String(filename || 'CNCDATA.ECW').replace(/[^a-z0-9._-]/gi, '_');
-  const filePath = path.join(projDir, `${ts}_${safeFilename}`);
-  fs.writeFileSync(filePath, Buffer.from(ecwBase64, 'base64'));
-  const index = readJSON(ECW_INDEX_FILE, []);
-  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
-  if (index.length > 500) index.splice(0, index.length - 500);
-  writeJSON(ECW_INDEX_FILE, index);
-  res.json({ ok: true });
-});
 
 // Lista ECW-filer för ett projekt (autentiserat)
 app.get('/api/ecw-filer/:ase60ProjectId', authMiddleware, (req, res) => {
