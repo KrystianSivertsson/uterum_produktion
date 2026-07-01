@@ -1370,32 +1370,42 @@ export default function App() {
                       </View>
                     </View>
                   )}
-                  {kunder.length === 0 && !visaLaggTillKund && (
-                    <Text style={{ color: c.textMuted, textAlign: 'center', marginTop: 60, fontSize: 15 }}>Inga kunder tillagda ännu.</Text>
+                  {/* ASE60-projekt visas direkt som kunder */}
+                  {ase60Projekt.length === 0 && !visaLaggTillKund && (
+                    <View style={{ alignItems: 'center', marginTop: 60 }}>
+                      <Text style={{ color: c.textMuted, fontSize: 15, marginBottom: 12 }}>Inga ASE60-projekt hittades.</Text>
+                      <TouchableOpacity onPress={laddaAse60Projekt} style={{ backgroundColor: c.input, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 }}>
+                        <Text style={{ color: c.text }}>Ladda om</Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
-                  {kunder.map(kund => (
+                  {ase60Projekt.map(proj => (
                     <TouchableOpacity
-                      key={kund.id}
-                      onPress={() => { setValdKund(kund); setAktivKundFlik('Träfräs'); }}
+                      key={proj.id}
+                      onPress={() => {
+                        setValdKund({ id: proj.id, namn: proj.name, farg: proj.color, ase60ProjectId: proj.id,
+                          matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [] });
+                        setAktivKundFlik('Träfräs');
+                      }}
                       style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {kund.namn}</Text>
-                        {kund.farg ? (
+                        <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {proj.name}</Text>
+                        {proj.color ? (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
-                            <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(kund.farg), borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)' }} />
-                            <Text style={{ color: c.textMuted, fontSize: 12 }}>{kund.farg}</Text>
+                            <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(proj.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)' }} />
+                            <Text style={{ color: c.textMuted, fontSize: 12 }}>{proj.color}</Text>
                           </View>
                         ) : null}
-                        {kund.matt?.length > 0 ? (
+                        {proj.units?.length > 0 ? (
                           <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
-                            {kund.matt.map(m => `${m.widthMm}×${m.heightMm} mm`).join(' · ')}
+                            {proj.units.map(u => `${u.widthMm}×${u.heightMm} mm`).join(' · ')}
                           </Text>
                         ) : null}
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                         <Text style={{ color: c.textMuted, fontSize: 13 }}>›</Text>
-                        {inloggad.roll === 'admin' && (
-                          <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); taBortKund(kund.id); }} style={{ padding: 6 }}>
+                        {false && (
+                          <TouchableOpacity style={{ padding: 6 }}>
                             <Text style={{ color: '#ef4444', fontSize: 16 }}>✕</Text>
                           </TouchableOpacity>
                         )}
