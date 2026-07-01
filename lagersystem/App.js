@@ -808,11 +808,26 @@ export default function App() {
   const ringIntervalRef = useRef(null);
   const wsRef = useRef(null);
   const visaChatRef = useRef(false);
+  // Delad AudioContext — skapas vid första klick/login så Chrome tillåter ljud utan gesture
+  const audioCtxRef = useRef(null);
+
+  const getAudioCtx = () => {
+    if (Platform.OS !== 'web') return null;
+    try {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
+      return audioCtxRef.current;
+    } catch { return null; }
+  };
 
   const spelaBjudljud = () => {
-    if (Platform.OS !== 'web') return;
+    const ctx = getAudioCtx();
+    if (!ctx) return;
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -826,19 +841,14 @@ export default function App() {
     } catch {}
   };
 
-  const ringCtxRef = useRef(null);
-
   const spelaRing = () => {
-    if (Platform.OS !== 'web') return;
+    const ctx = getAudioCtx();
+    if (!ctx) return;
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      ringCtxRef.current = ctx;
       const dur = 1.2;
-      // Klassisk dual-tone telefon: 480Hz + 440Hz med tremolo på 16Hz
       [480, 440].forEach(freq => {
         const osc = ctx.createOscillator();
         const gainNode = ctx.createGain();
-        // LFO tremolo (skapar det vibrerande "brrring"-ljudet)
         const lfo = ctx.createOscillator();
         const lfoGain = ctx.createGain();
         lfo.frequency.value = 16;
@@ -865,7 +875,6 @@ export default function App() {
 
   const stoppRingjud = () => {
     if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null; }
-    try { if (ringCtxRef.current) { ringCtxRef.current.close(); ringCtxRef.current = null; } } catch {}
   };
   const { width } = useWindowDimensions();
   const mobil = width < 768;
@@ -908,10 +917,15 @@ export default function App() {
   useEffect(() => {
     kollaSession();
     AsyncStorage.getItem(TEMA_KEY).then(v => { if (v) setTema(v); });
-    // Register service worker (Expo generates its own index.html so we do it here)
-    if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
-      const base = window.location.pathname.startsWith('/UterumLager') ? '/UterumLager' : '';
-      navigator.serviceWorker.register(base + '/sw.js', { scope: base + '/' }).catch(() => {});
+    if (Platform.OS === 'web') {
+      // Register service worker
+      if ('serviceWorker' in navigator) {
+        const base = window.location.pathname.startsWith('/UterumLager') ? '/UterumLager' : '';
+        navigator.serviceWorker.register(base + '/sw.js', { scope: base + '/' }).catch(() => {});
+      }
+      // Lås upp AudioContext vid första klick (behövs om man är inloggad via sparad session)
+      const unlock = () => { getAudioCtx(); document.removeEventListener('click', unlock); };
+      document.addEventListener('click', unlock);
     }
   }, []);
   useEffect(() => { if (inloggad) laddaProdukter(); }, [inloggad]);
@@ -930,6 +944,8 @@ export default function App() {
   const loggaIn = (user, tok) => {
     setInloggad(user);
     setToken(tok);
+    // Lås upp AudioContext vid inloggningsklicket (användar-gesture krävs av Chrome)
+    getAudioCtx();
     // Visa banner om notiser inte är aktiverade (kan inte auto-prompta utan klick)
     if (Platform.OS === 'web' && typeof Notification !== 'undefined' && Notification.permission === 'default') {
       setVisaNotisbannerState(true);
