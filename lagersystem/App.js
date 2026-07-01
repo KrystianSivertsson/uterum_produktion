@@ -806,9 +806,14 @@ export default function App() {
   const [visaNotisbanner, setVisaNotisbannerState] = useState(false);
   const [inkommandeSamtal, setInkommandeSamtal] = useState(null); // { fran, avatar }
   const [utgaendeSamtal, setUtgaendeSamtal] = useState(null);    // 'ringer' | { svarade, avatar }
+  const [aktivtSamtal, setAktivtSamtal] = useState(null);        // { partner, avatar } när röstsamtal pågår
+  const [mikrofon, setMikrofon] = useState(true); // ej mutad
   const ringIntervalRef = useRef(null);
   const wsRef = useRef(null);
   const visaChatRef = useRef(false);
+  const pcRef = useRef(null);
+  const lokalStreamRef = useRef(null);
+  const samtalspartnerRef = useRef(null); // namn på den vi ringer/pratar med
   // Delad AudioContext — skapas vid första klick/login så Chrome tillåter ljud utan gesture
   const audioCtxRef = useRef(null);
 
@@ -890,6 +895,84 @@ export default function App() {
     } catch {}
   };
 
+  const avslutaSamtal = (skickaHangup = true) => {
+    if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
+    if (lokalStreamRef.current) {
+      lokalStreamRef.current.getTracks().forEach(t => t.stop());
+      lokalStreamRef.current = null;
+    }
+    if (skickaHangup && wsRef.current?.readyState === 1 && samtalspartnerRef.current) {
+      wsRef.current.send(JSON.stringify({ type: 'webrtc-hangup', to: samtalspartnerRef.current }));
+    }
+    samtalspartnerRef.current = null;
+    setAktivtSamtal(null);
+    setMikrofon(true);
+  };
+
+  const skapaPC = (partnerNamn, partnerAvatar) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ]
+    });
+    pc.onicecandidate = e => {
+      if (e.candidate && wsRef.current?.readyState === 1) {
+        wsRef.current.send(JSON.stringify({ type: 'webrtc-ice', to: samtalspartnerRef.current, candidate: e.candidate }));
+      }
+    };
+    pc.ontrack = e => {
+      try {
+        const audio = new window.Audio();
+        audio.srcObject = e.streams[0];
+        audio.play().catch(() => {});
+      } catch {}
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') {
+        setAktivtSamtal({ partner: partnerNamn, avatar: partnerAvatar });
+        setUtgaendeSamtal(null);
+      }
+      if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+        avslutaSamtal(false);
+      }
+    };
+    return pc;
+  };
+
+  const initiateCall = async (partnerNamn, partnerAvatar) => {
+    try {
+      samtalspartnerRef.current = partnerNamn;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      lokalStreamRef.current = stream;
+      const pc = skapaPC(partnerNamn, partnerAvatar);
+      pcRef.current = pc;
+      stream.getTracks().forEach(t => pc.addTrack(t, stream));
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      wsRef.current.send(JSON.stringify({ type: 'webrtc-offer', to: partnerNamn, sdp: offer }));
+    } catch (err) {
+      console.error('WebRTC initiate error:', err);
+    }
+  };
+
+  const answerCall = async (partnerNamn, partnerAvatar, offerSdp) => {
+    try {
+      samtalspartnerRef.current = partnerNamn;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      lokalStreamRef.current = stream;
+      const pc = skapaPC(partnerNamn, partnerAvatar);
+      pcRef.current = pc;
+      stream.getTracks().forEach(t => pc.addTrack(t, stream));
+      await pc.setRemoteDescription(offerSdp);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      wsRef.current.send(JSON.stringify({ type: 'webrtc-answer', to: partnerNamn, sdp: answer }));
+    } catch (err) {
+      console.error('WebRTC answer error:', err);
+    }
+  };
+
   const startaRingjud = () => {
     spelaRing();
     ringIntervalRef.current = setInterval(spelaRing, 3500);
@@ -930,6 +1013,23 @@ export default function App() {
         setUtgaendeSamtal({ svarade: data.svarade, avatar: data.avatar });
         stoppRingjud();
         spelaAnsvarsljud();
+        // Starta WebRTC som uppringare
+        initiateCall(data.svarade, data.avatar);
+      }
+      if (data.type === 'webrtc-offer') {
+        // Vi är mottagaren — svara på erbjudandet
+        answerCall(data.from, data.fromAvatar || '😀', data.sdp);
+      }
+      if (data.type === 'webrtc-answer') {
+        pcRef.current?.setRemoteDescription(data.sdp).catch(console.error);
+      }
+      if (data.type === 'webrtc-ice') {
+        if (pcRef.current && data.candidate) {
+          pcRef.current.addIceCandidate(data.candidate).catch(() => {});
+        }
+      }
+      if (data.type === 'webrtc-hangup') {
+        avslutaSamtal(false);
       }
       if (data.type === 'online') setOnlineUsers(data.users);
     };
@@ -1791,6 +1891,35 @@ export default function App() {
           }
         }} />}
       {!visaChat && <ChatBubble senasteMeddelande={chatBubble} antal={olastaAntal} onPress={() => setVisaChat(true)} />}
+
+      {/* Aktivt röstsamtal — flytande bar längst ned */}
+      {aktivtSamtal && (
+        <View style={{ position: 'absolute', bottom: 24, left: '50%', transform: [{ translateX: -160 }],
+          width: 320, backgroundColor: '#1a2235', borderRadius: 20, padding: 16,
+          flexDirection: 'row', alignItems: 'center', gap: 12, zIndex: 600,
+          shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 20 }}>
+          <Text style={{ fontSize: 36 }}>{aktivtSamtal.avatar}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#22c55e', fontWeight: '700', fontSize: 13 }}>Röstsamtal pågår</Text>
+            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>{aktivtSamtal.partner}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => {
+              const track = lokalStreamRef.current?.getAudioTracks()[0];
+              if (track) { track.enabled = !track.enabled; setMikrofon(track.enabled); }
+            }}
+            style={{ backgroundColor: mikrofon ? '#334155' : '#ef4444', borderRadius: 50,
+              width: 44, height: 44, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ fontSize: 20 }}>{mikrofon ? '🎤' : '🔇'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => avslutaSamtal(true)}
+            style={{ backgroundColor: '#ef4444', borderRadius: 50,
+              width: 44, height: 44, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ fontSize: 20 }}>📵</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Samtal-overlays renderas SIST så de alltid hamnar ovanpå allt */}
       {utgaendeSamtal && (
