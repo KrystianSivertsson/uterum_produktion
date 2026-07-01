@@ -812,7 +812,8 @@ export default function App() {
     fetch(`${API}/api/messages`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json()).then(setMeddelanden).catch(() => {});
     const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${wsProto}//${window.location.host}/ws?token=${token}`);
+    const wsBase = window.location.pathname.startsWith('/UterumLager') ? '/UterumLager/ws' : '/ws';
+    const ws = new WebSocket(`${wsProto}//${window.location.host}${wsBase}?token=${token}`);
     wsRef.current = ws;
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data);
