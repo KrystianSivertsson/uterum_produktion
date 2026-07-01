@@ -1760,10 +1760,21 @@ export default function App() {
         </View>
       )}
 
-      {/* Utgående samtal overlay */}
+      {/* Chat floating panel */}
+      {visaChat && <ChatPanel user={inloggad} onStang={() => setVisaChat(false)} meddelanden={meddelanden} online={onlineUsers} wsRef={wsRef}
+        onRing={() => {
+          if (wsRef.current?.readyState === 1) {
+            wsRef.current.send(JSON.stringify({ type: 'ring' }));
+            setUtgaendeSamtal('ringer');
+            setVisaChat(false);
+          }
+        }} />}
+      {!visaChat && <ChatBubble senasteMeddelande={chatBubble} antal={olastaAntal} onPress={() => setVisaChat(true)} />}
+
+      {/* Samtal-overlays renderas SIST så de alltid hamnar ovanpå allt */}
       {utgaendeSamtal && (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 300 }}>
+          backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}>
           <View style={{ backgroundColor: '#1a2235', borderRadius: 24, padding: 40,
             alignItems: 'center', gap: 16, minWidth: 280, shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 30 }}>
             {utgaendeSamtal === 'ringer' ? (
@@ -1797,10 +1808,9 @@ export default function App() {
         </View>
       )}
 
-      {/* Inkommande samtal overlay */}
       {inkommandeSamtal && (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 300 }}>
+          backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}>
           <View style={{ backgroundColor: '#1a2235', borderRadius: 24, padding: 40,
             alignItems: 'center', gap: 16, minWidth: 280, shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 30 }}>
             <Text style={{ fontSize: 64 }}>{inkommandeSamtal.avatar}</Text>
@@ -1825,16 +1835,6 @@ export default function App() {
           </View>
         </View>
       )}
-
-      {/* Chat floating panel */}
-      {visaChat && <ChatPanel user={inloggad} onStang={() => setVisaChat(false)} meddelanden={meddelanden} online={onlineUsers} wsRef={wsRef}
-        onRing={() => {
-          if (wsRef.current?.readyState === 1) {
-            wsRef.current.send(JSON.stringify({ type: 'ring' }));
-            setUtgaendeSamtal('ringer');
-          }
-        }} />}
-      {!visaChat && <ChatBubble senasteMeddelande={chatBubble} antal={olastaAntal} onPress={() => setVisaChat(true)} />}
 
       {visaProfil && <ProfilModal user={inloggad} token={token} onStang={() => setVisaProfil(false)} onUppdatera={(u) => setInloggad(u)} prenumereraPush={prenumereraPush} />}
       {visaAnvandare && <AnvandarHantering token={token} onStang={() => setVisaAnvandare(false)} />}
