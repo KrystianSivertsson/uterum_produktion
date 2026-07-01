@@ -129,6 +129,63 @@ const ls = StyleSheet.create({
   knappText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
 
+// ─── Alufräs (ECW-filer från ASE60) ──────────────────────────────────────────
+function AlufrasFlik({ ase60ProjectId, token, API, c }) {
+  const [filer, setFiler] = useState([]);
+  const [laddar, setLaddar] = useState(true);
+
+  useEffect(() => {
+    if (!ase60ProjectId || !token) { setLaddar(false); return; }
+    fetch(`${API}/api/ecw-filer/${encodeURIComponent(ase60ProjectId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setFiler(Array.isArray(data) ? data : []); setLaddar(false); })
+      .catch(() => setLaddar(false));
+  }, [ase60ProjectId]);
+
+  const laddaNer = (fil) => {
+    const url = `${API}/api/ecw-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}/ladda-ner?token=${token}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fil.filename;
+    a.click();
+  };
+
+  if (laddar) return (
+    <View style={{ padding: 32, alignItems: 'center' }}>
+      <Text style={{ color: c.textMuted }}>Hämtar ECW-filer...</Text>
+    </View>
+  );
+
+  if (filer.length === 0) return (
+    <View style={{ padding: 32, alignItems: 'center' }}>
+      <Text style={{ color: c.textMuted, fontSize: 15, textAlign: 'center' }}>
+        Inga ECW-filer ännu.{'\n'}Exportera från ASE60 och filen dyker upp här automatiskt.
+      </Text>
+    </View>
+  );
+
+  return (
+    <View>
+      {filer.slice().reverse().map(fil => (
+        <TouchableOpacity
+          key={fil.id}
+          onPress={() => laddaNer(fil)}
+          style={[{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 12,
+            padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
+          <Text style={{ fontSize: 22 }}>📄</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{fil.filename}</Text>
+            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+              {new Date(fil.skapad).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}
+            </Text>
+          </View>
+          <Text style={{ color: '#2563eb', fontWeight: '600', fontSize: 13 }}>⬇ Ladda ner</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
 // ─── User management ─────────────────────────────────────────────────────────
 function AnvandarHantering({ token, onStang }) {
   const { c } = React.useContext(TemaContext) || { c: LJUST };
@@ -1286,9 +1343,12 @@ export default function App() {
                       </TouchableOpacity>
                     ))}
                   </View>
-                  <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, minHeight: 200, justifyContent: 'center', alignItems: 'center' }]}>
-                    <Text style={{ color: c.textMuted, fontSize: 15 }}>{aktivKundFlik} — kommer snart</Text>
-                  </View>
+                  {aktivKundFlik === 'Alufräs'
+                    ? <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} />
+                    : <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, minHeight: 200, justifyContent: 'center', alignItems: 'center' }]}>
+                        <Text style={{ color: c.textMuted, fontSize: 15 }}>{aktivKundFlik} — kommer snart</Text>
+                      </View>
+                  }
                 </View>
               ) : (
                 /* Kundlista */

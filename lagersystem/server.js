@@ -237,6 +237,48 @@ app.get('/api/ase60-projekt', authMiddleware, async (req, res) => {
   }
 });
 
+// --- ECW-FILER (tas emot från ASE60 via intern server-till-server) ---
+const ECW_DIR = path.join(DATA_DIR, 'ecw');
+const ECW_INDEX_FILE = path.join(DATA_DIR, 'ecw.json');
+if (!fs.existsSync(ECW_DIR)) fs.mkdirSync(ECW_DIR, { recursive: true });
+if (!fs.existsSync(ECW_INDEX_FILE)) writeJSON(ECW_INDEX_FILE, []);
+
+// Intern endpoint: ASE60 server POSTar hit efter ECW-export
+app.post('/api/ecw-filer/intern', (req, res) => {
+  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
+  const { projectId, projectName, filename, ecwBase64 } = req.body;
+  if (!projectId || !ecwBase64) return res.status(400).json({ error: 'Saknar data' });
+  const safeId = String(projectId).replace(/[^a-z0-9_-]/gi, '_');
+  const projDir = path.join(ECW_DIR, safeId);
+  if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
+  const ts = Date.now();
+  const safeFilename = String(filename || 'CNCDATA.ECW').replace(/[^a-z0-9._-]/gi, '_');
+  const filePath = path.join(projDir, `${ts}_${safeFilename}`);
+  fs.writeFileSync(filePath, Buffer.from(ecwBase64, 'base64'));
+  const index = readJSON(ECW_INDEX_FILE, []);
+  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
+  if (index.length > 500) index.splice(0, index.length - 500);
+  writeJSON(ECW_INDEX_FILE, index);
+  res.json({ ok: true });
+});
+
+// Lista ECW-filer för ett projekt (autentiserat)
+app.get('/api/ecw-filer/:ase60ProjectId', authMiddleware, (req, res) => {
+  const index = readJSON(ECW_INDEX_FILE, []);
+  const filer = index.filter(f => f.projectId === req.params.ase60ProjectId);
+  res.json(filer.map(f => ({ id: f.id, filename: f.filename, skapad: f.skapad, projectName: f.projectName })));
+});
+
+// Ladda ner en ECW-fil
+app.get('/api/ecw-filer/:ase60ProjectId/:id/ladda-ner', authMiddleware, (req, res) => {
+  const index = readJSON(ECW_INDEX_FILE, []);
+  const fil = index.find(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (!fil || !fs.existsSync(fil.filePath)) return res.status(404).json({ error: 'Fil hittades ej' });
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${fil.filename}"`);
+  res.sendFile(path.resolve(fil.filePath));
+});
+
 app.delete('/api/kunder/:id', authMiddleware, (req, res) => {
   const kunder = readJSON(KUNDER_FILE, []);
   const kvar = kunder.filter(k => k.id !== req.params.id);
