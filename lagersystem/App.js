@@ -826,36 +826,46 @@ export default function App() {
     } catch {}
   };
 
+  const ringCtxRef = useRef(null);
+
   const spelaRing = () => {
     if (Platform.OS !== 'web') return;
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const playTone = (freq, start, dur) => {
+      ringCtxRef.current = ctx;
+      const dur = 1.2;
+      // Klassisk dual-tone telefon: 480Hz + 440Hz med tremolo på 16Hz
+      [480, 440].forEach(freq => {
         const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
+        const gainNode = ctx.createGain();
+        // LFO tremolo (skapar det vibrerande "brrring"-ljudet)
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        lfo.frequency.value = 16;
+        lfoGain.gain.value = 0.25;
+        lfo.connect(lfoGain);
+        lfoGain.connect(gainNode.gain);
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
-        gain.gain.setValueAtTime(0, ctx.currentTime + start);
-        gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + start + 0.02);
-        gain.gain.setValueAtTime(0.4, ctx.currentTime + start + dur - 0.05);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + start + dur);
-        osc.start(ctx.currentTime + start);
-        osc.stop(ctx.currentTime + start + dur);
-      };
-      // Klassiskt telefon-ringmönster: två korta pip, paus
-      playTone(1000, 0, 0.15);
-      playTone(1000, 0.2, 0.15);
+        osc.frequency.value = freq;
+        gainNode.gain.setValueAtTime(0.18, ctx.currentTime);
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        lfo.start(ctx.currentTime);
+        osc.start(ctx.currentTime);
+        lfo.stop(ctx.currentTime + dur);
+        osc.stop(ctx.currentTime + dur);
+      });
     } catch {}
   };
 
   const startaRingjud = () => {
     spelaRing();
-    ringIntervalRef.current = setInterval(spelaRing, 1800);
+    ringIntervalRef.current = setInterval(spelaRing, 3500);
   };
 
   const stoppRingjud = () => {
     if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null; }
+    try { if (ringCtxRef.current) { ringCtxRef.current.close(); ringCtxRef.current = null; } } catch {}
   };
   const { width } = useWindowDimensions();
   const mobil = width < 768;
@@ -1731,8 +1741,8 @@ export default function App() {
 
       {/* Inkommande samtal overlay */}
       {inkommandeSamtal && (
-        <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)',
-          justifyContent: 'center', alignItems: 'center', zIndex: 300 }}>
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 300 }}>
           <View style={{ backgroundColor: '#1a2235', borderRadius: 24, padding: 40,
             alignItems: 'center', gap: 16, minWidth: 280, shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 30 }}>
             <Text style={{ fontSize: 64 }}>{inkommandeSamtal.avatar}</Text>
