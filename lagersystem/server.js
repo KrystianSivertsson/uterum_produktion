@@ -382,6 +382,10 @@ wss.on('connection', (ws, req) => {
         broadcast({ type: 'message', message });
         pushChatNotification(message, user.username);
       }
+      if (msg.type === 'ring-svar') {
+        // Skicka till alla (den som ringde ser vem som svarade)
+        broadcastExcept(ws, { type: 'ring-svar', svarade: user.namn, avatar: user.avatar || '😀' });
+      }
       if (msg.type === 'ring') {
         broadcastExcept(ws, { type: 'ring', fran: user.namn, avatar: user.avatar || '😀' });
         // Push-notis till alla som inte är online

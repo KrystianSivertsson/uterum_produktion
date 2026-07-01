@@ -805,6 +805,7 @@ export default function App() {
   const [olastaAntal, setOlastaAntal] = useState(0);
   const [visaNotisbanner, setVisaNotisbannerState] = useState(false);
   const [inkommandeSamtal, setInkommandeSamtal] = useState(null); // { fran, avatar }
+  const [utgaendeSamtal, setUtgaendeSamtal] = useState(null);    // 'ringer' | { svarade, avatar }
   const ringIntervalRef = useRef(null);
   const wsRef = useRef(null);
   const visaChatRef = useRef(false);
@@ -902,8 +903,12 @@ export default function App() {
       if (data.type === 'ring') {
         setInkommandeSamtal({ fran: data.fran, avatar: data.avatar });
         startaRingjud();
-        // Auto-dismiss efter 30 sek
         setTimeout(() => { setInkommandeSamtal(null); stoppRingjud(); }, 30000);
+      }
+      if (data.type === 'ring-svar') {
+        // Visa vem som svarade hos den som ringde
+        setUtgaendeSamtal({ svarade: data.svarade, avatar: data.avatar });
+        stoppRingjud();
       }
       if (data.type === 'online') setOnlineUsers(data.users);
     };
@@ -1755,6 +1760,43 @@ export default function App() {
         </View>
       )}
 
+      {/* Utgående samtal overlay */}
+      {utgaendeSamtal && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 300 }}>
+          <View style={{ backgroundColor: '#1a2235', borderRadius: 24, padding: 40,
+            alignItems: 'center', gap: 16, minWidth: 280, shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 30 }}>
+            {utgaendeSamtal === 'ringer' ? (
+              <>
+                <Text style={{ fontSize: 56 }}>📞</Text>
+                <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700' }}>Ringer...</Text>
+                <Text style={{ color: '#94a3b8', fontSize: 14 }}>Väntar på svar</Text>
+                <TouchableOpacity
+                  onPress={() => { setUtgaendeSamtal(null); stoppRingjud(); }}
+                  style={{ backgroundColor: '#ef4444', borderRadius: 50, width: 64, height: 64,
+                    justifyContent: 'center', alignItems: 'center', marginTop: 8 }}>
+                  <Text style={{ fontSize: 26 }}>📵</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 64 }}>{utgaendeSamtal.avatar}</Text>
+                <Text style={{ color: '#22c55e', fontSize: 18, fontWeight: '700' }}>✓ {utgaendeSamtal.svarade} svarade!</Text>
+                <TouchableOpacity
+                  onPress={() => { setUtgaendeSamtal(null); setVisaChat(true); }}
+                  style={{ backgroundColor: '#2563eb', borderRadius: 12, paddingHorizontal: 24,
+                    paddingVertical: 12, marginTop: 8 }}>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Öppna chatten</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setUtgaendeSamtal(null)}>
+                  <Text style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Stäng</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      )}
+
       {/* Inkommande samtal overlay */}
       {inkommandeSamtal && (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -1765,7 +1807,12 @@ export default function App() {
             <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>{inkommandeSamtal.fran}</Text>
             <Text style={{ color: '#94a3b8', fontSize: 15 }}>ringer...</Text>
             <TouchableOpacity
-              onPress={() => { stoppRingjud(); setInkommandeSamtal(null); setVisaChat(true); }}
+              onPress={() => {
+                stoppRingjud();
+                setInkommandeSamtal(null);
+                setVisaChat(true);
+                if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: 'ring-svar' }));
+              }}
               style={{ backgroundColor: '#22c55e', borderRadius: 50, width: 64, height: 64,
                 justifyContent: 'center', alignItems: 'center', marginTop: 8 }}>
               <Text style={{ fontSize: 28 }}>📞</Text>
@@ -1781,7 +1828,12 @@ export default function App() {
 
       {/* Chat floating panel */}
       {visaChat && <ChatPanel user={inloggad} onStang={() => setVisaChat(false)} meddelanden={meddelanden} online={onlineUsers} wsRef={wsRef}
-        onRing={() => { if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: 'ring' })); }} />}
+        onRing={() => {
+          if (wsRef.current?.readyState === 1) {
+            wsRef.current.send(JSON.stringify({ type: 'ring' }));
+            setUtgaendeSamtal('ringer');
+          }
+        }} />}
       {!visaChat && <ChatBubble senasteMeddelande={chatBubble} antal={olastaAntal} onPress={() => setVisaChat(true)} />}
 
       {visaProfil && <ProfilModal user={inloggad} token={token} onStang={() => setVisaProfil(false)} onUppdatera={(u) => setInloggad(u)} prenumereraPush={prenumereraPush} />}
