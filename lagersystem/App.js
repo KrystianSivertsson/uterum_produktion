@@ -869,6 +869,27 @@ export default function App() {
     } catch {}
   };
 
+  const spelaAnsvarsljud = () => {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try {
+      [523, 659, 784].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        const t = ctx.currentTime + i * 0.12;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.25, t + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        osc.start(t);
+        osc.stop(t + 0.25);
+      });
+    } catch {}
+  };
+
   const startaRingjud = () => {
     spelaRing();
     ringIntervalRef.current = setInterval(spelaRing, 3500);
@@ -906,9 +927,9 @@ export default function App() {
         setTimeout(() => { setInkommandeSamtal(null); stoppRingjud(); }, 30000);
       }
       if (data.type === 'ring-svar') {
-        // Visa vem som svarade hos den som ringde
         setUtgaendeSamtal({ svarade: data.svarade, avatar: data.avatar });
         stoppRingjud();
+        spelaAnsvarsljud();
       }
       if (data.type === 'online') setOnlineUsers(data.users);
     };
@@ -1819,6 +1840,7 @@ export default function App() {
             <TouchableOpacity
               onPress={() => {
                 stoppRingjud();
+                spelaAnsvarsljud();
                 setInkommandeSamtal(null);
                 setVisaChat(true);
                 if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: 'ring-svar' }));
