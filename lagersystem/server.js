@@ -209,13 +209,32 @@ app.get('/api/kunder', authMiddleware, (req, res) => {
 });
 
 app.post('/api/kunder', authMiddleware, (req, res) => {
-  const { namn } = req.body;
+  const { namn, farg, ase60ProjectId, matt } = req.body;
   if (!namn?.trim()) return res.status(400).json({ error: 'Namn krävs' });
   const kunder = readJSON(KUNDER_FILE, []);
-  const ny = { id: Date.now().toString(), namn: namn.trim(), skapad: new Date().toISOString(), skapadAv: req.user.namn };
+  const ny = {
+    id: Date.now().toString(),
+    namn: namn.trim(),
+    skapad: new Date().toISOString(),
+    skapadAv: req.user.namn,
+    farg: farg || '',
+    ase60ProjectId: ase60ProjectId || null,
+    matt: Array.isArray(matt) ? matt : [],
+  };
   kunder.push(ny);
   writeJSON(KUNDER_FILE, kunder);
   res.json(ny);
+});
+
+// Proxy ASE60 projects for linking to customers
+app.get('/api/ase60-projekt', authMiddleware, async (req, res) => {
+  try {
+    const r = await fetch('http://localhost:3017/api/projects');
+    const data = await r.json();
+    res.json(data.projects || []);
+  } catch {
+    res.json([]);
+  }
 });
 
 app.delete('/api/kunder/:id', authMiddleware, (req, res) => {

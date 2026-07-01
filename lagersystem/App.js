@@ -33,6 +33,19 @@ const RITNINGAR = [
 
 const TemaContext = React.createContext(null);
 
+function fargTillCSS(farg) {
+  if (!farg) return '#888';
+  const f = farg.toLowerCase();
+  if (f.includes('9005') || f.includes('svart') || f.includes('black')) return '#141414';
+  if (f.includes('7016') || f.includes('antracit') || f.includes('anthracit')) return '#3d4045';
+  if (f.includes('7015') || f.includes('skiffergrå') || f.includes('skiffer')) return '#4f5358';
+  if (f.includes('9010') || f.includes('vit') || f.includes('white') || f.includes('0502')) return '#f5f3ea';
+  if (f.includes('7021') || f.includes('svartgrå') || f.includes('black grey')) return '#2b2d2f';
+  if (f.includes('7035') || f.includes('ljusgrå') || f.includes('light grey')) return '#c8cbc4';
+  if (f.includes('8014') || f.includes('brun') || f.includes('brown')) return '#5a3e28';
+  return '#888';
+}
+
 const LJUST = {
   bg: '#f0f2f5', header: '#ffffff', headerBorder: '#e0e0e0',
   sidebar: '#1a2235', sidebarText: '#aab', sidebarTextAktiv: '#ffffff',
@@ -694,6 +707,9 @@ export default function App() {
   const [aktivKundFlik, setAktivKundFlik] = useState('Träfräs');
   const [visaLaggTillKund, setVisaLaggTillKund] = useState(false);
   const [nyKundNamn, setNyKundNamn] = useState('');
+  const [ase60Projekt, setAse60Projekt] = useState([]);
+  const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
+  const [sokAse60, setSokAse60] = useState('');
   const [visaProfil, setVisaProfil] = useState(false);
   const [visaSidebar, setVisaSidebar] = useState(false);
   const [sorteringsKolumn, setSorteringsKolumn] = useState(null);
@@ -826,17 +842,31 @@ export default function App() {
       .then(r => r.json()).then(setKunder).catch(() => {});
   };
 
-  useEffect(() => { if (arKunder) laddaKunder(); }, [arKunder]);
+  const laddaAse60Projekt = () => {
+    if (!token) return;
+    fetch(`${API}/api/ase60-projekt`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setAse60Projekt).catch(() => {});
+  };
+
+  useEffect(() => { if (arKunder) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder]);
 
   const laggTillKund = () => {
     if (!nyKundNamn.trim()) return;
+    const body = {
+      namn: nyKundNamn.trim(),
+      farg: valdAse60Projekt?.color || '',
+      ase60ProjectId: valdAse60Projekt?.id || null,
+      matt: valdAse60Projekt?.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+    };
     fetch(`${API}/api/kunder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ namn: nyKundNamn.trim() }),
+      body: JSON.stringify(body),
     }).then(r => r.json()).then(ny => {
       setKunder(prev => [...prev, ny]);
       setNyKundNamn('');
+      setValdAse60Projekt(null);
+      setSokAse60('');
       setVisaLaggTillKund(false);
     }).catch(() => {});
   };
@@ -1224,7 +1254,25 @@ export default function App() {
                   <TouchableOpacity onPress={() => setValdKund(null)} style={{ marginBottom: 16 }}>
                     <Text style={{ color: '#2563eb', fontSize: 14 }}>← Tillbaka till kunder</Text>
                   </TouchableOpacity>
-                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 16 }]}>👤 {valdKund.namn}</Text>
+                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 12 }]}>👤 {valdKund.namn}</Text>
+                  {(valdKund.farg || valdKund.matt?.length > 0) && (
+                    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+                      <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ASE60 PROJEKT</Text>
+                      {valdKund.farg ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <View style={{ width: 16, height: 16, borderRadius: 3, backgroundColor: fargTillCSS(valdKund.farg), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />
+                          <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>{valdKund.farg}</Text>
+                        </View>
+                      ) : null}
+                      {valdKund.matt?.map((m, i) => (
+                        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                          <Text style={{ color: c.textMuted, fontSize: 12 }}>Enhet {i + 1}:</Text>
+                          <Text style={{ color: c.text, fontSize: 13, fontWeight: '500' }}>{m.widthMm} × {m.heightMm} mm</Text>
+                          {m.leaves ? <Text style={{ color: c.textMuted, fontSize: 12 }}>· {m.leaves} båge{m.leaves === 1 ? '' : 'ar'}</Text> : null}
+                        </View>
+                      ))}
+                    </View>
+                  )}
                   {/* Underfliken */}
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
                     {['Träfräs', 'Alufräs', 'Beslag'].map(flik => (
@@ -1254,19 +1302,72 @@ export default function App() {
                     </TouchableOpacity>
                   </View>
                   {visaLaggTillKund && (
-                    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, flexDirection: 'row', gap: 8, alignItems: 'center' }]}>
+                    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16 }]}>
+                      <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, marginBottom: 12 }}>Ny kund</Text>
+                      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 6 }}>Koppla ASE60-projekt (valfritt)</Text>
                       <TextInput
-                        style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                        style={[styles.input, { marginBottom: 6, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                        placeholder="Sök projekt..." placeholderTextColor={c.textMuted}
+                        value={sokAse60} onChangeText={setSokAse60}
+                      />
+                      {sokAse60.length > 0 && ase60Projekt
+                        .filter(p => p.name.toLowerCase().includes(sokAse60.toLowerCase()) || (p.comNo || '').toLowerCase().includes(sokAse60.toLowerCase()))
+                        .slice(0, 5)
+                        .map(p => (
+                          <TouchableOpacity
+                            key={p.id}
+                            onPress={() => { setValdAse60Projekt(p); setNyKundNamn(p.name); setSokAse60(''); }}
+                            style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, marginBottom: 4,
+                              backgroundColor: valdAse60Projekt?.id === p.id ? '#2563eb22' : c.input,
+                              borderWidth: 1, borderColor: valdAse60Projekt?.id === p.id ? '#2563eb' : c.inputBorder }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(p.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />
+                              <Text style={{ color: c.text, fontWeight: '600', flex: 1 }}>{p.name}</Text>
+                              {p.comNo ? <Text style={{ color: c.textMuted, fontSize: 11 }}>{p.comNo}</Text> : null}
+                            </View>
+                            {p.units?.length > 0 && (
+                              <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 2 }}>
+                                {p.units.map(u => `${u.widthMm}×${u.heightMm}`).join(' · ')} mm{p.color ? ` · ${p.color}` : ''}
+                              </Text>
+                            )}
+                          </TouchableOpacity>
+                        ))
+                      }
+                      {valdAse60Projekt && (
+                        <View style={{ marginTop: 4, marginBottom: 10, padding: 10, backgroundColor: '#2563eb11', borderRadius: 6, borderWidth: 1, borderColor: '#2563eb44' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                            <Text style={{ color: '#2563eb', fontSize: 12, fontWeight: '700' }}>✓ ASE60:</Text>
+                            <Text style={{ color: '#2563eb', fontSize: 12 }}>{valdAse60Projekt.name}</Text>
+                            <TouchableOpacity onPress={() => { setValdAse60Projekt(null); setNyKundNamn(''); }} style={{ marginLeft: 'auto' }}>
+                              <Text style={{ color: '#ef4444', fontSize: 13 }}>✕</Text>
+                            </TouchableOpacity>
+                          </View>
+                          {valdAse60Projekt.color ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(valdAse60Projekt.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />
+                              <Text style={{ color: c.textMuted, fontSize: 11 }}>{valdAse60Projekt.color}</Text>
+                            </View>
+                          ) : null}
+                          {valdAse60Projekt.units?.map((u, i) => (
+                            <Text key={i} style={{ color: c.textMuted, fontSize: 11 }}>Enhet {i + 1}: {u.widthMm} × {u.heightMm} mm · {u.leaves} båge{u.leaves === 1 ? '' : 'ar'}</Text>
+                          ))}
+                        </View>
+                      )}
+                      <TextInput
+                        style={[styles.input, { marginBottom: 10, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
                         placeholder="Kundnamn" placeholderTextColor={c.textMuted}
                         value={nyKundNamn} onChangeText={setNyKundNamn}
                         onSubmitEditing={laggTillKund}
-                        autoFocus />
-                      <TouchableOpacity onPress={laggTillKund} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 }}>
-                        <Text style={{ color: '#fff', fontWeight: '700' }}>Spara</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); }} style={{ padding: 8 }}>
-                        <Text style={{ color: '#ef4444', fontSize: 18 }}>✕</Text>
-                      </TouchableOpacity>
+                        autoFocus
+                      />
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity onPress={laggTillKund} style={{ flex: 1, backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
+                          <Text style={{ color: '#fff', fontWeight: '700' }}>Spara</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); setValdAse60Projekt(null); setSokAse60(''); }} style={{ padding: 10 }}>
+                          <Text style={{ color: '#ef4444', fontSize: 18 }}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   )}
                   {kunder.length === 0 && !visaLaggTillKund && (
@@ -1277,9 +1378,19 @@ export default function App() {
                       key={kund.id}
                       onPress={() => { setValdKund(kund); setAktivKundFlik('Träfräs'); }}
                       style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-                      <View>
+                      <View style={{ flex: 1 }}>
                         <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {kund.namn}</Text>
-                        <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>Träfräs · Alufräs · Beslag</Text>
+                        {kund.farg ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                            <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(kund.farg), borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)' }} />
+                            <Text style={{ color: c.textMuted, fontSize: 12 }}>{kund.farg}</Text>
+                          </View>
+                        ) : null}
+                        {kund.matt?.length > 0 ? (
+                          <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+                            {kund.matt.map(m => `${m.widthMm}×${m.heightMm} mm`).join(' · ')}
+                          </Text>
+                        ) : null}
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                         <Text style={{ color: c.textMuted, fontSize: 13 }}>›</Text>
