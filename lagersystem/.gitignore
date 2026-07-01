@@ -33,11 +33,14 @@ yarn-error.*
 # local env files
 .env*.local
 
-# runtime data / secrets
+# runtime data / secrets — never overwritten by git reset
 data/tokens.json
 data/messages.json
 data/vapid.json
 data/push_subs.json
+data/users.json
+data/changes.json
+data/kunder.json
 
 # typescript
 *.tsbuildinfo
