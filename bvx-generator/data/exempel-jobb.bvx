@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Job BvxVersion="1.0" Operator="Krystian" DeliveryDate="01.08.2026">
+  <Parts>
+    <Part Name="Väggregel" PartId="1" ReqQuantity="12" Unit="" Grade="C24" Profile="" Comments="" Dimension="45x145" Length="2400" Height="45" Width="145">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="22.5" CrossMeas2="72.5" Orientation="Right" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="2400" CrossMeas1="22.5" CrossMeas2="72.5" Orientation="Left" Angle="90" Bevel="90" />
+        <Drilling ReferenceSide="3" LengthMeas="1200" CrossMeas1="22.5" CrossMeas2="0" Bevel="0" Angle="0" DrillDiam="12" HoleDepth="0" CountersinkDiam="0" CountersinkDepth="0" SplinterFree="sfNone" />
+      </Operations>
+    </Part>
+    <Part Name="Stolpe" PartId="2" ReqQuantity="4" Unit="" Grade="C24" Profile="" Comments="" Dimension="90x90" Length="2700" Height="90" Width="90">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="45" CrossMeas2="45" Orientation="Right" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="2700" CrossMeas1="45" CrossMeas2="45" Orientation="Left" Angle="90" Bevel="90" />
+        <Tenon ReferenceSide="1" LengthMeas="2700" CrossMeas="45" Orientation="Left" Angle="90" Bevel="0" Rotation="270" Length="110" Width="40" Depth="80" BackCut="45" Shape="Round" SplinterFree="sfNone" />
+      </Operations>
+    </Part>
+    <Part Name="Hammarband" PartId="3" ReqQuantity="2" Unit="" Grade="C24" Profile="" Comments="" Dimension="45x145" Length="3600" Height="45" Width="145">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="22.5" CrossMeas2="72.5" Orientation="Right" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="3600" CrossMeas1="22.5" CrossMeas2="72.5" Orientation="Left" Angle="45" Bevel="90" />
+        <Mortise ReferenceSide="3" LengthMeas="1800" CrossMeas="22.5" Angle="270" Length="110" Width="40" Depth="80" LengthOrientation="Center" Shape="Round" SplinterFree="sfNone" />
+      </Operations>
+    </Part>
+  </Parts>
+</Job>

@@ -1,0 +1,25 @@
+{
+  "name": "stommarbtl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "StommarBTL – STEP till Hundegger BVX/BTL-maskinfiler, fristående alternativ till hsbCAD:s maskinexport",
+  "scripts": {
+    "web": "tsx server/index.ts",
+    "generate": "tsx scripts/generate.ts",
+    "import-step": "tsx scripts/import-step.ts",
+    "inspect": "tsx scripts/inspect.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

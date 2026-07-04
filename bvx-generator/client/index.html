@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StommarBTL</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1c2330; --muted: #5b6575;
+    --line: #dde2ea; --accent: #1f6fd6; --accent-text: #ffffff;
+    --warn-bg: #fff7e8; --warn-line: #e6b45a; --warn-text: #7a5410;
+    --err-bg: #fdeeee; --err-text: #a12626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181f; --panel: #1d232d; --text: #e8ecf2; --muted: #98a2b3;
+      --line: #313a48; --accent: #4d94ec; --accent-text: #0d1420;
+      --warn-bg: #2d2617; --warn-line: #8a6d2f; --warn-text: #e3c27d;
+      --err-bg: #331d1d; --err-text: #ef9a9a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
+  h1 { margin: 0; font-size: 26px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 2px 0 8px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  #drop {
+    border: 2px dashed var(--line); border-radius: 10px; padding: 42px 18px;
+    text-align: center; color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  #drop.dragover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+  #drop strong { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+  .ops { color: var(--muted); }
+  .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+  button {
+    font: inherit; padding: 9px 18px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button:hover { filter: brightness(1.06); }
+  #warnings { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); }
+  #warnings h2 { margin-top: 0; }
+  #warnings ul { margin: 0; padding-left: 20px; }
+  #error { background: var(--err-bg); color: var(--err-text); display: none; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  textarea {
+    width: 100%; min-height: 260px; margin-top: 10px; font: 13px/1.4 ui-monospace, Consolas, monospace;
+    background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+  }
+  .hidden { display: none; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Stommar<span>BTL</span></h1>
+    <p class="sub">STEP-solider → timber-delar → Hundegger BVX / BTL-maskinfiler</p>
+  </div>
+
+  <div id="drop" class="panel">
+    <strong>Släpp en STEP-fil här</strong> (.step / .stp) eller klicka för att välja.<br>
+    Ett sparat jobb (.json) går också bra.
+    <input id="file" type="file" accept=".step,.stp,.json" hidden>
+  </div>
+
+  <div id="error" class="panel"></div>
+
+  <section id="result" class="hidden">
+    <div class="panel">
+      <h2 id="jobTitle">Delar</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Namn</th><th class="num">Antal</th><th class="num">Längd</th><th class="num">Höjd</th><th class="num">Bredd</th><th>Bearbetningar</th></tr>
+          </thead>
+          <tbody id="parts"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="warnings" class="panel hidden" style="margin-top:16px">
+      <h2>Varningar — granska innan skarp körning</h2>
+      <ul id="warningList"></ul>
+    </div>
+
+    <div class="panel buttons" style="margin-top:16px">
+      <button class="primary" onclick="exportFile('bvx')">Ladda ner BVX</button>
+      <button class="primary" onclick="exportFile('btl')">Ladda ner BTL</button>
+      <button onclick="downloadJson()">Ladda ner jobb-JSON</button>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <details>
+        <summary>Redigera jobbet (JSON) — t.ex. antal, virkeskvalitet, operationer</summary>
+        <textarea id="editor" spellcheck="false"></textarea>
+        <div class="buttons" style="margin-top:10px">
+          <button onclick="applyEdit()">Uppdatera tabellen</button>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <footer>StommarBTL · provkör alltid genererade filer i Cambium/maskinsimulering innan skarp körning</footer>
+</main>
+
+<script>
+let stem = "jobb";
+let importWarnings = [];
+
+const dropZone = document.getElementById("drop");
+const fileInput = document.getElementById("file");
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", (event) => { event.preventDefault(); dropZone.classList.add("dragover"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+dropZone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  dropZone.classList.remove("dragover");
+  const file = event.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+  fileInput.value = "";
+});
+
+function esc(value) {
+  return String(value).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+}
+
+function showError(message) {
+  const box = document.getElementById("error");
+  box.style.display = message ? "block" : "none";
+  box.textContent = message ?? "";
+}
+
+async function handleFile(file) {
+  showError(null);
+  stem = file.name.replace(/\.(step|stp|json)$/i, "");
+  const text = await file.text();
+
+  if (/\.json$/i.test(file.name)) {
+    try {
+      render(JSON.parse(text), []);
+    } catch (error) {
+      showError("Kunde inte läsa JSON-filen: " + error.message);
+    }
+    return;
+  }
+
+  dropZone.firstElementChild.textContent = "Analyserar " + file.name + " ...";
+  try {
+    const response = await fetch("/api/import-step", { method: "POST", body: text });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? response.statusText);
+    render(data.job, data.warnings);
+  } catch (error) {
+    showError("Import misslyckades: " + error.message);
+  } finally {
+    dropZone.firstElementChild.textContent = "Släpp en STEP-fil här";
+  }
+}
+
+function opSummary(part) {
+  const counts = new Map();
+  for (const op of part.operations ?? []) {
+    const key = op.type === "Generic" ? op.tag : op.type;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts].map(([type, count]) => count + " " + type).join(" · ") || "—";
+}
+
+function render(job, warnings) {
+  importWarnings = warnings ?? [];
+  document.getElementById("result").classList.remove("hidden");
+  document.getElementById("jobTitle").textContent = "Delar — " + stem;
+  document.getElementById("editor").value = JSON.stringify(job, null, 2);
+
+  document.getElementById("parts").innerHTML = (job.parts ?? [])
+    .map((part, index) =>
+      "<tr><td>" + (part.partId ?? index + 1) + "</td><td>" + esc(part.name) +
+      '</td><td class="num">' + (part.quantity ?? 1) +
+      '</td><td class="num">' + part.length + '</td><td class="num">' + part.height +
+      '</td><td class="num">' + part.width + '</td><td class="ops">' + esc(opSummary(part)) + "</td></tr>")
+    .join("");
+
+  renderWarnings(importWarnings);
+}
+
+function renderWarnings(list) {
+  const box = document.getElementById("warnings");
+  box.classList.toggle("hidden", list.length === 0);
+  document.getElementById("warningList").innerHTML = list.map((warning) => "<li>" + esc(warning) + "</li>").join("");
+}
+
+function currentJob() {
+  try {
+    return JSON.parse(document.getElementById("editor").value);
+  } catch (error) {
+    showError("JSON-fel i redigeraren: " + error.message);
+    return null;
+  }
+}
+
+function applyEdit() {
+  const job = currentJob();
+  if (job) {
+    showError(null);
+    render(job, importWarnings);
+  }
+}
+
+function downloadBlob(content, filename) {
+  const url = URL.createObjectURL(new Blob([content]));
+  const link = Object.assign(document.createElement("a"), { href: url, download: filename });
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function exportFile(format) {
+  const job = currentJob();
+  if (!job) return;
+  showError(null);
+  try {
+    const response = await fetch("/api/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job, format, name: stem }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error((data.error ?? response.statusText) + (data.issues ? "\n" + data.issues.join("\n") : ""));
+    }
+    downloadBlob(data.content, stem + "." + format);
+    renderWarnings([...importWarnings, ...(data.warnings ?? [])]);
+  } catch (error) {
+    showError("Export misslyckades: " + error.message);
+  }
+}
+
+function downloadJson() {
+  const job = currentJob();
+  if (job) downloadBlob(JSON.stringify(job, null, 2) + "\n", stem + ".json");
+}
+</script>
+</body>
+</html>

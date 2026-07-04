@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Job BvxVersion="1.0" Operator="" DeliveryDate="05.06.2019">
+  <Parts>
+    <Part Name="1-UPN 160" PartId="1" ReqQuantity="1" Unit="" Grade="Steel" Profile="" Comments="" Dimension="UPN" Length="4376.8249" Height="65" Width="160">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="32.5" CrossMeas2="120" Orientation="Right" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="4376.8249" CrossMeas1="32.5" CrossMeas2="80" Orientation="Left" Angle="90" Bevel="90" />
+        <Lap ReferenceSide="3" LengthMeas="-87.5" CrossMeas1="32.5" CrossMeas2="80" Angle="90" Bevel="0" Rotation="0" Length="305" LengthOrientation="Center" />
+        <DovetailMortise ReferenceSide="2" LengthMeas="667.69716" CrossMeas="0" ReferenceEdge="Qmin" Rotation="0" Width="30" Depth="20" MiddlePlane="0" Cone="10" SplinterFree="sfNone" />
+      </Operations>
+    </Part>
+    <Part Name="2-UPN 160" PartId="2" ReqQuantity="1" Unit="" Grade="Steel" Profile="" Comments="" Dimension="UPN" Length="2756.28804" Height="150" Width="160">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="75" CrossMeas2="80" Orientation="Right" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="2756.28804" CrossMeas1="75" CrossMeas2="80" Orientation="Left" Angle="90" Bevel="90" />
+        <Mortise ReferenceSide="3" LengthMeas="2681.28804" CrossMeas="75" Angle="270" Length="110" Width="40" Depth="80" LengthOrientation="Center" Shape="Round" SplinterFree="sfNone" />
+        <Drilling ReferenceSide="4" LengthMeas="2681.28804" CrossMeas1="140" CrossMeas2="0" Bevel="0" Angle="0" DrillDiam="18" HoleDepth="0" CountersinkDiam="0" CountersinkDepth="0" SplinterFree="sfNone" />
+      </Operations>
+    </Part>
+    <Part Name="3-UPN 160" PartId="3" ReqQuantity="1" Unit="" Grade="Steel" Profile="" Comments="" Dimension="UPN" Length="4344.3249" Height="65" Width="160">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="32.5" CrossMeas2="80" Orientation="Right" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="4344.3249" CrossMeas1="32.5" CrossMeas2="80" Orientation="Left" Angle="90" Bevel="90" />
+      </Operations>
+    </Part>
+    <Part Name="4-UPN 160" PartId="4" ReqQuantity="1" Unit="" Grade="Steel" Profile="" Comments="" Dimension="UPN" Length="2746.28804" Height="65" Width="160">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="32.5" CrossMeas2="80" Orientation="Right" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="2746.28804" CrossMeas1="32.5" CrossMeas2="40" Orientation="Left" Angle="90" Bevel="90" />
+        <Lap ReferenceSide="1" LengthMeas="2833.78804" CrossMeas1="32.5" CrossMeas2="80" Angle="-90" Bevel="0" Rotation="0" Length="305" LengthOrientation="Center" />
+      </Operations>
+    </Part>
+    <Part Name="5-UPN 160" PartId="5" ReqQuantity="1" Unit="" Grade="Steel" Profile="" Comments="" Dimension="UPN" Length="2727.31906" Height="65" Width="160">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="32.5" CrossMeas2="80" Orientation="Right" Angle="90" Bevel="90" />
+        <DovetailTenon ReferenceSide="3" LengthMeas="2707.31906" CrossMeas="32.5" Orientation="Left" Angle="90" Bevel="0" Rotation="0" Length="160" Width="30" Depth="20" Offset="0" MiddlePlane="0" Cone="10" SplinterFree="sfNone" />
+        <SawCut ReferenceSide="3" LengthMeas="2727.31906" CrossMeas1="32.5" CrossMeas2="80" Orientation="Left" Angle="90" Bevel="90" />
+      </Operations>
+    </Part>
+    <Part Name="6-UPN 160" PartId="6" ReqQuantity="1" Unit="" Grade="Steel" Profile="" Comments="" Dimension="UPN" Length="2731.99851" Height="65" Width="160">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="2731.99851" CrossMeas1="32.5" CrossMeas2="80" Orientation="Left" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="32.5" CrossMeas2="80" Orientation="Right" Angle="90" Bevel="90" />
+      </Operations>
+    </Part>
+    <Part Name="7-UPN 160" PartId="7" ReqQuantity="2" Unit="" Grade="Steel" Profile="" Comments="" Dimension="UPN" Length="2769.01365" Height="65" Width="160">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="32.5" CrossMeas2="80" Orientation="Right" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="2769.01365" CrossMeas1="32.5" CrossMeas2="80" Orientation="Left" Angle="90" Bevel="90" />
+      </Operations>
+    </Part>
+    <Part Name="8-Post" PartId="8" ReqQuantity="3" Unit="" Grade="CLS" Profile="" Comments="" Dimension="" Length="2500" Height="150" Width="150">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="75" CrossMeas2="75" Orientation="Right" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="2500" CrossMeas1="75" CrossMeas2="75" Orientation="Left" Angle="90" Bevel="90" />
+      </Operations>
+    </Part>
+    <Part Name="9-Post" PartId="9" ReqQuantity="1" Unit="" Grade="CLS" Profile="" Comments="" Dimension="" Length="2529.99995" Height="150" Width="150">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="75" CrossMeas2="75" Orientation="Right" Angle="90" Bevel="90" />
+        <Tenon ReferenceSide="1" LengthMeas="2450" CrossMeas="130" Orientation="Left" Angle="90" Bevel="0" Rotation="270" Length="110" Width="40" Depth="80" BackCut="75" Shape="Round" SplinterFree="sfNone" />
+        <Drilling ReferenceSide="1" LengthMeas="2470" CrossMeas1="75" CrossMeas2="0" Bevel="0" Angle="0" DrillDiam="18" HoleDepth="0" CountersinkDiam="0" CountersinkDepth="0" SplinterFree="sfNone" />
+        <SawCut ReferenceSide="3" LengthMeas="2529.99995" CrossMeas1="75" CrossMeas2="75" Orientation="Left" Angle="90" Bevel="90" />
+      </Operations>
+    </Part>
+    <Part Name="10-Rafter" PartId="10" ReqQuantity="19" Unit="" Grade="" Profile="" Comments="" Dimension="" Length="2813.77441" Height="100" Width="140">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="2743.77441" CrossMeas1="50" CrossMeas2="70" Orientation="Left" Angle="90" Bevel="135" />
+        <SawCut ReferenceSide="3" LengthMeas="70" CrossMeas1="50" CrossMeas2="70" Orientation="Right" Angle="90" Bevel="45" />
+      </Operations>
+    </Part>
+    <Part Name="11-Ridge" PartId="11" ReqQuantity="1" Unit="" Grade="CLS" Profile="" Comments="" Dimension="" Length="5544.3249" Height="100" Width="250">
+      <Operations>
+        <SawCut ReferenceSide="3" LengthMeas="5544.3249" CrossMeas1="50" CrossMeas2="125" Orientation="Left" Angle="90" Bevel="90" />
+        <SawCut ReferenceSide="3" LengthMeas="0" CrossMeas1="50" CrossMeas2="125" Orientation="Right" Angle="90" Bevel="90" />
+      </Operations>
+    </Part>
+  </Parts>
+</Job>

@@ -1,0 +1,48 @@
+{
+  "operator": "Krystian",
+  "deliveryDate": "01.08.2026",
+  "parts": [
+    {
+      "name": "Väggregel",
+      "quantity": 12,
+      "grade": "C24",
+      "dimension": "45x145",
+      "length": 2400,
+      "height": 45,
+      "width": 145,
+      "operations": [
+        { "type": "SawCut", "referenceSide": 3, "lengthMeas": 0, "crossMeas1": 22.5, "crossMeas2": 72.5, "orientation": "Right" },
+        { "type": "SawCut", "referenceSide": 3, "lengthMeas": 2400, "crossMeas1": 22.5, "crossMeas2": 72.5, "orientation": "Left" },
+        { "type": "Drilling", "referenceSide": 3, "lengthMeas": 1200, "crossMeas1": 22.5, "drillDiam": 12 }
+      ]
+    },
+    {
+      "name": "Stolpe",
+      "quantity": 4,
+      "grade": "C24",
+      "dimension": "90x90",
+      "length": 2700,
+      "height": 90,
+      "width": 90,
+      "operations": [
+        { "type": "SawCut", "referenceSide": 3, "lengthMeas": 0, "crossMeas1": 45, "crossMeas2": 45, "orientation": "Right" },
+        { "type": "SawCut", "referenceSide": 3, "lengthMeas": 2700, "crossMeas1": 45, "crossMeas2": 45, "orientation": "Left" },
+        { "type": "Tenon", "referenceSide": 1, "lengthMeas": 2700, "crossMeas": 45, "orientation": "Left", "rotation": 270, "length": 110, "width": 40, "depth": 80, "backCut": 45 }
+      ]
+    },
+    {
+      "name": "Hammarband",
+      "quantity": 2,
+      "grade": "C24",
+      "dimension": "45x145",
+      "length": 3600,
+      "height": 45,
+      "width": 145,
+      "operations": [
+        { "type": "SawCut", "referenceSide": 3, "lengthMeas": 0, "crossMeas1": 22.5, "crossMeas2": 72.5, "orientation": "Right" },
+        { "type": "SawCut", "referenceSide": 3, "lengthMeas": 3600, "crossMeas1": 22.5, "crossMeas2": 72.5, "orientation": "Left", "angle": 45 },
+        { "type": "Mortise", "referenceSide": 3, "lengthMeas": 1800, "crossMeas": 22.5, "angle": 270, "length": 110, "width": 40, "depth": 80 }
+      ]
+    }
+  ]
+}
