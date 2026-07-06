@@ -1407,14 +1407,13 @@ export default function App() {
   const arRitning = RITNINGAR.some(r => r.id === aktivFlik);
   const arAndringslogg = aktivFlik === '__andringar__';
   const arKunder = aktivFlik === '__kunder__';
-  const arEcw = aktivFlik === '__ecw__';
 
   useEffect(() => {
-    if (arEcw && token) {
+    if (arKunder && token) {
       fetch(`${API}/api/ecw-runs`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json()).then(setEcwRuns).catch(() => {});
     }
-  }, [arEcw]);
+  }, [arKunder]);
 
   useEffect(() => {
     if (arAndringslogg && token && inloggad?.roll === 'admin') {
@@ -1851,19 +1850,6 @@ export default function App() {
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.sidebarFlik, arEcw && styles.sidebarFlikAktiv]}
-            onPress={() => { setAktivFlik('__ecw__'); setSok(''); setValdProdukt(null); setValdKund(null); setVisaSidebar(false); }}>
-            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arEcw && styles.sidebarFlikTextAktiv]}>
-              🏭 ECW-körningar
-            </Text>
-            {ecwRuns.length > 0 && (
-              <View style={[styles.sidebarBadge, { backgroundColor: c.sidebarBadge }, arEcw && styles.sidebarBadgeAktiv]}>
-                <Text style={[styles.sidebarBadgeText, { color: c.sidebarBadgeText }, arEcw && styles.sidebarBadgeTextAktiv]}>{ecwRuns.length}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
           {inloggad.roll === 'admin' && <>
             <View style={styles.sidebarDivider} />
             <TouchableOpacity
@@ -2023,7 +2009,41 @@ export default function App() {
                     return (
                       <View>
                         {aktivKundFlik === 'Alufräs' && (
-                          <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                          <>
+                            <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                            {(() => {
+                              const kundRuns = ecwRuns.filter(run =>
+                                run.projekt?.toLowerCase() === valdKund.namn?.toLowerCase() ||
+                                (run.comNo && run.comNo.toLowerCase() === valdKund.namn?.toLowerCase()));
+                              if (kundRuns.length === 0) return null;
+                              return (
+                                <View style={{ marginBottom: 12 }}>
+                                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ECW-KÖRNINGAR</Text>
+                                  {kundRuns.map(run => (
+                                    <View key={run.id} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8 }]}>
+                                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                                        <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>✅ {run.projekt}</Text>
+                                        <Text style={{ color: c.textMuted, fontSize: 12 }}>{new Date(run.tid).toLocaleString('sv-SE')}</Text>
+                                      </View>
+                                      {!!run.comNo && run.comNo !== run.projekt && (
+                                        <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 4 }}>Märkning: <Text style={{ color: c.text, fontWeight: '600' }}>{run.comNo}</Text></Text>
+                                      )}
+                                      {!!run.filnamn && (
+                                        <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 4 }}>Fil: <Text style={{ color: c.text, fontWeight: '600' }}>{run.filnamn}</Text></Text>
+                                      )}
+                                      {(run.partier || []).map((p, i) => (
+                                        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                                          <Text style={{ color: c.textMuted, fontSize: 13, minWidth: 34, fontWeight: '600' }}>{p.label}</Text>
+                                          <Text style={{ color: c.text, fontSize: 13 }}>{p.breddMm} × {p.hoejdMm} mm</Text>
+                                          <Text style={{ color: c.textMuted, fontSize: 12 }}>{p.baagar} bågar · {p.serie}-serien</Text>
+                                        </View>
+                                      ))}
+                                    </View>
+                                  ))}
+                                </View>
+                              );
+                            })()}
+                          </>
                         )}
                         {flikKlart && (
                           <View style={{ backgroundColor: '#dcfce7', borderColor: '#16a34a', borderWidth: 1, borderRadius: 8, padding: 14, marginBottom: 16 }}>
@@ -2280,35 +2300,7 @@ export default function App() {
             });
           })()}
 
-          {!valdProdukt && arEcw && (
-            <ScrollView style={{ flex: 1 }}>
-              <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 16 }]}>🏭 ECW-körningar</Text>
-              {ecwRuns.length === 0 && <Text style={{ color: c.textMuted, textAlign: 'center', marginTop: 40 }}>Inga ECW-körningar registrerade ännu. De dyker upp här automatiskt när en ECW exporteras i ase60-generatorn.</Text>}
-              {ecwRuns.map(run => (
-                <View key={run.id} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8 }]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>✅ {run.projekt}</Text>
-                    <Text style={{ color: c.textMuted, fontSize: 12 }}>{new Date(run.tid).toLocaleString('sv-SE')}</Text>
-                  </View>
-                  {!!run.comNo && run.comNo !== run.projekt && (
-                    <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 4 }}>Märkning: <Text style={{ color: c.text, fontWeight: '600' }}>{run.comNo}</Text></Text>
-                  )}
-                  {!!run.filnamn && (
-                    <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 4 }}>Fil: <Text style={{ color: c.text, fontWeight: '600' }}>{run.filnamn}</Text></Text>
-                  )}
-                  {(run.partier || []).map((p, i) => (
-                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                      <Text style={{ color: c.textMuted, fontSize: 13, minWidth: 34, fontWeight: '600' }}>{p.label}</Text>
-                      <Text style={{ color: c.text, fontSize: 13 }}>{p.breddMm} × {p.hoejdMm} mm</Text>
-                      <Text style={{ color: c.textMuted, fontSize: 12 }}>{p.baagar} bågar · {p.serie}-serien</Text>
-                    </View>
-                  ))}
-                </View>
-              ))}
-            </ScrollView>
-          )}
-
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arEcw && <>
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>
