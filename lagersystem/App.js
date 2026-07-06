@@ -11,7 +11,9 @@ import * as FileSystem from 'expo-file-system';
 import { utils, write } from 'xlsx';
 
 const API = typeof window !== 'undefined'
-  ? window.location.origin
+  ? (window.location.pathname.startsWith('/UterumLager')
+      ? `${window.location.origin}/UterumLager`
+      : window.location.origin)
   : 'http://localhost:3001';
 
 function urlBase64ToUint8Array(base64String) {
@@ -32,6 +34,19 @@ const RITNINGAR = [
 ];
 
 const TemaContext = React.createContext(null);
+
+function fargTillCSS(farg) {
+  if (!farg) return '#888';
+  const f = farg.toLowerCase();
+  if (f.includes('9005') || f.includes('svart') || f.includes('black')) return '#141414';
+  if (f.includes('7016') || f.includes('antracit') || f.includes('anthracit')) return '#3d4045';
+  if (f.includes('7015') || f.includes('skiffergrå') || f.includes('skiffer')) return '#4f5358';
+  if (f.includes('9010') || f.includes('vit') || f.includes('white') || f.includes('0502')) return '#f5f3ea';
+  if (f.includes('7021') || f.includes('svartgrå') || f.includes('black grey')) return '#2b2d2f';
+  if (f.includes('7035') || f.includes('ljusgrå') || f.includes('light grey')) return '#c8cbc4';
+  if (f.includes('8014') || f.includes('brun') || f.includes('brown')) return '#5a3e28';
+  return '#888';
+}
 
 const LJUST = {
   bg: '#f0f2f5', header: '#ffffff', headerBorder: '#e0e0e0',
@@ -117,6 +132,80 @@ const ls = StyleSheet.create({
 });
 
 // ─── User management ─────────────────────────────────────────────────────────
+// ─── Alufräs (ECW-filer från ASE60) ──────────────────────────────────────────
+function AlufrasFlik({ ase60ProjectId, token, API, c, roll }) {
+  const [filer, setFiler] = useState([]);
+  const [laddar, setLaddar] = useState(true);
+
+  const laddaFiler = () => {
+    if (!ase60ProjectId || !token) { setLaddar(false); return; }
+    fetch(`${API}/api/ecw-filer/${encodeURIComponent(ase60ProjectId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setFiler(Array.isArray(data) ? data : []); setLaddar(false); })
+      .catch(() => setLaddar(false));
+  };
+
+  useEffect(() => { laddaFiler(); }, [ase60ProjectId]);
+
+  const laddaNer = (fil) => {
+    const url = `${API}/api/ecw-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}/ladda-ner?token=${token}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fil.filename;
+    a.click();
+  };
+
+  const taBort = async (fil) => {
+    if (!window.confirm(`Ta bort "${fil.filename}"?`)) return;
+    await fetch(`${API}/api/ecw-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    laddaFiler();
+  };
+
+  if (laddar) return (
+    <View style={{ padding: 32, alignItems: 'center' }}>
+      <Text style={{ color: c.textMuted }}>Hämtar ECW-filer...</Text>
+    </View>
+  );
+
+  if (filer.length === 0) return (
+    <View style={{ padding: 16, alignItems: 'center', marginBottom: 12 }}>
+      <Text style={{ color: c.textMuted, fontSize: 14, textAlign: 'center' }}>
+        Inga ECW-filer ännu.{'\n'}Exportera från ASE60 och filen dyker upp här automatiskt.
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      {filer.slice().reverse().map(fil => (
+        <View
+          key={fil.id}
+          style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 12,
+            padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={{ fontSize: 22 }}>📄</Text>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => laddaNer(fil)}>
+            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{fil.filename}</Text>
+            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+              {new Date(fil.skapad).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => laddaNer(fil)}>
+            <Text style={{ color: '#2563eb', fontWeight: '600', fontSize: 13 }}>⬇ Ladda ner</Text>
+          </TouchableOpacity>
+          {roll === 'admin' && (
+            <TouchableOpacity onPress={() => taBort(fil)}>
+              <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 13 }}>🗑 Ta bort</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function AnvandarHantering({ token, onStang }) {
   const { c } = React.useContext(TemaContext) || { c: LJUST };
   const [anvandare, setAnvandare] = useState([]);
@@ -884,11 +973,15 @@ export default function App() {
   const [visaChat, setVisaChat] = useState(false);
   const [andringslogg, setAndringslogg] = useState([]);
   const [kunder, setKunder] = useState([]);
+  const [ecwRuns, setEcwRuns] = useState([]);
   const [valdKund, setValdKund] = useState(null);
   const [aktivKundFlik, setAktivKundFlik] = useState('Träfräs');
   const [visaLaggTillKund, setVisaLaggTillKund] = useState(false);
   const [nyKundNamn, setNyKundNamn] = useState('');
   const [kundMaterialSok, setKundMaterialSok] = useState('');
+  const [ase60Projekt, setAse60Projekt] = useState([]);
+  const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
+  const [sokAse60, setSokAse60] = useState('');
   const [visaProfil, setVisaProfil] = useState(false);
   const [visaSidebar, setVisaSidebar] = useState(false);
   const [sorteringsKolumn, setSorteringsKolumn] = useState(null);
@@ -932,7 +1025,8 @@ export default function App() {
     let atertimer = null;
     const anslut = () => {
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${wsProto}//${window.location.host}/ws?token=${token}`);
+      const wsBase = window.location.pathname.startsWith('/UterumLager') ? '/UterumLager/ws' : '/ws';
+      const ws = new WebSocket(`${wsProto}//${window.location.host}${wsBase}?token=${token}`);
       wsRef.current = ws;
       ws.onmessage = (e) => {
         const data = JSON.parse(e.data);
@@ -944,6 +1038,7 @@ export default function App() {
           }
         }
         if (data.type === 'online') setOnlineUsers(data.users);
+        if (data.type === 'ecw-run' && data.run) setEcwRuns(prev => [data.run, ...prev]);
         if (typeof data.type === 'string' && data.type.startsWith('call-')) hanteraSamtalsSignal(data);
       };
       ws.onclose = () => {
@@ -1029,13 +1124,14 @@ export default function App() {
       if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
       if (!('serviceWorker' in navigator)) return;
       const reg = await navigator.serviceWorker.ready;
+      const notisBase = window.location.pathname.startsWith('/UterumLager') ? '/UterumLager' : '';
       reg.showNotification(`📞 ${fran.namn} ringer dig`, {
         body: 'Klicka för att öppna och svara',
-        icon: '/icon-192.png',
-        badge: '/icon-192.png',
+        icon: notisBase + '/icon-192.png',
+        badge: notisBase + '/icon-192.png',
         tag: 'inkommande-samtal',
         vibrate: [300, 150, 300],
-        data: { url: '/' },
+        data: { url: notisBase + '/' },
       });
     } catch {}
   };
@@ -1311,6 +1407,14 @@ export default function App() {
   const arRitning = RITNINGAR.some(r => r.id === aktivFlik);
   const arAndringslogg = aktivFlik === '__andringar__';
   const arKunder = aktivFlik === '__kunder__';
+  const arEcw = aktivFlik === '__ecw__';
+
+  useEffect(() => {
+    if (arEcw && token) {
+      fetch(`${API}/api/ecw-runs`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json()).then(setEcwRuns).catch(() => {});
+    }
+  }, [arEcw]);
 
   useEffect(() => {
     if (arAndringslogg && token && inloggad?.roll === 'admin') {
@@ -1325,17 +1429,31 @@ export default function App() {
       .then(r => r.json()).then(setKunder).catch(() => {});
   };
 
-  useEffect(() => { if (arKunder) laddaKunder(); }, [arKunder]);
+  const laddaAse60Projekt = () => {
+    if (!token) return;
+    fetch(`${API}/api/ase60-projekt`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setAse60Projekt).catch(() => {});
+  };
+
+  useEffect(() => { if (arKunder) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder]);
 
   const laggTillKund = () => {
     if (!nyKundNamn.trim()) return;
+    const body = {
+      namn: nyKundNamn.trim(),
+      farg: valdAse60Projekt?.color || '',
+      ase60ProjectId: valdAse60Projekt?.id || null,
+      matt: valdAse60Projekt?.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+    };
     fetch(`${API}/api/kunder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ namn: nyKundNamn.trim() }),
+      body: JSON.stringify(body),
     }).then(r => r.json()).then(ny => {
       setKunder(prev => [...prev, ny]);
       setNyKundNamn('');
+      setValdAse60Projekt(null);
+      setSokAse60('');
       setVisaLaggTillKund(false);
     }).catch(() => {});
   };
@@ -1349,12 +1467,22 @@ export default function App() {
   };
 
   const uppdateraKund = (uppdaterad) => {
-    setKunder(prev => prev.map(k => k.id === uppdaterad.id ? uppdaterad : k));
+    setKunder(prev => {
+      const finns = prev.some(k => k.id === uppdaterad.id);
+      return finns ? prev.map(k => k.id === uppdaterad.id ? uppdaterad : k) : [...prev, uppdaterad];
+    });
     setValdKund(uppdaterad);
     fetch(`${API}/api/kunder/${uppdaterad.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ material: uppdaterad.material || {}, klart: uppdaterad.klart || {} }),
+      body: JSON.stringify({
+        namn: uppdaterad.namn,
+        farg: uppdaterad.farg || '',
+        ase60ProjectId: uppdaterad.ase60ProjectId || null,
+        matt: uppdaterad.matt || [],
+        material: uppdaterad.material || {},
+        klart: uppdaterad.klart || {},
+      }),
     }).catch(() => {});
   };
 
@@ -1723,6 +1851,19 @@ export default function App() {
             )}
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arEcw && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__ecw__'); setSok(''); setValdProdukt(null); setValdKund(null); setVisaSidebar(false); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arEcw && styles.sidebarFlikTextAktiv]}>
+              🏭 ECW-körningar
+            </Text>
+            {ecwRuns.length > 0 && (
+              <View style={[styles.sidebarBadge, { backgroundColor: c.sidebarBadge }, arEcw && styles.sidebarBadgeAktiv]}>
+                <Text style={[styles.sidebarBadgeText, { color: c.sidebarBadgeText }, arEcw && styles.sidebarBadgeTextAktiv]}>{ecwRuns.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
           {inloggad.roll === 'admin' && <>
             <View style={styles.sidebarDivider} />
             <TouchableOpacity
@@ -1832,7 +1973,25 @@ export default function App() {
                   <TouchableOpacity onPress={() => setValdKund(null)} style={{ marginBottom: 16 }}>
                     <Text style={{ color: '#2563eb', fontSize: 14 }}>← Tillbaka till kunder</Text>
                   </TouchableOpacity>
-                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 16 }]}>👤 {valdKund.namn}</Text>
+                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 12 }]}>👤 {valdKund.namn}</Text>
+                  {(valdKund.farg || valdKund.matt?.length > 0) && (
+                    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+                      <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ASE60 PROJEKT</Text>
+                      {valdKund.farg ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <View style={{ width: 16, height: 16, borderRadius: 3, backgroundColor: fargTillCSS(valdKund.farg), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />
+                          <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>{valdKund.farg}</Text>
+                        </View>
+                      ) : null}
+                      {valdKund.matt?.map((m, i) => (
+                        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                          <Text style={{ color: c.textMuted, fontSize: 12 }}>Enhet {i + 1}:</Text>
+                          <Text style={{ color: c.text, fontSize: 13, fontWeight: '500' }}>{m.widthMm} × {m.heightMm} mm</Text>
+                          {m.leaves ? <Text style={{ color: c.textMuted, fontSize: 12 }}>· {m.leaves} båge{m.leaves === 1 ? '' : 'ar'}</Text> : null}
+                        </View>
+                      ))}
+                    </View>
+                  )}
                   {/* Underfliken */}
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
                     {['Träfräs', 'Alufräs', 'Beslag'].map(flik => {
@@ -1863,6 +2022,9 @@ export default function App() {
                       : [];
                     return (
                       <View>
+                        {aktivKundFlik === 'Alufräs' && (
+                          <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                        )}
                         {flikKlart && (
                           <View style={{ backgroundColor: '#dcfce7', borderColor: '#16a34a', borderWidth: 1, borderRadius: 8, padding: 14, marginBottom: 16 }}>
                             <Text style={{ color: '#15803d', fontWeight: '700', fontSize: 15 }}>✓ Klart — materialet är bortdraget från lagret</Text>
@@ -1964,25 +2126,124 @@ export default function App() {
                     </TouchableOpacity>
                   </View>
                   {visaLaggTillKund && (
-                    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, flexDirection: 'row', gap: 8, alignItems: 'center' }]}>
+                    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16 }]}>
+                      <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, marginBottom: 12 }}>Ny kund</Text>
+                      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 6 }}>Koppla ASE60-projekt (valfritt)</Text>
                       <TextInput
-                        style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                        style={[styles.input, { marginBottom: 6, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                        placeholder="Sök projekt..." placeholderTextColor={c.textMuted}
+                        value={sokAse60} onChangeText={setSokAse60}
+                      />
+                      {sokAse60.length > 0 && ase60Projekt
+                        .filter(p => p.name.toLowerCase().includes(sokAse60.toLowerCase()) || (p.comNo || '').toLowerCase().includes(sokAse60.toLowerCase()))
+                        .slice(0, 5)
+                        .map(p => (
+                          <TouchableOpacity
+                            key={p.id}
+                            onPress={() => { setValdAse60Projekt(p); setNyKundNamn(p.name); setSokAse60(''); }}
+                            style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, marginBottom: 4,
+                              backgroundColor: valdAse60Projekt?.id === p.id ? '#2563eb22' : c.input,
+                              borderWidth: 1, borderColor: valdAse60Projekt?.id === p.id ? '#2563eb' : c.inputBorder }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(p.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />
+                              <Text style={{ color: c.text, fontWeight: '600', flex: 1 }}>{p.name}</Text>
+                              {p.comNo ? <Text style={{ color: c.textMuted, fontSize: 11 }}>{p.comNo}</Text> : null}
+                            </View>
+                            {p.units?.length > 0 && (
+                              <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 2 }}>
+                                {p.units.map(u => `${u.widthMm}×${u.heightMm}`).join(' · ')} mm{p.color ? ` · ${p.color}` : ''}
+                              </Text>
+                            )}
+                          </TouchableOpacity>
+                        ))
+                      }
+                      {valdAse60Projekt && (
+                        <View style={{ marginTop: 4, marginBottom: 10, padding: 10, backgroundColor: '#2563eb11', borderRadius: 6, borderWidth: 1, borderColor: '#2563eb44' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                            <Text style={{ color: '#2563eb', fontSize: 12, fontWeight: '700' }}>✓ ASE60:</Text>
+                            <Text style={{ color: '#2563eb', fontSize: 12 }}>{valdAse60Projekt.name}</Text>
+                            <TouchableOpacity onPress={() => { setValdAse60Projekt(null); setNyKundNamn(''); }} style={{ marginLeft: 'auto' }}>
+                              <Text style={{ color: '#ef4444', fontSize: 13 }}>✕</Text>
+                            </TouchableOpacity>
+                          </View>
+                          {valdAse60Projekt.color ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(valdAse60Projekt.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />
+                              <Text style={{ color: c.textMuted, fontSize: 11 }}>{valdAse60Projekt.color}</Text>
+                            </View>
+                          ) : null}
+                          {valdAse60Projekt.units?.map((u, i) => (
+                            <Text key={i} style={{ color: c.textMuted, fontSize: 11 }}>Enhet {i + 1}: {u.widthMm} × {u.heightMm} mm · {u.leaves} båge{u.leaves === 1 ? '' : 'ar'}</Text>
+                          ))}
+                        </View>
+                      )}
+                      <TextInput
+                        style={[styles.input, { marginBottom: 10, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
                         placeholder="Kundnamn" placeholderTextColor={c.textMuted}
                         value={nyKundNamn} onChangeText={setNyKundNamn}
                         onSubmitEditing={laggTillKund}
-                        autoFocus />
-                      <TouchableOpacity onPress={laggTillKund} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 }}>
-                        <Text style={{ color: '#fff', fontWeight: '700' }}>Spara</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); }} style={{ padding: 8 }}>
-                        <Text style={{ color: '#ef4444', fontSize: 18 }}>✕</Text>
+                        autoFocus
+                      />
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity onPress={laggTillKund} style={{ flex: 1, backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
+                          <Text style={{ color: '#fff', fontWeight: '700' }}>Spara</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); setValdAse60Projekt(null); setSokAse60(''); }} style={{ padding: 10 }}>
+                          <Text style={{ color: '#ef4444', fontSize: 18 }}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                  {ase60Projekt.length === 0 && kunder.length === 0 && !visaLaggTillKund && (
+                    <View style={{ alignItems: 'center', marginTop: 60 }}>
+                      <Text style={{ color: c.textMuted, fontSize: 15, marginBottom: 12 }}>Inga kunder eller ASE60-projekt hittades.</Text>
+                      <TouchableOpacity onPress={laddaAse60Projekt} style={{ backgroundColor: c.input, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 }}>
+                        <Text style={{ color: c.text }}>Ladda om</Text>
                       </TouchableOpacity>
                     </View>
                   )}
-                  {kunder.length === 0 && !visaLaggTillKund && (
-                    <Text style={{ color: c.textMuted, textAlign: 'center', marginTop: 60, fontSize: 15 }}>Inga kunder tillagda ännu.</Text>
-                  )}
-                  {kunder.map(kund => (
+                  {/* ASE60-projekt visas direkt som kunder (sparad material/klart-status mergas in) */}
+                  {ase60Projekt.map(proj => {
+                    const sparad = kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id);
+                    const klartAntal = sparad?.klart ? Object.keys(sparad.klart).length : 0;
+                    return (
+                      <TouchableOpacity
+                        key={proj.id}
+                        onPress={() => {
+                          setValdKund({
+                            id: proj.id, namn: proj.name, farg: proj.color, ase60ProjectId: proj.id,
+                            matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+                            material: sparad?.material || {}, klart: sparad?.klart || {},
+                          });
+                          setAktivKundFlik('Träfräs');
+                          setKundMaterialSok('');
+                        }}
+                        style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {proj.name}</Text>
+                          {proj.color ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(proj.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)' }} />
+                              <Text style={{ color: c.textMuted, fontSize: 12 }}>{proj.color}</Text>
+                            </View>
+                          ) : null}
+                          {proj.units?.length > 0 ? (
+                            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+                              {proj.units.map(u => `${u.widthMm}×${u.heightMm} mm`).join(' · ')}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          {klartAntal > 0 && (
+                            <Text style={{ color: '#15803d', fontSize: 12, fontWeight: '700' }}>✓ {klartAntal}/3</Text>
+                          )}
+                          <Text style={{ color: c.textMuted, fontSize: 13 }}>›</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {/* Manuellt tillagda kunder (utan ASE60-koppling) */}
+                  {kunder.filter(k => !k.ase60ProjectId && !ase60Projekt.some(p => p.id === k.id)).map(kund => (
                     <TouchableOpacity
                       key={kund.id}
                       onPress={() => { setValdKund(kund); setAktivKundFlik('Träfräs'); setKundMaterialSok(''); }}
@@ -1992,6 +2253,9 @@ export default function App() {
                         <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>Träfräs · Alufräs · Beslag</Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        {kund.klart && Object.keys(kund.klart).length > 0 && (
+                          <Text style={{ color: '#15803d', fontSize: 12, fontWeight: '700' }}>✓ {Object.keys(kund.klart).length}/3</Text>
+                        )}
                         <Text style={{ color: c.textMuted, fontSize: 13 }}>›</Text>
                         {inloggad.roll === 'admin' && (
                           <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); taBortKund(kund.id); }} style={{ padding: 6 }}>
@@ -2016,7 +2280,35 @@ export default function App() {
             });
           })()}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && <>
+          {!valdProdukt && arEcw && (
+            <ScrollView style={{ flex: 1 }}>
+              <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 16 }]}>🏭 ECW-körningar</Text>
+              {ecwRuns.length === 0 && <Text style={{ color: c.textMuted, textAlign: 'center', marginTop: 40 }}>Inga ECW-körningar registrerade ännu. De dyker upp här automatiskt när en ECW exporteras i ase60-generatorn.</Text>}
+              {ecwRuns.map(run => (
+                <View key={run.id} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8 }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>✅ {run.projekt}</Text>
+                    <Text style={{ color: c.textMuted, fontSize: 12 }}>{new Date(run.tid).toLocaleString('sv-SE')}</Text>
+                  </View>
+                  {!!run.comNo && run.comNo !== run.projekt && (
+                    <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 4 }}>Märkning: <Text style={{ color: c.text, fontWeight: '600' }}>{run.comNo}</Text></Text>
+                  )}
+                  {!!run.filnamn && (
+                    <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 4 }}>Fil: <Text style={{ color: c.text, fontWeight: '600' }}>{run.filnamn}</Text></Text>
+                  )}
+                  {(run.partier || []).map((p, i) => (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                      <Text style={{ color: c.textMuted, fontSize: 13, minWidth: 34, fontWeight: '600' }}>{p.label}</Text>
+                      <Text style={{ color: c.text, fontSize: 13 }}>{p.breddMm} × {p.hoejdMm} mm</Text>
+                      <Text style={{ color: c.textMuted, fontSize: 12 }}>{p.baagar} bågar · {p.serie}-serien</Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arEcw && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>

@@ -41,6 +41,9 @@ data/vapid.json
 data/push_subs.json
 data/changes.json
 data/kunder.json
+data/ecw_runs.json
+data/ecw.json
+data/ecw/
 
 # typescript
 *.tsbuildinfo

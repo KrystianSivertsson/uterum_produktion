@@ -8,15 +8,51 @@ const crypto = require('crypto');
 const webpush = require('web-push');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '20mb' }));
 
-// Redirect HTTP → HTTPS (only when HTTPS server is running)
+// Intern endpoint BEFORE redirect middleware — anropas av ASE60 server-till-server via localhost
+// Placeras här så att HTTP-anrop från localhost inte omdirigeras till HTTPS
+const _ECW_DIR_EARLY = path.join(__dirname, 'data', 'ecw');
+const _ECW_INDEX_EARLY = path.join(__dirname, 'data', 'ecw.json');
+const _readJSONEarly = (f, fb) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return fb; } };
+const _writeJSONEarly = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
+app.post('/api/ecw-filer/intern', (req, res) => {
+  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
+  const { projectId, projectName, filename, ecwBase64 } = req.body;
+  if (!projectId || !ecwBase64) return res.status(400).json({ error: 'Saknar data' });
+  if (!fs.existsSync(_ECW_DIR_EARLY)) fs.mkdirSync(_ECW_DIR_EARLY, { recursive: true });
+  const safeId = String(projectId).replace(/[^a-z0-9_-]/gi, '_');
+  const projDir = path.join(_ECW_DIR_EARLY, safeId);
+  if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
+  const ts = Date.now();
+  const safeFilename = String(filename || 'CNCDATA.ECW').replace(/[^a-z0-9._-]/gi, '_');
+  const filePath = path.join(projDir, `${ts}_${safeFilename}`);
+  fs.writeFileSync(filePath, Buffer.from(ecwBase64, 'base64'));
+  if (!fs.existsSync(_ECW_INDEX_EARLY)) _writeJSONEarly(_ECW_INDEX_EARLY, []);
+  const index = _readJSONEarly(_ECW_INDEX_EARLY, []);
+  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
+  if (index.length > 500) index.splice(0, index.length - 500);
+  _writeJSONEarly(_ECW_INDEX_EARLY, index);
+  res.json({ ok: true });
+});
+
+// Redirect HTTP → HTTPS (only when HTTPS server is running).
+// Maskinanrop med x-api-key (t.ex. ase60-generatorns ECW-notiser) hoppar
+// över redirecten — Node-fetch klarar inte självsignerade cert och en
+// 301 på POST görs dessutom om till GET.
 app.use((req, res, next) => {
-  if (req.protocol === 'http' && req.headers.host) {
+  if (req.protocol === 'http' && req.headers.host && !req.headers['x-api-key']) {
     const httpsPort = process.env.HTTPS_PORT || 3443;
     const host = req.headers.host.split(':')[0];
     return res.redirect(301, `https://${host}:${httpsPort}${req.url}`);
   }
+  next();
+});
+
+// Lokalt (utan nginx): strippa /UterumLager-prefixet för API-anrop
+app.use((req, res, next) => {
+  if (req.url.startsWith('/UterumLager/api/')) req.url = req.url.slice('/UterumLager'.length);
   next();
 });
 
@@ -214,24 +250,93 @@ app.get('/api/kunder', authMiddleware, (req, res) => {
 });
 
 app.post('/api/kunder', authMiddleware, (req, res) => {
-  const { namn } = req.body;
+  const { namn, farg, ase60ProjectId, matt } = req.body;
   if (!namn?.trim()) return res.status(400).json({ error: 'Namn krävs' });
   const kunder = readJSON(KUNDER_FILE, []);
-  const ny = { id: Date.now().toString(), namn: namn.trim(), skapad: new Date().toISOString(), skapadAv: req.user.namn };
+  const ny = {
+    id: Date.now().toString(),
+    namn: namn.trim(),
+    skapad: new Date().toISOString(),
+    skapadAv: req.user.namn,
+    farg: farg || '',
+    ase60ProjectId: ase60ProjectId || null,
+    matt: Array.isArray(matt) ? matt : [],
+  };
   kunder.push(ny);
   writeJSON(KUNDER_FILE, kunder);
   res.json(ny);
 });
 
+// Upsert: ASE60-projekt visas som kunder utan att finnas i kunder.json,
+// så material/klart-status skapas vid första sparningen
 app.put('/api/kunder/:id', authMiddleware, (req, res) => {
   const kunder = readJSON(KUNDER_FILE, []);
-  const idx = kunder.findIndex(k => k.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Kund hittades ej' });
+  let idx = kunder.findIndex(k => k.id === req.params.id);
+  if (idx === -1) {
+    const { namn, farg, ase60ProjectId, matt } = req.body || {};
+    kunder.push({
+      id: req.params.id,
+      namn: (namn || '').trim() || req.params.id,
+      skapad: new Date().toISOString(),
+      skapadAv: req.user.namn,
+      farg: farg || '',
+      ase60ProjectId: ase60ProjectId || null,
+      matt: Array.isArray(matt) ? matt : [],
+    });
+    idx = kunder.length - 1;
+  }
   const { material, klart } = req.body || {};
   if (material !== undefined) kunder[idx].material = material;
   if (klart !== undefined) kunder[idx].klart = klart;
   writeJSON(KUNDER_FILE, kunder);
   res.json(kunder[idx]);
+});
+
+// Proxy ASE60 projects for linking to customers
+app.get('/api/ase60-projekt', authMiddleware, async (req, res) => {
+  try {
+    const r = await fetch('http://localhost:3017/api/projects');
+    const data = await r.json();
+    res.json(data.projects || []);
+  } catch {
+    res.json([]);
+  }
+});
+
+// --- ECW-FILER (läsa/ladda ner — autentiserade endpoints) ---
+const ECW_DIR = path.join(DATA_DIR, 'ecw');
+const ECW_INDEX_FILE = path.join(DATA_DIR, 'ecw.json');
+if (!fs.existsSync(ECW_DIR)) fs.mkdirSync(ECW_DIR, { recursive: true });
+if (!fs.existsSync(ECW_INDEX_FILE)) writeJSON(ECW_INDEX_FILE, []);
+
+// Lista ECW-filer för ett projekt (autentiserat)
+app.get('/api/ecw-filer/:ase60ProjectId', authMiddleware, (req, res) => {
+  const index = readJSON(ECW_INDEX_FILE, []);
+  const filer = index.filter(f => f.projectId === req.params.ase60ProjectId);
+  res.json(filer.map(f => ({ id: f.id, filename: f.filename, skapad: f.skapad, projectName: f.projectName })));
+});
+
+// Ladda ner en ECW-fil
+app.get('/api/ecw-filer/:ase60ProjectId/:id/ladda-ner', authMiddleware, (req, res) => {
+  const index = readJSON(ECW_INDEX_FILE, []);
+  const fil = index.find(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (!fil || !fs.existsSync(fil.filePath)) return res.status(404).json({ error: 'Fil hittades ej' });
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${fil.filename}"`);
+  res.sendFile(path.resolve(fil.filePath));
+});
+
+// Ta bort en ECW-fil (admin only)
+app.delete('/api/ecw-filer/:ase60ProjectId/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
+  const index = readJSON(ECW_INDEX_FILE, []);
+  const idx = index.findIndex(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Fil hittades ej' });
+  const fil = index[idx];
+  try { if (fs.existsSync(fil.filePath)) fs.unlinkSync(fil.filePath); } catch {}
+  index.splice(idx, 1);
+  writeJSON(ECW_INDEX_FILE, index);
+  res.json({ ok: true });
 });
 
 app.delete('/api/kunder/:id', authMiddleware, (req, res) => {
@@ -298,6 +403,8 @@ app.post('/api/convert-step', authMiddleware, (req, res) => {
 app.use('/artikel-bilder', express.static(path.join(__dirname, 'artikel-bilder')));
 
 // --- Static web app ---
+// Lokalt (utan nginx som strippar prefixet) serveras bygget även under /UterumLager
+app.use('/UterumLager', express.static(path.join(__dirname, 'dist')));
 app.use(express.static(path.join(__dirname, 'dist')));
 app.get(/(.*)/, (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
@@ -403,7 +510,7 @@ function pushMissatSamtal(fran, tillUsername) {
   const payload = JSON.stringify({
     title: '📞 Missat samtal',
     body: `${fran.namn} försökte ringa dig`,
-    url: '/',
+    url: '/UterumLager/',
   });
   webpush.sendNotification(sub, payload).catch(() => {
     const subs2 = readJSON(PUSH_SUBS_FILE, {});
@@ -421,7 +528,7 @@ function pushChatNotification(message, senderUsername) {
     const payload = JSON.stringify({
       title: `💬 ${message.user}`,
       body: message.text,
-      url: '/',
+      url: '/UterumLager/',
     });
     webpush.sendNotification(sub, payload).catch(() => {
       // Ta bort ogiltiga prenumerationer
