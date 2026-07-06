@@ -8,34 +8,7 @@ const crypto = require('crypto');
 const webpush = require('web-push');
 
 const app = express();
-app.set('trust proxy', 1);
 app.use(express.json({ limit: '20mb' }));
-
-// Intern endpoint BEFORE redirect middleware — anropas av ASE60 server-till-server via localhost
-// Placeras här så att HTTP-anrop från localhost inte omdirigeras till HTTPS
-const _ECW_DIR_EARLY = path.join(__dirname, 'data', 'ecw');
-const _ECW_INDEX_EARLY = path.join(__dirname, 'data', 'ecw.json');
-const _readJSONEarly = (f, fb) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return fb; } };
-const _writeJSONEarly = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
-app.post('/api/ecw-filer/intern', (req, res) => {
-  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
-  const { projectId, projectName, filename, ecwBase64 } = req.body;
-  if (!projectId || !ecwBase64) return res.status(400).json({ error: 'Saknar data' });
-  if (!fs.existsSync(_ECW_DIR_EARLY)) fs.mkdirSync(_ECW_DIR_EARLY, { recursive: true });
-  const safeId = String(projectId).replace(/[^a-z0-9_-]/gi, '_');
-  const projDir = path.join(_ECW_DIR_EARLY, safeId);
-  if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
-  const ts = Date.now();
-  const safeFilename = String(filename || 'CNCDATA.ECW').replace(/[^a-z0-9._-]/gi, '_');
-  const filePath = path.join(projDir, `${ts}_${safeFilename}`);
-  fs.writeFileSync(filePath, Buffer.from(ecwBase64, 'base64'));
-  if (!fs.existsSync(_ECW_INDEX_EARLY)) _writeJSONEarly(_ECW_INDEX_EARLY, []);
-  const index = _readJSONEarly(_ECW_INDEX_EARLY, []);
-  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
-  if (index.length > 500) index.splice(0, index.length - 500);
-  _writeJSONEarly(_ECW_INDEX_EARLY, index);
-  res.json({ ok: true });
-});
 
 // Redirect HTTP → HTTPS (only when HTTPS server is running)
 app.use((req, res, next) => {
@@ -63,6 +36,11 @@ const VAPID_FILE = path.join(DATA_DIR, 'vapid.json');
 const PUSH_SUBS_FILE = path.join(DATA_DIR, 'push_subs.json');
 const CHANGES_FILE = path.join(DATA_DIR, 'changes.json');
 const KUNDER_FILE = path.join(DATA_DIR, 'kunder.json');
+const ECW_RUNS_FILE = path.join(DATA_DIR, 'ecw_runs.json');
+
+// Maskinnyckel för integrationen från ase60-generatorn (ECW-exporter).
+// Kan bytas via miljövariabeln ECW_API_KEY — måste då matcha ase60-servern.
+const ECW_API_KEY = process.env.ECW_API_KEY || 'ase60-lager-2026';
 
 // VAPID keys — generate once, reuse
 let vapidKeys;
@@ -93,6 +71,7 @@ if (!fs.existsSync(MESSAGES_FILE)) writeJSON(MESSAGES_FILE, []);
 if (!fs.existsSync(TOKENS_FILE)) writeJSON(TOKENS_FILE, {});
 if (!fs.existsSync(CHANGES_FILE)) writeJSON(CHANGES_FILE, []);
 if (!fs.existsSync(KUNDER_FILE)) writeJSON(KUNDER_FILE, []);
+if (!fs.existsSync(ECW_RUNS_FILE)) writeJSON(ECW_RUNS_FILE, []);
 
 // Auth middleware — accepts header OR query param (for iframe/PDF)
 const authMiddleware = (req, res, next) => {
@@ -235,68 +214,24 @@ app.get('/api/kunder', authMiddleware, (req, res) => {
 });
 
 app.post('/api/kunder', authMiddleware, (req, res) => {
-  const { namn, farg, ase60ProjectId, matt } = req.body;
+  const { namn } = req.body;
   if (!namn?.trim()) return res.status(400).json({ error: 'Namn krävs' });
   const kunder = readJSON(KUNDER_FILE, []);
-  const ny = {
-    id: Date.now().toString(),
-    namn: namn.trim(),
-    skapad: new Date().toISOString(),
-    skapadAv: req.user.namn,
-    farg: farg || '',
-    ase60ProjectId: ase60ProjectId || null,
-    matt: Array.isArray(matt) ? matt : [],
-  };
+  const ny = { id: Date.now().toString(), namn: namn.trim(), skapad: new Date().toISOString(), skapadAv: req.user.namn };
   kunder.push(ny);
   writeJSON(KUNDER_FILE, kunder);
   res.json(ny);
 });
 
-// Proxy ASE60 projects for linking to customers
-app.get('/api/ase60-projekt', authMiddleware, async (req, res) => {
-  try {
-    const r = await fetch('http://localhost:3017/api/projects');
-    const data = await r.json();
-    res.json(data.projects || []);
-  } catch {
-    res.json([]);
-  }
-});
-
-// --- ECW-FILER (läsa/ladda ner — autentiserade endpoints) ---
-const ECW_DIR = path.join(DATA_DIR, 'ecw');
-const ECW_INDEX_FILE = path.join(DATA_DIR, 'ecw.json');
-if (!fs.existsSync(ECW_DIR)) fs.mkdirSync(ECW_DIR, { recursive: true });
-if (!fs.existsSync(ECW_INDEX_FILE)) writeJSON(ECW_INDEX_FILE, []);
-
-// Lista ECW-filer för ett projekt (autentiserat)
-app.get('/api/ecw-filer/:ase60ProjectId', authMiddleware, (req, res) => {
-  const index = readJSON(ECW_INDEX_FILE, []);
-  const filer = index.filter(f => f.projectId === req.params.ase60ProjectId);
-  res.json(filer.map(f => ({ id: f.id, filename: f.filename, skapad: f.skapad, projectName: f.projectName })));
-});
-
-// Ladda ner en ECW-fil
-app.get('/api/ecw-filer/:ase60ProjectId/:id/ladda-ner', authMiddleware, (req, res) => {
-  const index = readJSON(ECW_INDEX_FILE, []);
-  const fil = index.find(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
-  if (!fil || !fs.existsSync(fil.filePath)) return res.status(404).json({ error: 'Fil hittades ej' });
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', `attachment; filename="${fil.filename}"`);
-  res.sendFile(path.resolve(fil.filePath));
-});
-
-// Ta bort en ECW-fil (admin only)
-app.delete('/api/ecw-filer/:ase60ProjectId/:id', authMiddleware, (req, res) => {
-  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
-  const index = readJSON(ECW_INDEX_FILE, []);
-  const idx = index.findIndex(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Fil hittades ej' });
-  const fil = index[idx];
-  try { if (fs.existsSync(fil.filePath)) fs.unlinkSync(fil.filePath); } catch {}
-  index.splice(idx, 1);
-  writeJSON(ECW_INDEX_FILE, index);
-  res.json({ ok: true });
+app.put('/api/kunder/:id', authMiddleware, (req, res) => {
+  const kunder = readJSON(KUNDER_FILE, []);
+  const idx = kunder.findIndex(k => k.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Kund hittades ej' });
+  const { material, klart } = req.body || {};
+  if (material !== undefined) kunder[idx].material = material;
+  if (klart !== undefined) kunder[idx].klart = klart;
+  writeJSON(KUNDER_FILE, kunder);
+  res.json(kunder[idx]);
 });
 
 app.delete('/api/kunder/:id', authMiddleware, (req, res) => {
@@ -305,6 +240,38 @@ app.delete('/api/kunder/:id', authMiddleware, (req, res) => {
   if (kvar.length === kunder.length) return res.status(404).json({ error: 'Kund hittades ej' });
   writeJSON(KUNDER_FILE, kvar);
   res.json({ ok: true });
+});
+
+// --- ECW-KÖRNINGAR (integration från ase60-generatorn) ---
+// POST kräver antingen maskinnyckel (x-api-key) eller inloggad användare.
+app.post('/api/ecw-runs', (req, res) => {
+  const key = req.headers['x-api-key'];
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const tokens = readJSON(TOKENS_FILE, {});
+  if (key !== ECW_API_KEY && !(token && tokens[token])) {
+    return res.status(401).json({ error: 'Ej behörig' });
+  }
+  const { projekt, comNo, filnamn, partier, kalla } = req.body || {};
+  if (!projekt?.trim()) return res.status(400).json({ error: 'projekt krävs' });
+  const runs = readJSON(ECW_RUNS_FILE, []);
+  const run = {
+    id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+    tid: new Date().toISOString(),
+    projekt: projekt.trim(),
+    comNo: comNo || '',
+    filnamn: filnamn || '',
+    partier: Array.isArray(partier) ? partier : [],
+    kalla: kalla || 'ase60-generator',
+  };
+  runs.push(run);
+  if (runs.length > 500) runs.splice(0, runs.length - 500);
+  writeJSON(ECW_RUNS_FILE, runs);
+  broadcast({ type: 'ecw-run', run });
+  res.json(run);
+});
+
+app.get('/api/ecw-runs', authMiddleware, (req, res) => {
+  res.json(readJSON(ECW_RUNS_FILE, []).slice(-200).reverse());
 });
 
 // --- CHAT ---
@@ -382,31 +349,8 @@ wss.on('connection', (ws, req) => {
         broadcast({ type: 'message', message });
         pushChatNotification(message, user.username);
       }
-      if (msg.type === 'ring-svar') {
-        broadcastExcept(ws, { type: 'ring-svar', svarade: user.namn, avatar: user.avatar || '😀' });
-      }
-      if (['webrtc-offer', 'webrtc-answer', 'webrtc-ice', 'webrtc-hangup'].includes(msg.type)) {
-        for (const [targetWs, targetUser] of clients) {
-          if (targetUser.namn === msg.to && targetWs.readyState === 1) {
-            targetWs.send(JSON.stringify({ ...msg, from: user.namn, fromAvatar: user.avatar || '😀' }));
-            break;
-          }
-        }
-      }
-      if (msg.type === 'ring') {
-        broadcastExcept(ws, { type: 'ring', fran: user.namn, avatar: user.avatar || '😀' });
-        // Push-notis till alla som inte är online
-        const subs = readJSON(PUSH_SUBS_FILE, {});
-        const onlineUsernames = new Set([...clients.keys()].map(c => clients.get(c).username));
-        Object.entries(subs).forEach(([username, sub]) => {
-          if (username === user.username) return;
-          if (onlineUsernames.has(username)) return;
-          webpush.sendNotification(sub, JSON.stringify({
-            title: `📞 ${user.namn} ringer!`,
-            body: 'Tryck för att öppna appen',
-            url: '/UterumLager/',
-          })).catch(() => {});
-        });
+      if (SAMTAL_TYPER.includes(msg.type)) {
+        relaySamtalsSignal(ws, user, msg);
       }
     } catch {}
   });
@@ -422,21 +366,65 @@ function broadcast(data) {
   clients.forEach((_, ws) => { if (ws.readyState === 1) ws.send(json); });
 }
 
-function broadcastExcept(exceptWs, data) {
-  const json = JSON.stringify(data);
-  clients.forEach((_, ws) => { if (ws !== exceptWs && ws.readyState === 1) ws.send(json); });
+// --- SAMTAL (WebRTC-signalering) ---
+const SAMTAL_TYPER = ['call-offer', 'call-answer', 'call-ice', 'call-decline', 'call-end'];
+
+function relaySamtalsSignal(avsandareWs, avsandare, msg) {
+  const fran = { username: avsandare.username, namn: avsandare.namn, avatar: avsandare.avatar || '😀' };
+  const json = JSON.stringify({ ...msg, from: fran });
+  let levererat = false;
+  clients.forEach((u, klientWs) => {
+    if (u.username === msg.to && klientWs !== avsandareWs && klientWs.readyState === 1) {
+      klientWs.send(json);
+      levererat = true;
+    }
+  });
+  // Om mottagaren svarar/avvisar i en flik: säg åt användarens övriga flikar att sluta ringa
+  if (msg.type === 'call-answer' || msg.type === 'call-decline') {
+    const taget = JSON.stringify({ type: 'call-taken' });
+    clients.forEach((u, klientWs) => {
+      if (u.username === avsandare.username && klientWs !== avsandareWs && klientWs.readyState === 1) {
+        klientWs.send(taget);
+      }
+    });
+  }
+  if (!levererat && msg.type === 'call-offer') {
+    if (avsandareWs.readyState === 1) {
+      avsandareWs.send(JSON.stringify({ type: 'call-unavailable', to: msg.to }));
+    }
+    pushMissatSamtal(fran, msg.to);
+  }
+}
+
+function pushMissatSamtal(fran, tillUsername) {
+  const subs = readJSON(PUSH_SUBS_FILE, {});
+  const sub = subs[tillUsername];
+  if (!sub) return;
+  const payload = JSON.stringify({
+    title: '📞 Missat samtal',
+    body: `${fran.namn} försökte ringa dig`,
+    url: '/',
+  });
+  webpush.sendNotification(sub, payload).catch(() => {
+    const subs2 = readJSON(PUSH_SUBS_FILE, {});
+    delete subs2[tillUsername];
+    writeJSON(PUSH_SUBS_FILE, subs2);
+  });
 }
 
 function pushChatNotification(message, senderUsername) {
   const subs = readJSON(PUSH_SUBS_FILE, {});
+  const onlineUsers = new Set([...clients.values()].map(u => u.username));
   Object.entries(subs).forEach(([username, sub]) => {
     if (username === senderUsername) return;
+    if (onlineUsers.has(username)) return; // redan i chatten, behöver ingen push
     const payload = JSON.stringify({
       title: `💬 ${message.user}`,
       body: message.text,
-      url: '/UterumLager/',
+      url: '/',
     });
     webpush.sendNotification(sub, payload).catch(() => {
+      // Ta bort ogiltiga prenumerationer
       const subs2 = readJSON(PUSH_SUBS_FILE, {});
       delete subs2[username];
       writeJSON(PUSH_SUBS_FILE, subs2);
@@ -445,14 +433,14 @@ function pushChatNotification(message, senderUsername) {
 }
 
 function broadcastOnline() {
-  const online = [...clients.values()].map(u => u.namn);
+  const setts = new Set();
+  const online = [];
+  clients.forEach(u => {
+    if (setts.has(u.username)) return;
+    setts.add(u.username);
+    online.push({ namn: u.namn, username: u.username, avatar: u.avatar || '😀' });
+  });
   broadcast({ type: 'online', users: online });
-}
-
-const distPath = path.join(__dirname, 'dist');
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-  app.use((req, res) => res.sendFile(path.join(distPath, 'index.html')));
 }
 
 const PORT = process.env.PORT || 3001;

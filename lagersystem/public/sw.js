@@ -1,6 +1,5 @@
-const CACHE = 'lagersystem-v2';
-const BASE = self.registration.scope.replace(/\/$/, '');
-const PRECACHE = [BASE + '/', BASE + '/manifest.json'];
+const CACHE = 'lagersystem-v1';
+const PRECACHE = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
@@ -14,9 +13,8 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  const url = e.request.url;
-  // Bypass API, WebSocket and localhost dev requests
-  if (url.includes('/api/') || url.includes('localhost:')) return;
+  // Bypass API and WebSocket requests
+  if (e.request.url.includes(':3001') || e.request.url.includes('/api/')) return;
   e.respondWith(
     fetch(e.request).catch(() => caches.match(e.request))
   );
@@ -28,8 +26,8 @@ self.addEventListener('push', e => {
   e.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: BASE + '/icon-192.png',
-      badge: BASE + '/icon-192.png',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
       data: { url },
       vibrate: [200, 100, 200],
     })
@@ -38,7 +36,7 @@ self.addEventListener('push', e => {
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const url = e.notification.data?.url || BASE + '/';
+  const url = e.notification.data?.url || '/';
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
       const existing = windowClients.find(c => c.url.includes(self.location.origin));

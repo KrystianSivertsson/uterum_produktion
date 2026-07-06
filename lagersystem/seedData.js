@@ -168,3 +168,12 @@ export const SEED_AWS70HI = [
   { id: '4007', namn: 'Glass support', artikel: '288163', antal: 0, minAntal: 5, kategori: 'Schueco AWS/ADS 70 HI', enhet: 'st', dimension: '' },
   { id: '4008', namn: 'Glazing bead clip', artikel: '203102', antal: 0, minAntal: 5, kategori: 'Schueco AWS/ADS 70 HI', enhet: 'st', dimension: '' },
 ];
+
+// === Trä balkar ===
+export const SEED_TRABALKAR = [
+  { id: '6001', namn: 'Träbalk 140x140', artikel: '', antal: 0, minAntal: 5, kategori: 'Trä balkar', enhet: 'st', dimension: '140x140 mm' },
+  { id: '6002', namn: 'Träbalk 225x56', artikel: '', antal: 0, minAntal: 5, kategori: 'Trä balkar', enhet: 'st', dimension: '225x56 mm' },
+  { id: '6003', namn: 'Träbalk 270x56', artikel: '', antal: 0, minAntal: 5, kategori: 'Trä balkar', enhet: 'st', dimension: '270x56 mm' },
+  { id: '6004', namn: 'Träbalk 140x225', artikel: '', antal: 0, minAntal: 5, kategori: 'Trä balkar', enhet: 'st', dimension: '140x225 mm' },
+  { id: '6005', namn: 'Träbalk 140x270', artikel: '', antal: 0, minAntal: 5, kategori: 'Trä balkar', enhet: 'st', dimension: '140x270 mm' },
+];

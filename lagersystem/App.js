@@ -5,13 +5,13 @@ import {
   useWindowDimensions, Animated
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SEED_PRODUKTER, SEED_AWS70HI, SEED_AOC50 } from './seedData';
+import { SEED_PRODUKTER, SEED_AWS70HI, SEED_AOC50, SEED_TRABALKAR } from './seedData';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { utils, write } from 'xlsx';
 
 const API = typeof window !== 'undefined'
-  ? `${window.location.origin}/UterumLager`
+  ? window.location.origin
   : 'http://localhost:3001';
 
 function urlBase64ToUint8Array(base64String) {
@@ -23,7 +23,7 @@ function urlBase64ToUint8Array(base64String) {
 const STORAGE_KEY = 'lagersystem_produkter';
 const TOKEN_KEY = 'lagersystem_token';
 const TEMA_KEY = 'lagersystem_tema';
-const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Osorterat'];
+const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Trä balkar', 'Osorterat'];
 const FORINSTALLDA_FARGER = ['Svart/RAL9005', 'Vit/NCS-0502-Y', 'Antracitgrå/RAL7016'];
 const RITNINGAR = [
   { id: 'ase60', label: 'ASE 60 Ritningar', fil: 'ritningar_ase60.pdf' },
@@ -32,19 +32,6 @@ const RITNINGAR = [
 ];
 
 const TemaContext = React.createContext(null);
-
-function fargTillCSS(farg) {
-  if (!farg) return '#888';
-  const f = farg.toLowerCase();
-  if (f.includes('9005') || f.includes('svart') || f.includes('black')) return '#141414';
-  if (f.includes('7016') || f.includes('antracit') || f.includes('anthracit')) return '#3d4045';
-  if (f.includes('7015') || f.includes('skiffergrå') || f.includes('skiffer')) return '#4f5358';
-  if (f.includes('9010') || f.includes('vit') || f.includes('white') || f.includes('0502')) return '#f5f3ea';
-  if (f.includes('7021') || f.includes('svartgrå') || f.includes('black grey')) return '#2b2d2f';
-  if (f.includes('7035') || f.includes('ljusgrå') || f.includes('light grey')) return '#c8cbc4';
-  if (f.includes('8014') || f.includes('brun') || f.includes('brown')) return '#5a3e28';
-  return '#888';
-}
 
 const LJUST = {
   bg: '#f0f2f5', header: '#ffffff', headerBorder: '#e0e0e0',
@@ -128,80 +115,6 @@ const ls = StyleSheet.create({
   knapp: { backgroundColor: '#2563eb', borderRadius: 8, padding: 14, width: '100%', alignItems: 'center' },
   knappText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
-
-// ─── Alufräs (ECW-filer från ASE60) ──────────────────────────────────────────
-function AlufrasFlik({ ase60ProjectId, token, API, c, roll }) {
-  const [filer, setFiler] = useState([]);
-  const [laddar, setLaddar] = useState(true);
-
-  const laddaFiler = () => {
-    if (!ase60ProjectId || !token) { setLaddar(false); return; }
-    fetch(`${API}/api/ecw-filer/${encodeURIComponent(ase60ProjectId)}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(data => { setFiler(Array.isArray(data) ? data : []); setLaddar(false); })
-      .catch(() => setLaddar(false));
-  };
-
-  useEffect(() => { laddaFiler(); }, [ase60ProjectId]);
-
-  const laddaNer = (fil) => {
-    const url = `${API}/api/ecw-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}/ladda-ner?token=${token}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fil.filename;
-    a.click();
-  };
-
-  const taBort = async (fil) => {
-    if (!window.confirm(`Ta bort "${fil.filename}"?`)) return;
-    await fetch(`${API}/api/ecw-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    laddaFiler();
-  };
-
-  if (laddar) return (
-    <View style={{ padding: 32, alignItems: 'center' }}>
-      <Text style={{ color: c.textMuted }}>Hämtar ECW-filer...</Text>
-    </View>
-  );
-
-  if (filer.length === 0) return (
-    <View style={{ padding: 32, alignItems: 'center' }}>
-      <Text style={{ color: c.textMuted, fontSize: 15, textAlign: 'center' }}>
-        Inga ECW-filer ännu.{'\n'}Exportera från ASE60 och filen dyker upp här automatiskt.
-      </Text>
-    </View>
-  );
-
-  return (
-    <View>
-      {filer.slice().reverse().map(fil => (
-        <View
-          key={fil.id}
-          style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 12,
-            padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <Text style={{ fontSize: 22 }}>📄</Text>
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => laddaNer(fil)}>
-            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{fil.filename}</Text>
-            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
-              {new Date(fil.skapad).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => laddaNer(fil)}>
-            <Text style={{ color: '#2563eb', fontWeight: '600', fontSize: 13 }}>⬇ Ladda ner</Text>
-          </TouchableOpacity>
-          {roll === 'admin' && (
-            <TouchableOpacity onPress={() => taBort(fil)}>
-              <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 13 }}>🗑 Ta bort</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ))}
-    </View>
-  );
-}
 
 // ─── User management ─────────────────────────────────────────────────────────
 function AnvandarHantering({ token, onStang }) {
@@ -491,10 +404,11 @@ const pm = StyleSheet.create({
 });
 
 // ─── Chat panel ───────────────────────────────────────────────────────────────
-function ChatPanel({ user, onStang, meddelanden, online, wsRef, onRing }) {
+function ChatPanel({ user, onStang, meddelanden, online, wsRef, onRing, samtalAktivt }) {
   const { c } = React.useContext(TemaContext) || { c: LJUST };
   const [text, setText] = useState('');
   const listRef = useRef(null);
+  const onlineAndra = (online || []).filter(o => o && typeof o === 'object' && o.username !== user.username);
 
   useEffect(() => {
     if (listRef.current) setTimeout(() => listRef.current?.scrollToEnd?.({ animated: true }), 50);
@@ -515,15 +429,35 @@ function ChatPanel({ user, onStang, meddelanden, online, wsRef, onRing }) {
   return (
     <View style={[cp.panel, { backgroundColor: c.modal, borderColor: c.kortBorder }]}>
       <View style={cp.header}>
-        <View style={{ flex: 1 }}>
+        <View>
           <Text style={cp.rubrik}>💬 Chat</Text>
-          {online.length > 0 && <Text style={cp.online}>Online: {online.join(', ')}</Text>}
+          <Text style={cp.online}>
+            {onlineAndra.length > 0 ? `${onlineAndra.length + 1} online` : 'Bara du är online'}
+          </Text>
         </View>
-        <TouchableOpacity onPress={onRing} style={{ marginRight: 12, padding: 4 }}>
-          <Text style={{ fontSize: 20 }}>📞</Text>
-        </TouchableOpacity>
         <TouchableOpacity onPress={onStang}><Text style={cp.stang}>✕</Text></TouchableOpacity>
       </View>
+      {onlineAndra.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={cp.onlineRad}
+          contentContainerStyle={cp.onlineRadInnehall}
+        >
+          {onlineAndra.map(u => (
+            <TouchableOpacity
+              key={u.username}
+              style={[cp.onlineChip, samtalAktivt && { opacity: 0.5 }]}
+              onPress={() => onRing?.(u)}
+              disabled={samtalAktivt}
+            >
+              <Text style={cp.onlineAvatar}>{u.avatar || '😀'}</Text>
+              <Text style={cp.onlineNamn} numberOfLines={1}>{u.namn}</Text>
+              <Text style={cp.onlineRing}>📞</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
       <ScrollView ref={listRef} style={[cp.lista, { backgroundColor: c.bg }]} contentContainerStyle={{ padding: 12 }}>
         {meddelanden.map(m => {
           const arJag = m.username === user.username;
@@ -566,6 +500,16 @@ const cp = StyleSheet.create({
   rubrik: { color: '#fff', fontWeight: '700', fontSize: 15 },
   online: { color: '#7dd3fc', fontSize: 11, marginTop: 2 },
   stang: { color: '#fff', fontSize: 18 },
+  onlineRad: { backgroundColor: '#141c2e', flexGrow: 0 },
+  onlineRadInnehall: { gap: 8, paddingHorizontal: 10, paddingVertical: 8, alignItems: 'center' },
+  onlineChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#2a3448', borderRadius: 16,
+    paddingVertical: 5, paddingHorizontal: 10,
+  },
+  onlineAvatar: { fontSize: 15 },
+  onlineNamn: { color: '#fff', fontSize: 12, fontWeight: '600', maxWidth: 90 },
+  onlineRing: { fontSize: 13 },
   lista: { flex: 1, backgroundColor: '#f8f9fa' },
   bubblaWrap: { marginBottom: 10, alignItems: 'flex-start' },
   bubblaWrapJag: { alignItems: 'flex-end' },
@@ -648,6 +592,166 @@ const cb = StyleSheet.create({
   },
   tooltipNamn: { color: '#7dd3fc', fontSize: 11, fontWeight: '700', marginBottom: 2 },
   tooltipText: { color: '#e0e0e0', fontSize: 12 },
+});
+
+// ─── Samtal (Messenger-stil) ──────────────────────────────────────────────────
+function SamtalTimer({ start }) {
+  const [, tvinga] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tvinga(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const sek = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  const mm = Math.floor(sek / 60).toString().padStart(2, '0');
+  const ss = (sek % 60).toString().padStart(2, '0');
+  return <Text style={so.timer}>{mm}:{ss}</Text>;
+}
+
+function SamtalOverlay({ samtal, onSvara, onAvvisa, onLaggPa, onMute }) {
+  const puls = useRef(new Animated.Value(1)).current;
+  const ringer = samtal.fas !== 'pågår';
+
+  useEffect(() => {
+    if (!ringer) { puls.setValue(1); return; }
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(puls, { toValue: 1.12, duration: 700, useNativeDriver: true }),
+      Animated.timing(puls, { toValue: 1, duration: 700, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [ringer]);
+
+  // Pågående samtal: kompakt flytande panel högst upp
+  if (samtal.fas === 'pågår') {
+    return (
+      <View style={so.aktivWrap} pointerEvents="box-none">
+        <View style={so.aktivPanel}>
+          <Text style={so.aktivAvatar}>{samtal.motpart.avatar || '😀'}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={so.aktivNamn} numberOfLines={1}>{samtal.motpart.namn}</Text>
+            <SamtalTimer start={samtal.start} />
+          </View>
+          <TouchableOpacity style={[so.rundKnappLiten, samtal.mutad ? so.knappMutad : so.knappNeutral]} onPress={onMute}>
+            <Text style={so.knappIkonLiten}>{samtal.mutad ? '🔇' : '🎙'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[so.rundKnappLiten, so.knappRod]} onPress={onLaggPa}>
+            <Text style={so.knappIkonLiten}>📞</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Ringer (in/ut): fullskärmsoverlay
+  const inkommande = samtal.fas === 'inkommande';
+  return (
+    <View style={so.overlay}>
+      <View style={so.mitt}>
+        <Animated.View style={[so.avatarRing, { transform: [{ scale: puls }] }]}>
+          <Text style={so.storAvatar}>{samtal.motpart.avatar || '😀'}</Text>
+        </Animated.View>
+        <Text style={so.namn}>{samtal.motpart.namn}</Text>
+        <Text style={so.status}>{inkommande ? 'Inkommande samtal…' : 'Ringer…'}</Text>
+      </View>
+      <View style={so.knappRad}>
+        {inkommande ? (
+          <>
+            <View style={so.knappKolumn}>
+              <TouchableOpacity style={[so.rundKnapp, so.knappRod]} onPress={onAvvisa}>
+                <Text style={so.knappIkon}>📞</Text>
+              </TouchableOpacity>
+              <Text style={so.knappEtikett}>Avvisa</Text>
+            </View>
+            <View style={so.knappKolumn}>
+              <TouchableOpacity style={[so.rundKnapp, so.knappGron]} onPress={onSvara}>
+                <Text style={so.knappIkon}>📞</Text>
+              </TouchableOpacity>
+              <Text style={so.knappEtikett}>Svara</Text>
+            </View>
+          </>
+        ) : (
+          <View style={so.knappKolumn}>
+            <TouchableOpacity style={[so.rundKnapp, so.knappRod]} onPress={onLaggPa}>
+              <Text style={so.knappIkon}>📞</Text>
+            </TouchableOpacity>
+            <Text style={so.knappEtikett}>Avbryt</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const so = StyleSheet.create({
+  overlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(15,17,23,0.94)', zIndex: 500,
+    justifyContent: 'space-between', alignItems: 'center',
+    paddingTop: 90, paddingBottom: 70,
+  },
+  mitt: { alignItems: 'center' },
+  avatarRing: {
+    width: 120, height: 120, borderRadius: 60,
+    backgroundColor: '#1a2235', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 3, borderColor: '#2563eb', marginBottom: 20,
+  },
+  storAvatar: { fontSize: 56 },
+  namn: { color: '#fff', fontSize: 24, fontWeight: '700', marginBottom: 6 },
+  status: { color: '#7dd3fc', fontSize: 15 },
+  knappRad: { flexDirection: 'row', gap: 70 },
+  knappKolumn: { alignItems: 'center', gap: 8 },
+  rundKnapp: {
+    width: 68, height: 68, borderRadius: 34,
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 10, elevation: 8,
+  },
+  knappGron: { backgroundColor: '#22c55e' },
+  knappRod: { backgroundColor: '#ef4444', transform: [{ rotate: '135deg' }] },
+  knappIkon: { fontSize: 28 },
+  knappEtikett: { color: '#ccc', fontSize: 13 },
+  aktivWrap: {
+    position: 'absolute', top: 70, left: 0, right: 0,
+    alignItems: 'center', zIndex: 400,
+  },
+  aktivPanel: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#1a2235', borderRadius: 30,
+    paddingVertical: 8, paddingHorizontal: 14,
+    width: 300, maxWidth: '92%',
+    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 14, elevation: 12,
+    borderWidth: 1.5, borderColor: '#2563eb',
+  },
+  aktivAvatar: { fontSize: 26 },
+  aktivNamn: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  timer: { color: '#7dd3fc', fontSize: 12, fontVariant: ['tabular-nums'] },
+  rundKnappLiten: {
+    width: 40, height: 40, borderRadius: 20,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  knappNeutral: { backgroundColor: '#2a3448' },
+  knappMutad: { backgroundColor: '#7a2a2a' },
+  knappIkonLiten: { fontSize: 18 },
+});
+
+function SamtalToast({ text }) {
+  if (!text) return null;
+  return (
+    <View style={st.wrap} pointerEvents="none">
+      <View style={st.toast}>
+        <Text style={st.text}>📞 {text}</Text>
+      </View>
+    </View>
+  );
+}
+
+const st = StyleSheet.create({
+  wrap: { position: 'absolute', top: 70, left: 0, right: 0, alignItems: 'center', zIndex: 600 },
+  toast: {
+    backgroundColor: '#1a2235', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 18,
+    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, elevation: 10,
+    borderWidth: 1, borderColor: '#2a3448', maxWidth: '90%',
+  },
+  text: { color: '#fff', fontSize: 14 },
 });
 
 // ─── Produkt detaljsida ───────────────────────────────────────────────────────
@@ -784,9 +888,7 @@ export default function App() {
   const [aktivKundFlik, setAktivKundFlik] = useState('Träfräs');
   const [visaLaggTillKund, setVisaLaggTillKund] = useState(false);
   const [nyKundNamn, setNyKundNamn] = useState('');
-  const [ase60Projekt, setAse60Projekt] = useState([]);
-  const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
-  const [sokAse60, setSokAse60] = useState('');
+  const [kundMaterialSok, setKundMaterialSok] = useState('');
   const [visaProfil, setVisaProfil] = useState(false);
   const [visaSidebar, setVisaSidebar] = useState(false);
   const [sorteringsKolumn, setSorteringsKolumn] = useState(null);
@@ -803,184 +905,20 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [chatBubble, setChatBubble] = useState(null);
   const [olastaAntal, setOlastaAntal] = useState(0);
-  const [visaNotisbanner, setVisaNotisbannerState] = useState(false);
-  const [inkommandeSamtal, setInkommandeSamtal] = useState(null); // { fran, avatar }
-  const [utgaendeSamtal, setUtgaendeSamtal] = useState(null);    // 'ringer' | { svarade, avatar }
-  const [aktivtSamtal, setAktivtSamtal] = useState(null);        // { partner, avatar } när röstsamtal pågår
-  const [mikrofon, setMikrofon] = useState(true); // ej mutad
-  const ringIntervalRef = useRef(null);
   const wsRef = useRef(null);
   const visaChatRef = useRef(false);
+  // ─── Samtal (WebRTC) ───
+  const [samtal, setSamtal] = useState(null); // { fas: 'utgående'|'inkommande'|'pågår', motpart, mutad, start }
+  const [samtalInfo, setSamtalInfo] = useState(null);
+  const samtalRef = useRef(null);
   const pcRef = useRef(null);
-  const lokalStreamRef = useRef(null);
-  const samtalspartnerRef = useRef(null); // namn på den vi ringer/pratar med
-  // Delad AudioContext — skapas vid första klick/login så Chrome tillåter ljud utan gesture
-  const audioCtxRef = useRef(null);
-
-  const getAudioCtx = () => {
-    if (Platform.OS !== 'web') return null;
-    try {
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      if (audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume().catch(() => {});
-      }
-      return audioCtxRef.current;
-    } catch { return null; }
-  };
-
-  const spelaBjudljud = () => {
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    try {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
-    } catch {}
-  };
-
-  const spelaRing = () => {
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    try {
-      const dur = 1.2;
-      [480, 440].forEach(freq => {
-        const osc = ctx.createOscillator();
-        const gainNode = ctx.createGain();
-        const lfo = ctx.createOscillator();
-        const lfoGain = ctx.createGain();
-        lfo.frequency.value = 16;
-        lfoGain.gain.value = 0.25;
-        lfo.connect(lfoGain);
-        lfoGain.connect(gainNode.gain);
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gainNode.gain.setValueAtTime(0.18, ctx.currentTime);
-        osc.connect(gainNode);
-        gainNode.connect(ctx.destination);
-        lfo.start(ctx.currentTime);
-        osc.start(ctx.currentTime);
-        lfo.stop(ctx.currentTime + dur);
-        osc.stop(ctx.currentTime + dur);
-      });
-    } catch {}
-  };
-
-  const spelaAnsvarsljud = () => {
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    try {
-      [523, 659, 784].forEach((freq, i) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        const t = ctx.currentTime + i * 0.12;
-        gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(0.25, t + 0.04);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-        osc.start(t);
-        osc.stop(t + 0.25);
-      });
-    } catch {}
-  };
-
-  const avslutaSamtal = (skickaHangup = true) => {
-    if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
-    if (lokalStreamRef.current) {
-      lokalStreamRef.current.getTracks().forEach(t => t.stop());
-      lokalStreamRef.current = null;
-    }
-    if (skickaHangup && wsRef.current?.readyState === 1 && samtalspartnerRef.current) {
-      wsRef.current.send(JSON.stringify({ type: 'webrtc-hangup', to: samtalspartnerRef.current }));
-    }
-    samtalspartnerRef.current = null;
-    setAktivtSamtal(null);
-    setMikrofon(true);
-  };
-
-  const skapaPC = (partnerNamn, partnerAvatar) => {
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-      ]
-    });
-    pc.onicecandidate = e => {
-      if (e.candidate && wsRef.current?.readyState === 1) {
-        wsRef.current.send(JSON.stringify({ type: 'webrtc-ice', to: samtalspartnerRef.current, candidate: e.candidate }));
-      }
-    };
-    pc.ontrack = e => {
-      try {
-        const audio = new window.Audio();
-        audio.srcObject = e.streams[0];
-        audio.play().catch(() => {});
-      } catch {}
-    };
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'connected') {
-        setAktivtSamtal({ partner: partnerNamn, avatar: partnerAvatar });
-        setUtgaendeSamtal(null);
-      }
-      if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
-        avslutaSamtal(false);
-      }
-    };
-    return pc;
-  };
-
-  const initiateCall = async (partnerNamn, partnerAvatar) => {
-    try {
-      samtalspartnerRef.current = partnerNamn;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      lokalStreamRef.current = stream;
-      const pc = skapaPC(partnerNamn, partnerAvatar);
-      pcRef.current = pc;
-      stream.getTracks().forEach(t => pc.addTrack(t, stream));
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      wsRef.current.send(JSON.stringify({ type: 'webrtc-offer', to: partnerNamn, sdp: offer }));
-    } catch (err) {
-      console.error('WebRTC initiate error:', err);
-    }
-  };
-
-  const answerCall = async (partnerNamn, partnerAvatar, offerSdp) => {
-    try {
-      samtalspartnerRef.current = partnerNamn;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      lokalStreamRef.current = stream;
-      const pc = skapaPC(partnerNamn, partnerAvatar);
-      pcRef.current = pc;
-      stream.getTracks().forEach(t => pc.addTrack(t, stream));
-      await pc.setRemoteDescription(offerSdp);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      wsRef.current.send(JSON.stringify({ type: 'webrtc-answer', to: partnerNamn, sdp: answer }));
-    } catch (err) {
-      console.error('WebRTC answer error:', err);
-    }
-  };
-
-  const startaRingjud = () => {
-    spelaRing();
-    ringIntervalRef.current = setInterval(spelaRing, 3500);
-  };
-
-  const stoppRingjud = () => {
-    if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null; }
-  };
+  const lokalStromRef = useRef(null);
+  const fjarrAudioRef = useRef(null);
+  const ringsignalRef = useRef(null);
+  const samtalTimeoutRef = useRef(null);
+  const samtalInfoTimerRef = useRef(null);
+  const inkommandeOfferRef = useRef(null);
+  const vantandeIceRef = useRef([]);
   const { width } = useWindowDimensions();
   const mobil = width < 768;
 
@@ -990,69 +928,320 @@ export default function App() {
     if (!token || Platform.OS !== 'web') return;
     fetch(`${API}/api/messages`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json()).then(setMeddelanden).catch(() => {});
-    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsBase = window.location.pathname.startsWith('/UterumLager') ? '/UterumLager/ws' : '/ws';
-    const ws = new WebSocket(`${wsProto}//${window.location.host}${wsBase}?token=${token}`);
-    wsRef.current = ws;
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      if (data.type === 'message') {
-        setMeddelanden(prev => [...prev, data.message]);
-        spelaBjudljud();
-        if (!visaChatRef.current) {
-          setChatBubble(data.message);
-          setOlastaAntal(n => n + 1);
+    let avslutad = false;
+    let atertimer = null;
+    const anslut = () => {
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${wsProto}//${window.location.host}/ws?token=${token}`);
+      wsRef.current = ws;
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'message') {
+          setMeddelanden(prev => [...prev, data.message]);
+          if (!visaChatRef.current) {
+            setChatBubble(data.message);
+            setOlastaAntal(n => n + 1);
+          }
         }
-      }
-      if (data.type === 'ring') {
-        setInkommandeSamtal({ fran: data.fran, avatar: data.avatar });
-        startaRingjud();
-        setTimeout(() => { setInkommandeSamtal(null); stoppRingjud(); }, 30000);
-      }
-      if (data.type === 'ring-svar') {
-        setUtgaendeSamtal({ svarade: data.svarade, avatar: data.avatar });
-        stoppRingjud();
-        spelaAnsvarsljud();
-        // Starta WebRTC som uppringare
-        initiateCall(data.svarade, data.avatar);
-      }
-      if (data.type === 'webrtc-offer') {
-        // Vi är mottagaren — svara på erbjudandet
-        answerCall(data.from, data.fromAvatar || '😀', data.sdp);
-      }
-      if (data.type === 'webrtc-answer') {
-        pcRef.current?.setRemoteDescription(data.sdp).catch(console.error);
-      }
-      if (data.type === 'webrtc-ice') {
-        if (pcRef.current && data.candidate) {
-          pcRef.current.addIceCandidate(data.candidate).catch(() => {});
-        }
-      }
-      if (data.type === 'webrtc-hangup') {
-        avslutaSamtal(false);
-      }
-      if (data.type === 'online') setOnlineUsers(data.users);
+        if (data.type === 'online') setOnlineUsers(data.users);
+        if (typeof data.type === 'string' && data.type.startsWith('call-')) hanteraSamtalsSignal(data);
+      };
+      ws.onclose = () => {
+        if (avslutad) return;
+        setOnlineUsers([]);
+        atertimer = setTimeout(anslut, 3000);
+      };
     };
-    return () => ws.close();
+    anslut();
+    return () => { avslutad = true; clearTimeout(atertimer); wsRef.current?.close(); };
   }, [token]);
 
   useEffect(() => {
     if (visaChat) { setChatBubble(null); setOlastaAntal(0); }
   }, [visaChat]);
 
+  // ─── Samtalslogik ───
+  const sattSamtal = (nytt) => { samtalRef.current = nytt; setSamtal(nytt); };
+
+  const visaSamtalInfo = (text) => {
+    clearTimeout(samtalInfoTimerRef.current);
+    setSamtalInfo(text);
+    if (text) samtalInfoTimerRef.current = setTimeout(() => setSamtalInfo(null), 4000);
+  };
+
+  const skickaSignal = (obj) => {
+    if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify(obj));
+  };
+
+  const startaRingsignal = (typ) => {
+    stoppaRingsignal();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const tona = (freq, start, langd, volym) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(volym, start + 0.02);
+      gain.gain.setValueAtTime(volym, Math.max(start + 0.02, start + langd - 0.05));
+      gain.gain.linearRampToValueAtTime(0, start + langd);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + langd);
+    };
+    ringsignalRef.current = { ctx, timer: null };
+    const spela = () => {
+      const nu = ctx.currentTime + 0.05;
+      if (typ === 'inkommande') {
+        // Messenger-lik melodisk ringsignal
+        tona(880, nu, 0.16, 0.25);
+        tona(1108, nu + 0.18, 0.16, 0.25);
+        tona(880, nu + 0.36, 0.16, 0.25);
+        tona(1318, nu + 0.54, 0.34, 0.28);
+        if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
+      } else {
+        // Svensk rington: 425 Hz, 1 s ton
+        tona(425, nu, 1.0, 0.12);
+      }
+      if (ringsignalRef.current) {
+        ringsignalRef.current.timer = setTimeout(spela, typ === 'inkommande' ? 2200 : 5000);
+      }
+    };
+    spela();
+  };
+
+  const stoppaRingsignal = () => {
+    const r = ringsignalRef.current;
+    if (!r) return;
+    ringsignalRef.current = null;
+    clearTimeout(r.timer);
+    r.ctx.close().catch(() => {});
+    if (navigator.vibrate) navigator.vibrate(0);
+  };
+
+  // Systemnotis för inkommande samtal när fliken ligger i bakgrunden
+  const visaSamtalsNotis = async (fran) => {
+    try {
+      if (typeof document === 'undefined' || !document.hidden) return;
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      if (!('serviceWorker' in navigator)) return;
+      const reg = await navigator.serviceWorker.ready;
+      reg.showNotification(`📞 ${fran.namn} ringer dig`, {
+        body: 'Klicka för att öppna och svara',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: 'inkommande-samtal',
+        vibrate: [300, 150, 300],
+        data: { url: '/' },
+      });
+    } catch {}
+  };
+
+  const stangSamtalsNotis = async () => {
+    try {
+      if (!('serviceWorker' in navigator)) return;
+      const reg = await navigator.serviceWorker.ready;
+      (await reg.getNotifications({ tag: 'inkommande-samtal' })).forEach(n => n.close());
+    } catch {}
+  };
+
+  const stadaUppSamtal = (infoText) => {
+    stoppaRingsignal();
+    stangSamtalsNotis();
+    clearTimeout(samtalTimeoutRef.current);
+    if (pcRef.current) { try { pcRef.current.close(); } catch {} pcRef.current = null; }
+    lokalStromRef.current?.getTracks().forEach(t => t.stop());
+    lokalStromRef.current = null;
+    if (fjarrAudioRef.current) fjarrAudioRef.current.srcObject = null;
+    inkommandeOfferRef.current = null;
+    vantandeIceRef.current = [];
+    sattSamtal(null);
+    if (infoText) visaSamtalInfo(infoText);
+  };
+
+  const skapaPeer = (motpartUsername) => {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    pc.onicecandidate = (e) => {
+      if (e.candidate) skickaSignal({ type: 'call-ice', to: motpartUsername, candidate: e.candidate });
+    };
+    pc.ontrack = (e) => {
+      if (!fjarrAudioRef.current) {
+        fjarrAudioRef.current = new window.Audio();
+        fjarrAudioRef.current.autoplay = true;
+      }
+      fjarrAudioRef.current.srcObject = e.streams[0];
+      fjarrAudioRef.current.play().catch(() => {});
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') stadaUppSamtal('Samtalet bröts');
+    };
+    pcRef.current = pc;
+    return pc;
+  };
+
+  const hamtaMikrofon = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      visaSamtalInfo('Samtal kräver HTTPS och mikrofonstöd');
+      return null;
+    }
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      visaSamtalInfo('Tillåt mikrofonen för att kunna ringa');
+      return null;
+    }
+  };
+
+  const ringUpp = async (motpart) => {
+    if (samtalRef.current || motpart.username === inloggad?.username) return;
+    const strom = await hamtaMikrofon();
+    if (!strom) return;
+    lokalStromRef.current = strom;
+    sattSamtal({ fas: 'utgående', motpart, mutad: false, start: null });
+    const pc = skapaPeer(motpart.username);
+    strom.getTracks().forEach(t => pc.addTrack(t, strom));
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+    } catch {
+      stadaUppSamtal('Kunde inte starta samtalet');
+      return;
+    }
+    skickaSignal({ type: 'call-offer', to: motpart.username, sdp: pc.localDescription });
+    startaRingsignal('utgående');
+    samtalTimeoutRef.current = setTimeout(() => {
+      skickaSignal({ type: 'call-end', to: motpart.username });
+      stadaUppSamtal(`${motpart.namn} svarade inte`);
+    }, 30000);
+  };
+
+  const svaraSamtal = async () => {
+    const s = samtalRef.current;
+    if (!s || s.fas !== 'inkommande') return;
+    clearTimeout(samtalTimeoutRef.current);
+    stoppaRingsignal();
+    stangSamtalsNotis();
+    const strom = await hamtaMikrofon();
+    if (!strom) {
+      skickaSignal({ type: 'call-decline', to: s.motpart.username });
+      stadaUppSamtal(null);
+      return;
+    }
+    lokalStromRef.current = strom;
+    const pc = skapaPeer(s.motpart.username);
+    strom.getTracks().forEach(t => pc.addTrack(t, strom));
+    try {
+      await pc.setRemoteDescription(inkommandeOfferRef.current);
+      for (const kandidat of vantandeIceRef.current) {
+        await pc.addIceCandidate(kandidat).catch(() => {});
+      }
+      vantandeIceRef.current = [];
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+    } catch {
+      skickaSignal({ type: 'call-end', to: s.motpart.username });
+      stadaUppSamtal('Kunde inte koppla upp samtalet');
+      return;
+    }
+    skickaSignal({ type: 'call-answer', to: s.motpart.username, sdp: pc.localDescription });
+    sattSamtal({ ...s, fas: 'pågår', start: Date.now() });
+  };
+
+  const avvisaSamtal = () => {
+    const s = samtalRef.current;
+    if (!s || s.fas !== 'inkommande') return;
+    skickaSignal({ type: 'call-decline', to: s.motpart.username });
+    stadaUppSamtal(null);
+  };
+
+  const laggPaSamtal = () => {
+    const s = samtalRef.current;
+    if (!s) return;
+    skickaSignal({ type: 'call-end', to: s.motpart.username });
+    stadaUppSamtal(null);
+  };
+
+  const toggleMikrofon = () => {
+    const s = samtalRef.current;
+    const strom = lokalStromRef.current;
+    if (!s || !strom) return;
+    const nyMutad = !s.mutad;
+    strom.getAudioTracks().forEach(t => { t.enabled = !nyMutad; });
+    sattSamtal({ ...s, mutad: nyMutad });
+  };
+
+  const hanteraSamtalsSignal = async (data) => {
+    const s = samtalRef.current;
+    switch (data.type) {
+      case 'call-offer': {
+        if (s) { skickaSignal({ type: 'call-decline', to: data.from.username, reason: 'upptagen' }); return; }
+        inkommandeOfferRef.current = data.sdp;
+        vantandeIceRef.current = [];
+        sattSamtal({ fas: 'inkommande', motpart: data.from, mutad: false, start: null });
+        startaRingsignal('inkommande');
+        visaSamtalsNotis(data.from);
+        samtalTimeoutRef.current = setTimeout(() => {
+          skickaSignal({ type: 'call-decline', to: data.from.username });
+          stadaUppSamtal(null);
+        }, 30000);
+        break;
+      }
+      case 'call-answer': {
+        if (!s || s.fas !== 'utgående' || !pcRef.current) return;
+        clearTimeout(samtalTimeoutRef.current);
+        stoppaRingsignal();
+        try {
+          await pcRef.current.setRemoteDescription(data.sdp);
+          for (const kandidat of vantandeIceRef.current) {
+            await pcRef.current.addIceCandidate(kandidat).catch(() => {});
+          }
+          vantandeIceRef.current = [];
+        } catch {
+          skickaSignal({ type: 'call-end', to: s.motpart.username });
+          stadaUppSamtal('Kunde inte koppla upp samtalet');
+          return;
+        }
+        sattSamtal({ ...s, fas: 'pågår', start: Date.now() });
+        break;
+      }
+      case 'call-ice': {
+        const pc = pcRef.current;
+        if (pc && pc.remoteDescription) await pc.addIceCandidate(data.candidate).catch(() => {});
+        else vantandeIceRef.current.push(data.candidate);
+        break;
+      }
+      case 'call-decline': {
+        if (!s || s.fas !== 'utgående') return;
+        stadaUppSamtal(data.reason === 'upptagen'
+          ? `${s.motpart.namn} är upptagen i ett annat samtal`
+          : `${s.motpart.namn} avvisade samtalet`);
+        break;
+      }
+      case 'call-end': {
+        if (!s || s.motpart.username !== data.from?.username) return;
+        stadaUppSamtal(s.fas === 'pågår' ? 'Samtalet avslutades'
+          : s.fas === 'inkommande' ? `Missat samtal från ${s.motpart.namn}` : null);
+        break;
+      }
+      case 'call-taken': {
+        // Samma användare svarade/avvisade i en annan flik
+        if (s?.fas === 'inkommande') stadaUppSamtal(null);
+        break;
+      }
+      case 'call-unavailable': {
+        if (!s || s.fas !== 'utgående') return;
+        stadaUppSamtal(`${s.motpart.namn} är inte online — får en notis om missat samtal`);
+        break;
+      }
+    }
+  };
+
   useEffect(() => {
     kollaSession();
     AsyncStorage.getItem(TEMA_KEY).then(v => { if (v) setTema(v); });
-    if (Platform.OS === 'web') {
-      // Register service worker
-      if ('serviceWorker' in navigator) {
-        const base = window.location.pathname.startsWith('/UterumLager') ? '/UterumLager' : '';
-        navigator.serviceWorker.register(base + '/sw.js', { scope: base + '/' }).catch(() => {});
-      }
-      // Lås upp AudioContext vid första klick (behövs om man är inloggad via sparad session)
-      const unlock = () => { getAudioCtx(); document.removeEventListener('click', unlock); };
-      document.addEventListener('click', unlock);
-    }
   }, []);
   useEffect(() => { if (inloggad) laddaProdukter(); }, [inloggad]);
 
@@ -1067,33 +1256,14 @@ export default function App() {
     setKollarSession(false);
   };
 
-  const loggaIn = (user, tok) => {
-    setInloggad(user);
-    setToken(tok);
-    // Lås upp AudioContext vid inloggningsklicket (användar-gesture krävs av Chrome)
-    getAudioCtx();
-    // Be om mikrofonåtkomst direkt vid inloggning så webbläsaren sparar tillståndet
-    if (Platform.OS === 'web' && navigator.mediaDevices?.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(s => s.getTracks().forEach(t => t.stop()))
-        .catch(() => {});
-    }
-    // Visa banner om notiser inte är aktiverade (kan inte auto-prompta utan klick)
-    if (Platform.OS === 'web' && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      setVisaNotisbannerState(true);
-    }
-  };
+  const loggaIn = (user, tok) => { setInloggad(user); setToken(tok); prenumereraPush(tok); };
 
   const prenumereraPush = async (tok) => {
     if (Platform.OS !== 'web' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') return;
-      // Vänta max 5 sek på service worker
-      const reg = await Promise.race([
-        navigator.serviceWorker.ready,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('SW timeout')), 5000)),
-      ]);
+      const reg = await navigator.serviceWorker.ready;
       const keyRes = await fetch(`${API}/api/push/vapidkey`);
       const { publicKey } = await keyRes.json();
       const sub = await reg.pushManager.subscribe({
@@ -1109,6 +1279,7 @@ export default function App() {
   };
 
   const loggaUt = async () => {
+    if (samtalRef.current) laggPaSamtal();
     try { await fetch(`${API}/api/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }); } catch {}
     await AsyncStorage.removeItem(TOKEN_KEY);
     setInloggad(null); setToken(null);
@@ -1123,6 +1294,7 @@ export default function App() {
       const nya = [
         ...SEED_AWS70HI.filter(p => !befintligaIds.has(p.id)),
         ...SEED_AOC50.filter(p => !befintligaIds.has(p.id)),
+        ...SEED_TRABALKAR.filter(p => !befintligaIds.has(p.id)),
       ];
       if (nya.length > 0) {
         lista = [...lista, ...nya];
@@ -1153,31 +1325,17 @@ export default function App() {
       .then(r => r.json()).then(setKunder).catch(() => {});
   };
 
-  const laddaAse60Projekt = () => {
-    if (!token) return;
-    fetch(`${API}/api/ase60-projekt`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(setAse60Projekt).catch(() => {});
-  };
-
-  useEffect(() => { if (arKunder) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder]);
+  useEffect(() => { if (arKunder) laddaKunder(); }, [arKunder]);
 
   const laggTillKund = () => {
     if (!nyKundNamn.trim()) return;
-    const body = {
-      namn: nyKundNamn.trim(),
-      farg: valdAse60Projekt?.color || '',
-      ase60ProjectId: valdAse60Projekt?.id || null,
-      matt: valdAse60Projekt?.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
-    };
     fetch(`${API}/api/kunder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ namn: nyKundNamn.trim() }),
     }).then(r => r.json()).then(ny => {
       setKunder(prev => [...prev, ny]);
       setNyKundNamn('');
-      setValdAse60Projekt(null);
-      setSokAse60('');
       setVisaLaggTillKund(false);
     }).catch(() => {});
   };
@@ -1188,6 +1346,115 @@ export default function App() {
     fetch(`${API}/api/kunder/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
       .then(() => { setKunder(prev => prev.filter(k => k.id !== id)); if (valdKund?.id === id) setValdKund(null); })
       .catch(() => {});
+  };
+
+  const uppdateraKund = (uppdaterad) => {
+    setKunder(prev => prev.map(k => k.id === uppdaterad.id ? uppdaterad : k));
+    setValdKund(uppdaterad);
+    fetch(`${API}/api/kunder/${uppdaterad.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ material: uppdaterad.material || {}, klart: uppdaterad.klart || {} }),
+    }).catch(() => {});
+  };
+
+  const laggTillKundMaterial = (produkt) => {
+    const material = { ...(valdKund.material || {}) };
+    const lista = [...(material[aktivKundFlik] || [])];
+    const idx = lista.findIndex(m => m.produktId === produkt.id);
+    if (idx >= 0) lista[idx] = { ...lista[idx], antal: (parseInt(lista[idx].antal) || 0) + 1 };
+    else lista.push({ produktId: produkt.id, namn: produkt.namn, artikel: produkt.artikel || '', enhet: produkt.enhet || 'st', antal: 1 });
+    material[aktivKundFlik] = lista;
+    uppdateraKund({ ...valdKund, material });
+    setKundMaterialSok('');
+  };
+
+  const andraKundMaterialAntal = (produktId, text) => {
+    const material = { ...(valdKund.material || {}) };
+    material[aktivKundFlik] = (material[aktivKundFlik] || []).map(m =>
+      m.produktId === produktId ? { ...m, antal: text === '' ? '' : (parseInt(text) || 0) } : m);
+    uppdateraKund({ ...valdKund, material });
+  };
+
+  const taBortKundMaterial = (produktId) => {
+    const material = { ...(valdKund.material || {}) };
+    material[aktivKundFlik] = (material[aktivKundFlik] || []).filter(m => m.produktId !== produktId);
+    uppdateraKund({ ...valdKund, material });
+  };
+
+  const loggaKundUttag = (lista, riktning) => {
+    if (!token) return;
+    lista.forEach(m => {
+      const p = produkter.find(x => x.id === m.produktId);
+      if (!p) return;
+      const antal = parseInt(m.antal) || 0;
+      if (antal <= 0) return;
+      const nytt = riktning === 'uttag' ? Math.max(0, p.antal - antal) : p.antal + antal;
+      fetch(`${API}/api/changes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          produktId: p.id, produktNamn: p.namn,
+          andringar: [{
+            falt: riktning === 'uttag' ? 'Uttag' : 'Antal',
+            fran: `${p.antal}${p.enhet || 'st'}`,
+            till: `${nytt}${p.enhet || 'st'} (${riktning === 'uttag' ? '-' : '+'}${antal} ${valdKund.namn} / ${aktivKundFlik})`,
+          }],
+        }),
+      }).catch(() => {});
+    });
+  };
+
+  const markeraKundFlikKlart = () => {
+    const lista = (valdKund.material?.[aktivKundFlik] || []).filter(m => (parseInt(m.antal) || 0) > 0);
+    if (lista.length === 0) return;
+    const genomfor = () => {
+      loggaKundUttag(lista, 'uttag');
+      const nyProdukter = produkter.map(p => {
+        const m = lista.find(x => x.produktId === p.id);
+        if (!m) return p;
+        return { ...p, antal: Math.max(0, p.antal - (parseInt(m.antal) || 0)) };
+      });
+      setProdukter(nyProdukter);
+      sparaProdukter(nyProdukter);
+      const klart = { ...(valdKund.klart || {}), [aktivKundFlik]: { tid: new Date().toISOString(), av: inloggad?.namn || inloggad?.username || '' } };
+      uppdateraKund({ ...valdKund, klart });
+    };
+    const fraga = `Markera ${aktivKundFlik} som klart för ${valdKund.namn}?\nMaterialet räknas bort från lagret.`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(fraga)) genomfor();
+    } else {
+      Alert.alert('Klart?', fraga, [
+        { text: 'Avbryt', style: 'cancel' },
+        { text: 'Klart', onPress: genomfor },
+      ]);
+    }
+  };
+
+  const angraKundFlikKlart = () => {
+    const lista = (valdKund.material?.[aktivKundFlik] || []).filter(m => (parseInt(m.antal) || 0) > 0);
+    const genomfor = () => {
+      loggaKundUttag(lista, 'aterlagg');
+      const nyProdukter = produkter.map(p => {
+        const m = lista.find(x => x.produktId === p.id);
+        if (!m) return p;
+        return { ...p, antal: p.antal + (parseInt(m.antal) || 0) };
+      });
+      setProdukter(nyProdukter);
+      sparaProdukter(nyProdukter);
+      const klart = { ...(valdKund.klart || {}) };
+      delete klart[aktivKundFlik];
+      uppdateraKund({ ...valdKund, klart });
+    };
+    const fraga = `Ångra klart för ${aktivKundFlik}?\nMaterialet läggs tillbaka i lagret.`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(fraga)) genomfor();
+    } else {
+      Alert.alert('Ångra klart?', fraga, [
+        { text: 'Avbryt', style: 'cancel' },
+        { text: 'Ångra', onPress: genomfor },
+      ]);
+    }
   };
 
   const vaeljBild = () => {
@@ -1565,44 +1832,125 @@ export default function App() {
                   <TouchableOpacity onPress={() => setValdKund(null)} style={{ marginBottom: 16 }}>
                     <Text style={{ color: '#2563eb', fontSize: 14 }}>← Tillbaka till kunder</Text>
                   </TouchableOpacity>
-                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 12 }]}>👤 {valdKund.namn}</Text>
-                  {(valdKund.farg || valdKund.matt?.length > 0) && (
-                    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
-                      <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ASE60 PROJEKT</Text>
-                      {valdKund.farg ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                          <View style={{ width: 16, height: 16, borderRadius: 3, backgroundColor: fargTillCSS(valdKund.farg), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />
-                          <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>{valdKund.farg}</Text>
-                        </View>
-                      ) : null}
-                      {valdKund.matt?.map((m, i) => (
-                        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                          <Text style={{ color: c.textMuted, fontSize: 12 }}>Enhet {i + 1}:</Text>
-                          <Text style={{ color: c.text, fontSize: 13, fontWeight: '500' }}>{m.widthMm} × {m.heightMm} mm</Text>
-                          {m.leaves ? <Text style={{ color: c.textMuted, fontSize: 12 }}>· {m.leaves} båge{m.leaves === 1 ? '' : 'ar'}</Text> : null}
-                        </View>
-                      ))}
-                    </View>
-                  )}
+                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 16 }]}>👤 {valdKund.namn}</Text>
                   {/* Underfliken */}
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-                    {['Träfräs', 'Alufräs', 'Beslag'].map(flik => (
-                      <TouchableOpacity
-                        key={flik}
-                        onPress={() => setAktivKundFlik(flik)}
-                        style={{ paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8, borderWidth: 1,
-                          backgroundColor: aktivKundFlik === flik ? '#2563eb' : c.input,
-                          borderColor: aktivKundFlik === flik ? '#2563eb' : c.inputBorder }}>
-                        <Text style={{ color: aktivKundFlik === flik ? '#fff' : c.text, fontWeight: '600', fontSize: 14 }}>{flik}</Text>
-                      </TouchableOpacity>
-                    ))}
+                    {['Träfräs', 'Alufräs', 'Beslag'].map(flik => {
+                      const flikKlar = !!valdKund.klart?.[flik];
+                      return (
+                        <TouchableOpacity
+                          key={flik}
+                          onPress={() => { setAktivKundFlik(flik); setKundMaterialSok(''); }}
+                          style={{ paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8, borderWidth: 1,
+                            backgroundColor: aktivKundFlik === flik ? '#2563eb' : (flikKlar ? '#dcfce7' : c.input),
+                            borderColor: aktivKundFlik === flik ? '#2563eb' : (flikKlar ? '#16a34a' : c.inputBorder) }}>
+                          <Text style={{ color: aktivKundFlik === flik ? '#fff' : (flikKlar ? '#15803d' : c.text), fontWeight: '600', fontSize: 14 }}>
+                            {flik}{flikKlar ? ' ✓' : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
-                  {aktivKundFlik === 'Alufräs'
-                    ? <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
-                    : <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, minHeight: 200, justifyContent: 'center', alignItems: 'center' }]}>
-                        <Text style={{ color: c.textMuted, fontSize: 15 }}>{aktivKundFlik} — kommer snart</Text>
+                  {(() => {
+                    const flikKlart = valdKund.klart?.[aktivKundFlik];
+                    const materialLista = valdKund.material?.[aktivKundFlik] || [];
+                    const sokTraff = kundMaterialSok.trim()
+                      ? produkter.filter(p =>
+                          (p.namn.toLowerCase().includes(kundMaterialSok.toLowerCase()) ||
+                           (p.artikel || '').toLowerCase().includes(kundMaterialSok.toLowerCase())) &&
+                          !materialLista.some(m => m.produktId === p.id)
+                        ).slice(0, 8)
+                      : [];
+                    return (
+                      <View>
+                        {flikKlart && (
+                          <View style={{ backgroundColor: '#dcfce7', borderColor: '#16a34a', borderWidth: 1, borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                            <Text style={{ color: '#15803d', fontWeight: '700', fontSize: 15 }}>✓ Klart — materialet är bortdraget från lagret</Text>
+                            <Text style={{ color: '#166534', fontSize: 12, marginTop: 4 }}>
+                              {new Date(flikKlart.tid).toLocaleString('sv-SE')}{flikKlart.av ? ` · av ${flikKlart.av}` : ''}
+                            </Text>
+                            <TouchableOpacity onPress={angraKundFlikKlart} style={{ marginTop: 10, alignSelf: 'flex-start', backgroundColor: '#fef3c7', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 5 }}>
+                              <Text style={{ color: '#92400e', fontSize: 12, fontWeight: '600' }}>↩ Ångra klart (lägg tillbaka material)</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+
+                        {/* Materiallista */}
+                        <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 12 }]}>
+                          <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, marginBottom: 10 }}>Material — {aktivKundFlik}</Text>
+                          {materialLista.length === 0 && (
+                            <Text style={{ color: c.textMuted, fontSize: 13, marginBottom: 4 }}>Inget material tillagt ännu. Sök nedan för att lägga till från lagret.</Text>
+                          )}
+                          {materialLista.map(m => {
+                            const p = produkter.find(x => x.id === m.produktId);
+                            const saldo = p ? p.antal : null;
+                            const antal = parseInt(m.antal) || 0;
+                            const forLite = !flikKlart && saldo !== null && antal > saldo;
+                            return (
+                              <View key={m.produktId} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>{m.namn}</Text>
+                                  <Text style={{ color: forLite ? '#ef4444' : c.textMuted, fontSize: 12 }}>
+                                    {m.artikel || '—'}{saldo !== null ? ` · i lager: ${saldo}${m.enhet}` : ' · finns ej i lagret längre'}
+                                    {forLite ? ' ⚠️ räcker inte' : ''}
+                                  </Text>
+                                </View>
+                                {flikKlart ? (
+                                  <Text style={{ color: c.text, fontWeight: '700', fontSize: 14 }}>{antal}{m.enhet}</Text>
+                                ) : (
+                                  <>
+                                    <TextInput
+                                      style={[styles.input, { width: 70, marginBottom: 0, textAlign: 'center', backgroundColor: c.input, borderColor: forLite ? '#ef4444' : c.inputBorder, color: c.inputText }]}
+                                      keyboardType="numeric"
+                                      value={String(m.antal)}
+                                      onChangeText={t => andraKundMaterialAntal(m.produktId, t)} />
+                                    <Text style={{ color: c.textMuted, fontSize: 13, width: 26 }}>{m.enhet}</Text>
+                                    <TouchableOpacity onPress={() => taBortKundMaterial(m.produktId)} style={{ padding: 6 }}>
+                                      <Text style={{ color: '#ef4444', fontSize: 16 }}>✕</Text>
+                                    </TouchableOpacity>
+                                  </>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+
+                        {/* Lägg till material + Klart-knapp */}
+                        {!flikKlart && (
+                          <>
+                            <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 12 }]}>
+                              <TextInput
+                                style={[styles.input, { marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                                placeholder="Sök produkt eller artikelnr för att lägga till..."
+                                placeholderTextColor={c.textMuted}
+                                value={kundMaterialSok}
+                                onChangeText={setKundMaterialSok} />
+                              {sokTraff.map(p => (
+                                <TouchableOpacity key={p.id} onPress={() => laggTillKundMaterial(p)}
+                                  style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={{ color: c.text, fontSize: 14 }}>{p.namn}</Text>
+                                    <Text style={{ color: c.textMuted, fontSize: 12 }}>{p.artikel || '—'} · {p.kategori} · i lager: {p.antal}{p.enhet || 'st'}</Text>
+                                  </View>
+                                  <Text style={{ color: '#16a34a', fontWeight: '700', fontSize: 18 }}>+</Text>
+                                </TouchableOpacity>
+                              ))}
+                              {kundMaterialSok.trim() !== '' && sokTraff.length === 0 && (
+                                <Text style={{ color: c.textMuted, fontSize: 13, marginTop: 8 }}>Ingen träff.</Text>
+                              )}
+                            </View>
+                            <TouchableOpacity
+                              onPress={markeraKundFlikKlart}
+                              disabled={materialLista.filter(m => (parseInt(m.antal) || 0) > 0).length === 0}
+                              style={{ backgroundColor: materialLista.filter(m => (parseInt(m.antal) || 0) > 0).length === 0 ? '#9ca3af' : '#16a34a',
+                                borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginBottom: 24 }}>
+                              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>✓ Klart — räkna bort material från lagret</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
                       </View>
-                  }
+                    );
+                  })()}
                 </View>
               ) : (
                 /* Kundlista */
@@ -1616,110 +1964,37 @@ export default function App() {
                     </TouchableOpacity>
                   </View>
                   {visaLaggTillKund && (
-                    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16 }]}>
-                      <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, marginBottom: 12 }}>Ny kund</Text>
-                      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 6 }}>Koppla ASE60-projekt (valfritt)</Text>
+                    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, flexDirection: 'row', gap: 8, alignItems: 'center' }]}>
                       <TextInput
-                        style={[styles.input, { marginBottom: 6, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
-                        placeholder="Sök projekt..." placeholderTextColor={c.textMuted}
-                        value={sokAse60} onChangeText={setSokAse60}
-                      />
-                      {sokAse60.length > 0 && ase60Projekt
-                        .filter(p => p.name.toLowerCase().includes(sokAse60.toLowerCase()) || (p.comNo || '').toLowerCase().includes(sokAse60.toLowerCase()))
-                        .slice(0, 5)
-                        .map(p => (
-                          <TouchableOpacity
-                            key={p.id}
-                            onPress={() => { setValdAse60Projekt(p); setNyKundNamn(p.name); setSokAse60(''); }}
-                            style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, marginBottom: 4,
-                              backgroundColor: valdAse60Projekt?.id === p.id ? '#2563eb22' : c.input,
-                              borderWidth: 1, borderColor: valdAse60Projekt?.id === p.id ? '#2563eb' : c.inputBorder }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(p.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />
-                              <Text style={{ color: c.text, fontWeight: '600', flex: 1 }}>{p.name}</Text>
-                              {p.comNo ? <Text style={{ color: c.textMuted, fontSize: 11 }}>{p.comNo}</Text> : null}
-                            </View>
-                            {p.units?.length > 0 && (
-                              <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 2 }}>
-                                {p.units.map(u => `${u.widthMm}×${u.heightMm}`).join(' · ')} mm{p.color ? ` · ${p.color}` : ''}
-                              </Text>
-                            )}
-                          </TouchableOpacity>
-                        ))
-                      }
-                      {valdAse60Projekt && (
-                        <View style={{ marginTop: 4, marginBottom: 10, padding: 10, backgroundColor: '#2563eb11', borderRadius: 6, borderWidth: 1, borderColor: '#2563eb44' }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                            <Text style={{ color: '#2563eb', fontSize: 12, fontWeight: '700' }}>✓ ASE60:</Text>
-                            <Text style={{ color: '#2563eb', fontSize: 12 }}>{valdAse60Projekt.name}</Text>
-                            <TouchableOpacity onPress={() => { setValdAse60Projekt(null); setNyKundNamn(''); }} style={{ marginLeft: 'auto' }}>
-                              <Text style={{ color: '#ef4444', fontSize: 13 }}>✕</Text>
-                            </TouchableOpacity>
-                          </View>
-                          {valdAse60Projekt.color ? (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(valdAse60Projekt.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />
-                              <Text style={{ color: c.textMuted, fontSize: 11 }}>{valdAse60Projekt.color}</Text>
-                            </View>
-                          ) : null}
-                          {valdAse60Projekt.units?.map((u, i) => (
-                            <Text key={i} style={{ color: c.textMuted, fontSize: 11 }}>Enhet {i + 1}: {u.widthMm} × {u.heightMm} mm · {u.leaves} båge{u.leaves === 1 ? '' : 'ar'}</Text>
-                          ))}
-                        </View>
-                      )}
-                      <TextInput
-                        style={[styles.input, { marginBottom: 10, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                        style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
                         placeholder="Kundnamn" placeholderTextColor={c.textMuted}
                         value={nyKundNamn} onChangeText={setNyKundNamn}
                         onSubmitEditing={laggTillKund}
-                        autoFocus
-                      />
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <TouchableOpacity onPress={laggTillKund} style={{ flex: 1, backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
-                          <Text style={{ color: '#fff', fontWeight: '700' }}>Spara</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); setValdAse60Projekt(null); setSokAse60(''); }} style={{ padding: 10 }}>
-                          <Text style={{ color: '#ef4444', fontSize: 18 }}>✕</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-                  {/* ASE60-projekt visas direkt som kunder */}
-                  {ase60Projekt.length === 0 && !visaLaggTillKund && (
-                    <View style={{ alignItems: 'center', marginTop: 60 }}>
-                      <Text style={{ color: c.textMuted, fontSize: 15, marginBottom: 12 }}>Inga ASE60-projekt hittades.</Text>
-                      <TouchableOpacity onPress={laddaAse60Projekt} style={{ backgroundColor: c.input, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 }}>
-                        <Text style={{ color: c.text }}>Ladda om</Text>
+                        autoFocus />
+                      <TouchableOpacity onPress={laggTillKund} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 }}>
+                        <Text style={{ color: '#fff', fontWeight: '700' }}>Spara</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); }} style={{ padding: 8 }}>
+                        <Text style={{ color: '#ef4444', fontSize: 18 }}>✕</Text>
                       </TouchableOpacity>
                     </View>
                   )}
-                  {ase60Projekt.map(proj => (
+                  {kunder.length === 0 && !visaLaggTillKund && (
+                    <Text style={{ color: c.textMuted, textAlign: 'center', marginTop: 60, fontSize: 15 }}>Inga kunder tillagda ännu.</Text>
+                  )}
+                  {kunder.map(kund => (
                     <TouchableOpacity
-                      key={proj.id}
-                      onPress={() => {
-                        setValdKund({ id: proj.id, namn: proj.name, farg: proj.color, ase60ProjectId: proj.id,
-                          matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [] });
-                        setAktivKundFlik('Träfräs');
-                      }}
+                      key={kund.id}
+                      onPress={() => { setValdKund(kund); setAktivKundFlik('Träfräs'); setKundMaterialSok(''); }}
                       style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {proj.name}</Text>
-                        {proj.color ? (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
-                            <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(proj.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)' }} />
-                            <Text style={{ color: c.textMuted, fontSize: 12 }}>{proj.color}</Text>
-                          </View>
-                        ) : null}
-                        {proj.units?.length > 0 ? (
-                          <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
-                            {proj.units.map(u => `${u.widthMm}×${u.heightMm} mm`).join(' · ')}
-                          </Text>
-                        ) : null}
+                      <View>
+                        <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {kund.namn}</Text>
+                        <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>Träfräs · Alufräs · Beslag</Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                         <Text style={{ color: c.textMuted, fontSize: 13 }}>›</Text>
-                        {false && (
-                          <TouchableOpacity style={{ padding: 6 }}>
+                        {inloggad.roll === 'admin' && (
+                          <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); taBortKund(kund.id); }} style={{ padding: 6 }}>
                             <Text style={{ color: '#ef4444', fontSize: 16 }}>✕</Text>
                           </TouchableOpacity>
                         )}
@@ -1869,129 +2144,13 @@ export default function App() {
         </View>
       </View>
 
-      {/* Notisbanner — visas tills användaren aktiverar eller stänger */}
-      {visaNotisbanner && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 200,
-          backgroundColor: '#1e40af', flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 16, paddingVertical: 10, gap: 12 }}>
-          <Text style={{ color: '#fff', flex: 1, fontSize: 13 }}>🔔 Aktivera notiser för att få meddelanden även när appen är stängd</Text>
-          <TouchableOpacity onPress={async () => {
-            await prenumereraPush(token);
-            setVisaNotisbannerState(false);
-          }} style={{ backgroundColor: '#fff', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 6 }}>
-            <Text style={{ color: '#1e40af', fontWeight: '700', fontSize: 13 }}>Aktivera</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setVisaNotisbannerState(false)}>
-            <Text style={{ color: '#93c5fd', fontSize: 18, paddingHorizontal: 4 }}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {/* Chat floating panel */}
-      {visaChat && <ChatPanel user={inloggad} onStang={() => setVisaChat(false)} meddelanden={meddelanden} online={onlineUsers} wsRef={wsRef}
-        onRing={() => {
-          if (wsRef.current?.readyState === 1) {
-            wsRef.current.send(JSON.stringify({ type: 'ring' }));
-            setUtgaendeSamtal('ringer');
-            setVisaChat(false);
-          }
-        }} />}
+      {visaChat && <ChatPanel user={inloggad} onStang={() => setVisaChat(false)} meddelanden={meddelanden} online={onlineUsers} wsRef={wsRef} onRing={ringUpp} samtalAktivt={!!samtal} />}
       {!visaChat && <ChatBubble senasteMeddelande={chatBubble} antal={olastaAntal} onPress={() => setVisaChat(true)} />}
 
-      {/* Aktivt röstsamtal — flytande bar längst ned */}
-      {aktivtSamtal && (
-        <View style={{ position: 'absolute', bottom: 24, left: '50%', transform: [{ translateX: -160 }],
-          width: 320, backgroundColor: '#1a2235', borderRadius: 20, padding: 16,
-          flexDirection: 'row', alignItems: 'center', gap: 12, zIndex: 600,
-          shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 20 }}>
-          <Text style={{ fontSize: 36 }}>{aktivtSamtal.avatar}</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: '#22c55e', fontWeight: '700', fontSize: 13 }}>Röstsamtal pågår</Text>
-            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>{aktivtSamtal.partner}</Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => {
-              const track = lokalStreamRef.current?.getAudioTracks()[0];
-              if (track) { track.enabled = !track.enabled; setMikrofon(track.enabled); }
-            }}
-            style={{ backgroundColor: mikrofon ? '#334155' : '#ef4444', borderRadius: 50,
-              width: 44, height: 44, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ fontSize: 20 }}>{mikrofon ? '🎤' : '🔇'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => avslutaSamtal(true)}
-            style={{ backgroundColor: '#ef4444', borderRadius: 50,
-              width: 44, height: 44, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ fontSize: 20 }}>📵</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Samtal-overlays renderas SIST så de alltid hamnar ovanpå allt */}
-      {utgaendeSamtal && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}>
-          <View style={{ backgroundColor: '#1a2235', borderRadius: 24, padding: 40,
-            alignItems: 'center', gap: 16, minWidth: 280, shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 30 }}>
-            {utgaendeSamtal === 'ringer' ? (
-              <>
-                <Text style={{ fontSize: 56 }}>📞</Text>
-                <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700' }}>Ringer...</Text>
-                <Text style={{ color: '#94a3b8', fontSize: 14 }}>Väntar på svar</Text>
-                <TouchableOpacity
-                  onPress={() => { setUtgaendeSamtal(null); stoppRingjud(); }}
-                  style={{ backgroundColor: '#ef4444', borderRadius: 50, width: 64, height: 64,
-                    justifyContent: 'center', alignItems: 'center', marginTop: 8 }}>
-                  <Text style={{ fontSize: 26 }}>📵</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <Text style={{ fontSize: 64 }}>{utgaendeSamtal.avatar}</Text>
-                <Text style={{ color: '#22c55e', fontSize: 18, fontWeight: '700' }}>✓ {utgaendeSamtal.svarade} svarade!</Text>
-                <TouchableOpacity
-                  onPress={() => { setUtgaendeSamtal(null); setVisaChat(true); }}
-                  style={{ backgroundColor: '#2563eb', borderRadius: 12, paddingHorizontal: 24,
-                    paddingVertical: 12, marginTop: 8 }}>
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Öppna chatten</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setUtgaendeSamtal(null)}>
-                  <Text style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Stäng</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </View>
-      )}
-
-      {inkommandeSamtal && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 500 }}>
-          <View style={{ backgroundColor: '#1a2235', borderRadius: 24, padding: 40,
-            alignItems: 'center', gap: 16, minWidth: 280, shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 30 }}>
-            <Text style={{ fontSize: 64 }}>{inkommandeSamtal.avatar}</Text>
-            <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>{inkommandeSamtal.fran}</Text>
-            <Text style={{ color: '#94a3b8', fontSize: 15 }}>ringer...</Text>
-            <TouchableOpacity
-              onPress={() => {
-                stoppRingjud();
-                spelaAnsvarsljud();
-                setInkommandeSamtal(null);
-                setVisaChat(true);
-                if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: 'ring-svar' }));
-              }}
-              style={{ backgroundColor: '#22c55e', borderRadius: 50, width: 64, height: 64,
-                justifyContent: 'center', alignItems: 'center', marginTop: 8 }}>
-              <Text style={{ fontSize: 28 }}>📞</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => { stoppRingjud(); setInkommandeSamtal(null); }}
-              style={{ marginTop: 4 }}>
-              <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 14 }}>Avvisa</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+      {/* Samtal */}
+      {samtal && <SamtalOverlay samtal={samtal} onSvara={svaraSamtal} onAvvisa={avvisaSamtal} onLaggPa={laggPaSamtal} onMute={toggleMikrofon} />}
+      <SamtalToast text={samtalInfo} />
 
       {visaProfil && <ProfilModal user={inloggad} token={token} onStang={() => setVisaProfil(false)} onUppdatera={(u) => setInloggad(u)} prenumereraPush={prenumereraPush} />}
       {visaAnvandare && <AnvandarHantering token={token} onStang={() => setVisaAnvandare(false)} />}
