@@ -292,14 +292,58 @@ app.put('/api/kunder/:id', authMiddleware, (req, res) => {
   res.json(kunder[idx]);
 });
 
+// ASE60-generatorns API: 3017 på servern, 3000 lokalt (dev). Provar i ordning.
+const ASE60_BASES = [process.env.ASE60_URL || 'http://localhost:3017', 'http://localhost:3000'];
+async function ase60Fetch(apiPath, opts) {
+  let senasteFel = new Error('ASE60 unreachable');
+  for (const base of ASE60_BASES) {
+    try {
+      return await fetch(base + apiPath, opts);
+    } catch (e) { senasteFel = e; }
+  }
+  throw senasteFel;
+}
+
 // Proxy ASE60 projects for linking to customers
 app.get('/api/ase60-projekt', authMiddleware, async (req, res) => {
   try {
-    const r = await fetch('http://localhost:3017/api/projects');
+    const r = await ase60Fetch('/api/projects');
     const data = await r.json();
     res.json(data.projects || []);
   } catch {
     res.json([]);
+  }
+});
+
+// Profiloptimering från ASE60 för ett projekt: antal stänger per profil och lagerlängd.
+// Serien (82/92) är redan invald i profilerna som optimeringen använder.
+app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => {
+  try {
+    const pr = await ase60Fetch(`/api/projects/${encodeURIComponent(req.params.projectId)}`);
+    if (!pr.ok) return res.status(404).json({ error: 'Projektet hittades inte i ASE60-generatorn' });
+    const proj = await pr.json();
+    if (!Array.isArray(proj.units) || proj.units.length === 0) {
+      return res.json({ projekt: proj.name || '', serier: [], profiler: [] });
+    }
+    const flippedSash = !!(proj.ecwSettings && (proj.ecwSettings.flippedSash || proj.ecwSettings.sashFlip));
+    const packR = await ase60Fetch('/api/pack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ units: proj.units, pack: 'stock', flippedSash }),
+    });
+    if (!packR.ok) return res.status(502).json({ error: 'Optimeringen misslyckades i ASE60-generatorn' });
+    const pack = await packR.json();
+    const grupper = new Map();
+    for (const bin of pack.bins || []) {
+      const key = `${bin.profile}|${bin.stockLengthMm}`;
+      const g = grupper.get(key) || { artikel: bin.profile, beskrivning: bin.profileDescription || '', langdMm: bin.stockLengthMm, antal: 0 };
+      g.antal += 1;
+      grupper.set(key, g);
+    }
+    const serier = [...new Set(proj.units.map(u => u && u.series).filter(Boolean))];
+    res.json({ projekt: proj.name || '', serier, profiler: [...grupper.values()] });
+  } catch {
+    res.status(502).json({ error: 'Kunde inte nå ASE60-generatorn' });
   }
 });
 

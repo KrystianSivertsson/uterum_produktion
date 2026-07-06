@@ -982,6 +982,7 @@ export default function App() {
   const [ase60Projekt, setAse60Projekt] = useState([]);
   const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
   const [sokAse60, setSokAse60] = useState('');
+  const [klartRuta, setKlartRuta] = useState(null); // { rader, serier, projekt, laddar, fel }
   const [visaProfil, setVisaProfil] = useState(false);
   const [visaSidebar, setVisaSidebar] = useState(false);
   const [sorteringsKolumn, setSorteringsKolumn] = useState(null);
@@ -1532,30 +1533,85 @@ export default function App() {
     });
   };
 
-  const markeraKundFlikKlart = () => {
-    const lista = (valdKund.material?.[aktivKundFlik] || []).filter(m => (parseInt(m.antal) || 0) > 0);
-    if (lista.length === 0) return;
-    const genomfor = () => {
-      loggaKundUttag(lista, 'uttag');
-      const nyProdukter = produkter.map(p => {
-        const m = lista.find(x => x.produktId === p.id);
-        if (!m) return p;
-        return { ...p, antal: Math.max(0, p.antal - (parseInt(m.antal) || 0)) };
-      });
-      setProdukter(nyProdukter);
-      sparaProdukter(nyProdukter);
-      const klart = { ...(valdKund.klart || {}), [aktivKundFlik]: { tid: new Date().toISOString(), av: inloggad?.namn || inloggad?.username || '' } };
-      uppdateraKund({ ...valdKund, klart });
-    };
-    const fraga = `Markera ${aktivKundFlik} som klart för ${valdKund.namn}?\nMaterialet räknas bort från lagret.`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(fraga)) genomfor();
-    } else {
-      Alert.alert('Klart?', fraga, [
-        { text: 'Avbryt', style: 'cancel' },
-        { text: 'Klart', onPress: genomfor },
-      ]);
+  // Klart öppnar en godkännanderuta med all input (manuellt material + för Alufräs
+  // auto-ifyllda profiler med rätt längder från ASE60-optimeringen). Inget dras
+  // från lagret förrän användaren godkänner.
+  const oppnaKlartRuta = async () => {
+    const manuella = (valdKund.material?.[aktivKundFlik] || [])
+      .filter(m => (parseInt(m.antal) || 0) > 0)
+      .map(m => ({ ...m, antal: parseInt(m.antal) || 0, typ: 'manuell' }));
+    const hamtaProfiler = aktivKundFlik === 'Alufräs' && (valdKund.ase60ProjectId || valdKund.id);
+    if (!hamtaProfiler) {
+      if (manuella.length === 0) return;
+      setKlartRuta({ rader: manuella, serier: [], projekt: '', laddar: false });
+      return;
     }
+    setKlartRuta({ rader: manuella, serier: [], projekt: '', laddar: true });
+    try {
+      const projId = valdKund.ase60ProjectId || valdKund.id;
+      const r = await fetch(`${API}/api/ase60-optimering/${encodeURIComponent(projId)}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'fel');
+      const profilRader = (data.profiler || []).map(p => {
+        // Matcha lagerprodukt: samma artikelnr (ASE60 har ibland bokstavssuffix,
+        // t.ex. 487850A = lagrets 487850), helst med rätt längd i dimension-fältet
+        const profilArt = String(p.artikel).trim();
+        const profilArtNum = profilArt.replace(/[A-Za-z]+$/, '');
+        const kandidater = produkter.filter(x => {
+          const xa = (x.artikel || '').trim();
+          return xa === profilArt || (profilArtNum && xa === profilArtNum);
+        });
+        const medLangd = kandidater.find(x => (x.dimension || '').replace(/\D/g, '') === String(p.langdMm));
+        const prod = medLangd || kandidater[0] || null;
+        return {
+          produktId: prod?.id || null,
+          namn: prod?.namn || p.beskrivning || p.artikel,
+          artikel: String(p.artikel),
+          langdMm: p.langdMm,
+          enhet: prod?.enhet || 'st',
+          antal: p.antal,
+          typ: 'profil',
+        };
+      });
+      setKlartRuta({ rader: [...profilRader, ...manuella], serier: data.serier || [], projekt: data.projekt || '', laddar: false });
+    } catch (e) {
+      setKlartRuta({
+        rader: manuella, serier: [], projekt: '', laddar: false,
+        fel: 'Kunde inte hämta profiloptimeringen från ASE60 — kontrollera att generatorn är igång.',
+      });
+    }
+  };
+
+  const andraKlartRad = (index, antalText) => {
+    setKlartRuta(prev => prev && ({
+      ...prev,
+      rader: prev.rader.map((r, i) => i === index ? { ...r, antal: antalText === '' ? '' : (parseInt(antalText) || 0) } : r),
+    }));
+  };
+
+  const taBortKlartRad = (index) => {
+    setKlartRuta(prev => prev && ({ ...prev, rader: prev.rader.filter((_, i) => i !== index) }));
+  };
+
+  const godkannKlart = () => {
+    if (!klartRuta) return;
+    const rader = klartRuta.rader.filter(r => r.produktId && (parseInt(r.antal) || 0) > 0);
+    if (rader.length === 0) return;
+    loggaKundUttag(rader, 'uttag');
+    const nyProdukter = produkter.map(p => {
+      const summa = rader.filter(r => r.produktId === p.id).reduce((s, r) => s + (parseInt(r.antal) || 0), 0);
+      if (!summa) return p;
+      return { ...p, antal: Math.max(0, p.antal - summa) };
+    });
+    setProdukter(nyProdukter);
+    sparaProdukter(nyProdukter);
+    const material = { ...(valdKund.material || {}) };
+    material[aktivKundFlik] = klartRuta.rader
+      .filter(r => (parseInt(r.antal) || 0) > 0)
+      .map(r => ({ produktId: r.produktId, namn: r.namn, artikel: r.artikel || '', enhet: r.enhet || 'st', antal: parseInt(r.antal) || 0, langdMm: r.langdMm }));
+    const klart = { ...(valdKund.klart || {}), [aktivKundFlik]: { tid: new Date().toISOString(), av: inloggad?.namn || inloggad?.username || '' } };
+    uppdateraKund({ ...valdKund, material, klart });
+    setKlartRuta(null);
   };
 
   const angraKundFlikKlart = () => {
@@ -2121,13 +2177,22 @@ export default function App() {
                                 <Text style={{ color: c.textMuted, fontSize: 13, marginTop: 8 }}>Ingen träff.</Text>
                               )}
                             </View>
-                            <TouchableOpacity
-                              onPress={markeraKundFlikKlart}
-                              disabled={materialLista.filter(m => (parseInt(m.antal) || 0) > 0).length === 0}
-                              style={{ backgroundColor: materialLista.filter(m => (parseInt(m.antal) || 0) > 0).length === 0 ? '#9ca3af' : '#16a34a',
-                                borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginBottom: 24 }}>
-                              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>✓ Klart — räkna bort material från lagret</Text>
-                            </TouchableOpacity>
+                            {(() => {
+                              const harManuellt = materialLista.filter(m => (parseInt(m.antal) || 0) > 0).length > 0;
+                              const arAlufras = aktivKundFlik === 'Alufräs';
+                              const aktiv = harManuellt || arAlufras;
+                              return (
+                                <TouchableOpacity
+                                  onPress={oppnaKlartRuta}
+                                  disabled={!aktiv}
+                                  style={{ backgroundColor: aktiv ? '#16a34a' : '#9ca3af',
+                                    borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginBottom: 24 }}>
+                                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
+                                    ✓ Klart{arAlufras ? ' — hämta profiler & godkänn uttag' : ' — godkänn uttag från lagret'}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })()}
                           </>
                         )}
                       </View>
@@ -2438,6 +2503,89 @@ export default function App() {
 
       {visaProfil && <ProfilModal user={inloggad} token={token} onStang={() => setVisaProfil(false)} onUppdatera={(u) => setInloggad(u)} prenumereraPush={prenumereraPush} />}
       {visaAnvandare && <AnvandarHantering token={token} onStang={() => setVisaAnvandare(false)} />}
+
+      {/* Klart-godkännanderuta: visar all input innan något dras från lagret */}
+      <Modal visible={!!klartRuta} animationType="fade" transparent onRequestClose={() => setKlartRuta(null)}>
+        <View style={styles.modalBakgrund}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
+            <View style={[styles.modalKort, { backgroundColor: c.modal, width: '100%', maxWidth: 560 }]}>
+              <Text style={[styles.modalTitel, { color: c.textRubrik }]}>✓ Klart — {aktivKundFlik} · {valdKund?.namn}</Text>
+
+              {klartRuta?.serier?.length > 0 && (
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+                  {klartRuta.serier.map(s => (
+                    <View key={s} style={{ backgroundColor: '#2563eb22', borderColor: '#2563eb', borderWidth: 1, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 3 }}>
+                      <Text style={{ color: '#2563eb', fontSize: 12, fontWeight: '700' }}>Serie {s}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {klartRuta?.laddar && (
+                <Text style={{ color: c.textMuted, fontSize: 14, marginVertical: 16, textAlign: 'center' }}>Hämtar profiloptimering från ASE60...</Text>
+              )}
+              {!!klartRuta?.fel && (
+                <View style={{ backgroundColor: '#fef2f2', borderColor: '#ef4444', borderWidth: 1, borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                  <Text style={{ color: '#b91c1c', fontSize: 13 }}>{klartRuta.fel}</Text>
+                </View>
+              )}
+
+              {!klartRuta?.laddar && (klartRuta?.rader || []).length === 0 && !klartRuta?.fel && (
+                <Text style={{ color: c.textMuted, fontSize: 14, marginVertical: 12, textAlign: 'center' }}>Inget material att dra av.</Text>
+              )}
+
+              {!klartRuta?.laddar && (klartRuta?.rader || []).map((rad, i) => {
+                const p = rad.produktId ? produkter.find(x => x.id === rad.produktId) : null;
+                const antal = parseInt(rad.antal) || 0;
+                const saknas = !rad.produktId;
+                const forLite = p && antal > p.antal;
+                return (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>
+                        {rad.typ === 'profil' ? '🔩 ' : ''}{rad.namn}
+                      </Text>
+                      <Text style={{ color: saknas ? '#ef4444' : (forLite ? '#ef4444' : c.textMuted), fontSize: 12 }}>
+                        {rad.artikel || '—'}
+                        {rad.langdMm ? ` · ${rad.langdMm} mm` : ''}
+                        {p ? ` · i lager: ${p.antal}${p.enhet || 'st'}` : ''}
+                        {saknas ? ' · ⚠️ finns ej i lagret — dras ej' : (forLite ? ' · ⚠️ räcker inte' : '')}
+                      </Text>
+                    </View>
+                    <TextInput
+                      style={[styles.input, { width: 64, marginBottom: 0, textAlign: 'center', backgroundColor: c.input, borderColor: (saknas || forLite) ? '#ef4444' : c.inputBorder, color: c.inputText }]}
+                      keyboardType="numeric"
+                      value={String(rad.antal)}
+                      onChangeText={t => andraKlartRad(i, t)} />
+                    <Text style={{ color: c.textMuted, fontSize: 13, width: 24 }}>{rad.enhet || 'st'}</Text>
+                    <TouchableOpacity onPress={() => taBortKlartRad(i)} style={{ padding: 5 }}>
+                      <Text style={{ color: '#ef4444', fontSize: 16 }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
+                <TouchableOpacity onPress={() => setKlartRuta(null)} style={{ flex: 1, backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingVertical: 12, alignItems: 'center' }}>
+                  <Text style={{ color: c.text, fontWeight: '600' }}>Avbryt</Text>
+                </TouchableOpacity>
+                {(() => {
+                  const giltiga = (klartRuta?.rader || []).filter(r => r.produktId && (parseInt(r.antal) || 0) > 0);
+                  const aktiv = !klartRuta?.laddar && giltiga.length > 0;
+                  return (
+                    <TouchableOpacity
+                      onPress={godkannKlart}
+                      disabled={!aktiv}
+                      style={{ flex: 2, backgroundColor: aktiv ? '#16a34a' : '#9ca3af', borderRadius: 8, paddingVertical: 12, alignItems: 'center' }}>
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>✓ Godkänn — dra {giltiga.length} rad{giltiga.length === 1 ? '' : 'er'} från lagret</Text>
+                    </TouchableOpacity>
+                  );
+                })()}
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* Produkt modal */}
       <Modal visible={modalVisible} animationType="fade" transparent>
