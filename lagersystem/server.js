@@ -416,6 +416,34 @@ app.post('/api/ecw-runs', (req, res) => {
   if (runs.length > 500) runs.splice(0, runs.length - 500);
   writeJSON(ECW_RUNS_FILE, runs);
   broadcast({ type: 'ecw-run', run });
+
+  // Auto-upsert kundkort från ASE60-exporten: kund med färg + projektkoppling
+  // skapas/uppdateras direkt när ECW genereras. Alufräs-fliken räknar sedan
+  // profilåtgång via ase60ProjectId och avdraget godkänns i Klart-rutan.
+  const { projectId, farg } = req.body || {};
+  const kunder = readJSON(KUNDER_FILE, []);
+  let idx = projectId ? kunder.findIndex(k => k.ase60ProjectId === projectId) : -1;
+  if (idx === -1) idx = kunder.findIndex(k => (k.namn || '').toLowerCase() === projekt.trim().toLowerCase());
+  const matt = (Array.isArray(partier) ? partier : [])
+    .map(p => ({ widthMm: p.breddMm, heightMm: p.hoejdMm, leaves: p.baagar }))
+    .filter(m => m.widthMm && m.heightMm);
+  if (idx === -1) {
+    kunder.push({
+      id: Date.now().toString(),
+      namn: projekt.trim(),
+      skapad: new Date().toISOString(),
+      skapadAv: 'ase60-generator',
+      farg: farg || '',
+      ase60ProjectId: projectId || null,
+      matt,
+    });
+  } else {
+    if (farg) kunder[idx].farg = farg;
+    if (projectId) kunder[idx].ase60ProjectId = projectId;
+    if (matt.length) kunder[idx].matt = matt;
+  }
+  writeJSON(KUNDER_FILE, kunder);
+
   res.json(run);
 });
 
