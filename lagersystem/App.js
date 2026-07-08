@@ -206,6 +206,65 @@ function AlufrasFlik({ ase60ProjectId, token, API, c, roll }) {
   );
 }
 
+// ─── PDF-dokument (ritningar/beredning från ASE60) per kund ──────────────────
+function PdfFlik({ ase60ProjectId, token, API, c, roll }) {
+  const [filer, setFiler] = useState([]);
+
+  const laddaFiler = () => {
+    if (!ase60ProjectId || !token) return;
+    fetch(`${API}/api/pdf-filer/${encodeURIComponent(ase60ProjectId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => setFiler(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  };
+
+  useEffect(() => { laddaFiler(); }, [ase60ProjectId]);
+
+  const oppna = (fil) => {
+    // Öppnas i ny flik — skriv ut / spara som PDF därifrån
+    window.open(`${API}/api/pdf-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}/visa?token=${token}`, '_blank');
+  };
+
+  const taBort = async (fil) => {
+    if (!window.confirm(`Ta bort "${fil.filename}"?`)) return;
+    await fetch(`${API}/api/pdf-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    laddaFiler();
+  };
+
+  if (filer.length === 0) return null;
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>PDF-DOKUMENT</Text>
+      {filer.slice().reverse().map(fil => (
+        <View
+          key={fil.id}
+          style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 12,
+            padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={{ fontSize: 22 }}>🖨️</Text>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => oppna(fil)}>
+            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{fil.filename}</Text>
+            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+              {new Date(fil.skapad).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => oppna(fil)}>
+            <Text style={{ color: '#2563eb', fontWeight: '600', fontSize: 13 }}>📄 Öppna</Text>
+          </TouchableOpacity>
+          {roll === 'admin' && (
+            <TouchableOpacity onPress={() => taBort(fil)}>
+              <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 13 }}>🗑 Ta bort</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function AnvandarHantering({ token, onStang }) {
   const { c } = React.useContext(TemaContext) || { c: LJUST };
   const [anvandare, setAnvandare] = useState([]);
@@ -2067,6 +2126,7 @@ export default function App() {
                         {aktivKundFlik === 'Alufräs' && (
                           <>
                             <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                            <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
                             {(() => {
                               const kundRuns = ecwRuns.filter(run =>
                                 run.projekt?.toLowerCase() === valdKund.namn?.toLowerCase() ||

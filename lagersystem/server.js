@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const { WebSocketServer } = require('ws');
 const http = require('http');
 const https = require('https');
@@ -9,7 +9,7 @@ const webpush = require('web-push');
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '40mb' })); // 40mb: base64-kodade PDF-dokument från ASE60
 
 // Intern endpoint BEFORE redirect middleware — anropas av ASE60 server-till-server via localhost
 // Placeras här så att HTTP-anrop från localhost inte omdirigeras till HTTPS
@@ -34,6 +34,29 @@ app.post('/api/ecw-filer/intern', (req, res) => {
   index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
   if (index.length > 500) index.splice(0, index.length - 500);
   _writeJSONEarly(_ECW_INDEX_EARLY, index);
+  res.json({ ok: true });
+});
+
+// PDF-dokument (print-HTML från ASE60: CAD-ritning + beredning/glas) per kund/projekt.
+// Lagras som självständig HTML — öppnas i flik och skrivs ut/sparas som PDF där.
+const _PDF_DIR_EARLY = path.join(__dirname, 'data', 'pdf');
+const _PDF_INDEX_EARLY = path.join(__dirname, 'data', 'pdf.json');
+app.post('/api/pdf-filer/intern', (req, res) => {
+  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
+  const { projectId, projectName, filename, htmlBase64 } = req.body;
+  if (!projectId || !htmlBase64) return res.status(400).json({ error: 'Saknar data' });
+  const safeId = String(projectId).replace(/[^a-z0-9_-]/gi, '_');
+  const projDir = path.join(_PDF_DIR_EARLY, safeId);
+  if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
+  const ts = Date.now();
+  const safeFilename = String(filename || 'ritning.html').replace(/[^a-z0-9._åäöÅÄÖ -]/gi, '_');
+  const filePath = path.join(projDir, `${ts}_${safeFilename}.html`);
+  fs.writeFileSync(filePath, Buffer.from(htmlBase64, 'base64'));
+  if (!fs.existsSync(_PDF_INDEX_EARLY)) _writeJSONEarly(_PDF_INDEX_EARLY, []);
+  const index = _readJSONEarly(_PDF_INDEX_EARLY, []);
+  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
+  if (index.length > 500) index.splice(0, index.length - 500);
+  _writeJSONEarly(_PDF_INDEX_EARLY, index);
   res.json({ ok: true });
 });
 
@@ -388,6 +411,35 @@ app.delete('/api/kunder/:id', authMiddleware, (req, res) => {
   const kvar = kunder.filter(k => k.id !== req.params.id);
   if (kvar.length === kunder.length) return res.status(404).json({ error: 'Kund hittades ej' });
   writeJSON(KUNDER_FILE, kvar);
+  res.json({ ok: true });
+});
+
+// --- PDF-DOKUMENT per kund/projekt (print-HTML från ASE60) ---
+const PDF_INDEX_FILE = path.join(__dirname, 'data', 'pdf.json');
+
+app.get('/api/pdf-filer/:ase60ProjectId', authMiddleware, (req, res) => {
+  const index = readJSON(PDF_INDEX_FILE, []);
+  const filer = index.filter(f => f.projectId === req.params.ase60ProjectId);
+  res.json(filer.map(f => ({ id: f.id, filename: f.filename, skapad: f.skapad, projectName: f.projectName })));
+});
+
+// Visa dokumentet i webbläsaren (öppnas i flik → skriv ut/spara som PDF där)
+app.get('/api/pdf-filer/:ase60ProjectId/:id/visa', authMiddleware, (req, res) => {
+  const index = readJSON(PDF_INDEX_FILE, []);
+  const fil = index.find(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (!fil || !fs.existsSync(fil.filePath)) return res.status(404).json({ error: 'Fil hittades ej' });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(fs.readFileSync(fil.filePath));
+});
+
+app.delete('/api/pdf-filer/:ase60ProjectId/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
+  const index = readJSON(PDF_INDEX_FILE, []);
+  const idx = index.findIndex(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Fil hittades ej' });
+  try { if (fs.existsSync(index[idx].filePath)) fs.unlinkSync(index[idx].filePath); } catch {}
+  index.splice(idx, 1);
+  writeJSON(PDF_INDEX_FILE, index);
   res.json({ ok: true });
 });
 
