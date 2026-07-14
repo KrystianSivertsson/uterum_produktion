@@ -29,6 +29,7 @@ const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco A
 const FORINSTALLDA_FARGER = ['Svart/RAL9005', 'Vit/NCS-0502-Y', 'Antracitgrå/RAL7016'];
 const RITNINGAR = [
   { id: 'ase60', label: 'ASE 60 Ritningar', fil: 'ritningar_ase60.pdf' },
+  { id: 'ass32', label: 'ASS 32 Ritningar', fil: 'ritningar_ass32.pdf' },
   { id: 'aws70hi', label: 'AWS/ADS 70 HI Ritningar', fil: 'ritningar_aws70hi.pdf' },
   { id: 'aoc50', label: 'AOC 50 Ritningar', fil: 'ritningar_aoc50.pdf' },
 ];
