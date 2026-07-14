@@ -44,6 +44,8 @@ data/kunder.json
 data/ecw_runs.json
 data/ecw.json
 data/ecw/
+data/pdf.json
+data/pdf/
 
 # typescript
 *.tsbuildinfo
