@@ -2124,10 +2124,12 @@ export default function App() {
                       : [];
                     return (
                       <View>
+                        {(aktivKundFlik === 'Alufräs' || aktivKundFlik === 'Beslag') && (
+                          <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                        )}
                         {aktivKundFlik === 'Alufräs' && (
                           <>
                             <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
-                            <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
                             {(() => {
                               const kundRuns = ecwRuns.filter(run =>
                                 run.projekt?.toLowerCase() === valdKund.namn?.toLowerCase() ||
