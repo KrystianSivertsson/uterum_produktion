@@ -348,23 +348,24 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
     if (!Array.isArray(proj.units) || proj.units.length === 0) {
       return res.json({ projekt: proj.name || '', serier: [], profiler: [] });
     }
-    const flippedSash = !!(proj.ecwSettings && (proj.ecwSettings.flippedSash || proj.ecwSettings.sashFlip));
-    const packR = await ase60Fetch('/api/pack', {
+    // Fullstandig materiallista (profiler + beslag/tatningar/glas) — se
+    // ase60-generator/server/domain/bom.ts. Ersatte tidigare /api/pack-anropet
+    // som bara raknade av de tva raprofilerna (karm + baga).
+    const bomR = await ase60Fetch('/api/bom', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ units: proj.units, pack: 'stock', flippedSash }),
+      body: JSON.stringify({ units: proj.units }),
     });
-    if (!packR.ok) return res.status(502).json({ error: 'Optimeringen misslyckades i ASE60-generatorn' });
-    const pack = await packR.json();
-    const grupper = new Map();
-    for (const bin of pack.bins || []) {
-      const key = `${bin.profile}|${bin.stockLengthMm}`;
-      const g = grupper.get(key) || { artikel: bin.profile, beskrivning: bin.profileDescription || '', langdMm: bin.stockLengthMm, antal: 0 };
-      g.antal += 1;
-      grupper.set(key, g);
-    }
+    if (!bomR.ok) return res.status(502).json({ error: 'Materiallistan misslyckades i ASE60-generatorn' });
+    const bomResult = await bomR.json();
+    const profiler = (bomResult.lines || []).map(l => ({
+      artikel: l.art,
+      beskrivning: l.desc,
+      langdMm: l.lengthMm || null,
+      antal: l.qty,
+    }));
     const serier = [...new Set(proj.units.map(u => u && u.series).filter(Boolean))];
-    res.json({ projekt: proj.name || '', serier, profiler: [...grupper.values()] });
+    res.json({ projekt: proj.name || '', serier, profiler, bomWarnings: bomResult.warnings || [] });
   } catch {
     res.status(502).json({ error: 'Kunde inte nå ASE60-generatorn' });
   }

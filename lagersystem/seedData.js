@@ -157,6 +157,29 @@ export const SEED_AOC50 = [
   { id: '5021', namn: 'C/s screw ST4,6x40 ISR20', artikel: '225217', antal: 0, minAntal: 5, kategori: 'Schueco AOC 50', enhet: 'st', dimension: '' },
 ];
 
+// === Schueco ASE 60 82mm - nya artiklar fran officiell SchueCal-materiallista
+// (ase82_test2, 2026-07-16). antal=0 for alla - fysisk inventering saknas,
+// ratta till innan produktion. Se aven bom-reference.json/bom.json i
+// ase60-generator for kallan. dimension ar en gissning (matchar 504010:s
+// 6500mm) dar SchueCal inte anger nagon fardig stocklangd - kontrollera mot
+// verklig leverantorsforpackning.
+export const SEED_ASE60_82MM_NYA = [
+  { id: '5001', namn: 'Outer frame, bottom (threshold) 48/48', artikel: '487860', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '6500 mm' },
+  { id: '5002', namn: 'Outer frame, sides (jamb/head) 48/48', artikel: '487000', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '6500 mm' },
+  { id: '5003', namn: 'PU End caps', artikel: '281596', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+  { id: '5004', namn: 'Brush gasket Mittelsteg 8', artikel: '244670', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+  { id: '5005', namn: 'Insulation profile (Fullstoff)', artikel: '278423', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+  { id: '5006', namn: 'Groove cover profile BR', artikel: '542000', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '6000 mm' },
+  { id: '5007', namn: 'Cover profile, inside', artikel: '203198', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '6000 mm' },
+  { id: '5008', namn: 'Glazing rebate insulation C2C', artikel: '245442', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+  { id: '5009', namn: 'Crank handle 9005', artikel: '276738', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+  { id: '5010', namn: 'Roller carriage', artikel: '276735', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+  { id: '5011', namn: 'Gearbox', artikel: '276725', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+  { id: '5012', namn: 'Fixing accessories', artikel: '275911', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+  { id: '5013', namn: 'Anti-mishandling device', artikel: '276716', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+  { id: '5014', namn: 'Vent frame buffer', artikel: '276850', antal: 0, minAntal: 5, kategori: 'Schueco ASE 60', dimension: '' },
+];
+
 // === Schueco AWS/ADS 70 HI ===
 export const SEED_AWS70HI = [
   { id: '4001', namn: 'Outer frame 44/69', artikel: '358170', antal: 0, minAntal: 5, kategori: 'Schueco AWS/ADS 70 HI', enhet: 'st', dimension: '6000 mm' },

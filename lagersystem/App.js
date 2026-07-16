@@ -5,7 +5,7 @@ import {
   useWindowDimensions, Animated
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SEED_PRODUKTER, SEED_AWS70HI, SEED_AOC50, SEED_TRABALKAR } from './seedData';
+import { SEED_PRODUKTER, SEED_AWS70HI, SEED_AOC50, SEED_TRABALKAR, SEED_ASE60_82MM_NYA } from './seedData';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { utils, write } from 'xlsx';
@@ -1452,6 +1452,7 @@ export default function App() {
         ...SEED_AWS70HI.filter(p => !befintligaIds.has(p.id)),
         ...SEED_AOC50.filter(p => !befintligaIds.has(p.id)),
         ...SEED_TRABALKAR.filter(p => !befintligaIds.has(p.id)),
+        ...SEED_ASE60_82MM_NYA.filter(p => !befintligaIds.has(p.id)),
       ];
       if (nya.length > 0) {
         lista = [...lista, ...nya];
