@@ -1601,7 +1601,7 @@ export default function App() {
     const manuella = (valdKund.material?.[aktivKundFlik] || [])
       .filter(m => (parseInt(m.antal) || 0) > 0)
       .map(m => ({ ...m, antal: parseInt(m.antal) || 0, typ: 'manuell' }));
-    const hamtaProfiler = aktivKundFlik === 'Alufräs' && (valdKund.ase60ProjectId || valdKund.id);
+    const hamtaProfiler = (aktivKundFlik === 'Alufräs' || aktivKundFlik === 'Glas') && (valdKund.ase60ProjectId || valdKund.id);
     if (!hamtaProfiler) {
       if (manuella.length === 0) return;
       setKlartRuta({ rader: manuella, serier: [], projekt: '', laddar: false });
@@ -1613,7 +1613,11 @@ export default function App() {
       const r = await fetch(`${API}/api/ase60-optimering/${encodeURIComponent(projId)}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || 'fel');
-      const profilRader = (data.profiler || []).map(p => {
+      // Glasraden (artikel "GLAS") hör hemma under egen Glas-flik, inte Alufräs
+      // — annars räknas den dubbelt om båda flikarna körs "Klart".
+      const radAvGlas = p => String(p.artikel).trim().toUpperCase() === 'GLAS';
+      const profilerForFlik = (data.profiler || []).filter(p => aktivKundFlik === 'Glas' ? radAvGlas(p) : !radAvGlas(p));
+      const profilRader = profilerForFlik.map(p => {
         // Matcha lagerprodukt: samma artikelnr (ASE60 har ibland bokstavssuffix,
         // t.ex. 487850A = lagrets 487850), helst med rätt längd i dimension-fältet
         const profilArt = String(p.artikel).trim();
@@ -2097,7 +2101,7 @@ export default function App() {
                   )}
                   {/* Underfliken */}
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-                    {['Träfräs', 'Alufräs', 'Beslag'].map(flik => {
+                    {['Träfräs', 'Alufräs', 'Beslag', 'Glas'].map(flik => {
                       const flikKlar = !!valdKund.klart?.[flik];
                       return (
                         <TouchableOpacity
@@ -2244,7 +2248,8 @@ export default function App() {
                             {(() => {
                               const harManuellt = materialLista.filter(m => (parseInt(m.antal) || 0) > 0).length > 0;
                               const arAlufras = aktivKundFlik === 'Alufräs';
-                              const aktiv = harManuellt || arAlufras;
+                              const arGlas = aktivKundFlik === 'Glas';
+                              const aktiv = harManuellt || arAlufras || arGlas;
                               return (
                                 <TouchableOpacity
                                   onPress={oppnaKlartRuta}
@@ -2252,7 +2257,7 @@ export default function App() {
                                   style={{ backgroundColor: aktiv ? '#16a34a' : '#9ca3af',
                                     borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginBottom: 24 }}>
                                   <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
-                                    ✓ Klart{arAlufras ? ' — hämta profiler & godkänn uttag' : ' — godkänn uttag från lagret'}
+                                    ✓ Klart{arAlufras ? ' — hämta profiler & godkänn uttag' : arGlas ? ' — hämta glas & godkänn uttag' : ' — godkänn uttag från lagret'}
                                   </Text>
                                 </TouchableOpacity>
                               );
@@ -2399,7 +2404,7 @@ export default function App() {
                       style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
                       <View>
                         <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {kund.namn}</Text>
-                        <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>Träfräs · Alufräs · Beslag</Text>
+                        <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>Träfräs · Alufräs · Beslag · Glas</Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                         {kund.klart && Object.keys(kund.klart).length > 0 && (
