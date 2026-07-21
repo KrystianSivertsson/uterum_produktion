@@ -246,8 +246,9 @@ app.get('/api/stampling/anvandare', authMiddleware, (req, res) => {
     const prev = senaste.get(e.userId);
     if (!prev || e.tid > prev.tid) senaste.set(e.userId, e);
   }
-  res.json(users.map(u => {
+  res.json(users.filter(u => u.username !== 'admin').map(u => {
     const sisteEvent = senaste.get(u.id) || null;
+    const arInne = sisteEvent && sisteEvent.typ === 'in';
     return {
       id: u.id,
       username: u.username,
@@ -255,14 +256,16 @@ app.get('/api/stampling/anvandare', authMiddleware, (req, res) => {
       avatar: u.avatar || null,
       harPin: !!u.pinHash,
       status: sisteEvent ? sisteEvent.typ : 'ut',
-      omrade: sisteEvent && sisteEvent.typ === 'in' ? (sisteEvent.omrade || null) : null,
+      omrade: arInne ? (sisteEvent.omrade || null) : null,
+      kundId: arInne ? (sisteEvent.kundId || null) : null,
+      kundNamn: arInne ? (sisteEvent.kundNamn || null) : null,
       senastAndrad: sisteEvent ? sisteEvent.tid : null,
     };
   }));
 });
 
 app.post('/api/stampling/stampla', authMiddleware, (req, res) => {
-  const { userId, pin, omrade } = req.body;
+  const { userId, pin, omrade, kundId, kundNamn } = req.body;
   if (!userId || !pin) return res.status(400).json({ error: 'userId och pin krävs' });
   const users = readJSON(USERS_FILE, []);
   const user = users.find(u => u.id === userId);
@@ -276,10 +279,15 @@ app.post('/api/stampling/stampla', authMiddleware, (req, res) => {
   if (nyTyp === 'in' && !STAMPLING_OMRADEN.includes(omrade)) {
     return res.status(400).json({ error: 'Välj vad du kör: Träfräs, Alufräs eller Beslag' });
   }
+  if (nyTyp === 'in' && !kundNamn) {
+    return res.status(400).json({ error: 'Välj kund, eller Internt / övrigt' });
+  }
   const event = {
     id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
     userId, namn: user.namn, typ: nyTyp,
     omrade: nyTyp === 'in' ? omrade : null,
+    kundId: nyTyp === 'in' ? (kundId || null) : null,
+    kundNamn: nyTyp === 'in' ? kundNamn : null,
     tid: new Date().toISOString(),
   };
   stampling.push(event);
@@ -296,6 +304,77 @@ app.get('/api/stampling/logg', authMiddleware, (req, res) => {
   if (fran) events = events.filter(e => e.tid >= fran);
   if (till) events = events.filter(e => e.tid <= till + 'T23:59:59.999Z');
   res.json(events.sort((a, b) => a.tid < b.tid ? 1 : -1).slice(0, 2000));
+});
+
+// Admin: lägg till en stämpling manuellt (retroaktivt) eller redigera/ta bort en befintlig.
+function validateStamplingFalt(body, user) {
+  const { typ, omrade, tid } = body;
+  if (typ !== 'in' && typ !== 'ut') return 'typ måste vara "in" eller "ut"';
+  if (typ === 'in' && !STAMPLING_OMRADEN.includes(omrade)) return 'Välj vad som kördes: Träfräs, Alufräs eller Beslag';
+  if (!tid || isNaN(new Date(tid).getTime())) return 'Ogiltig tid';
+  if (!user) return 'Användare hittades ej';
+  return null;
+}
+
+app.post('/api/stampling/logg', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const { userId, typ, omrade, kundId, kundNamn, tid } = req.body;
+  const users = readJSON(USERS_FILE, []);
+  const user = users.find(u => u.id === userId);
+  const felmeddelande = validateStamplingFalt(req.body, user);
+  if (felmeddelande) return res.status(400).json({ error: felmeddelande });
+
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const event = {
+    id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+    userId, namn: user.namn, typ,
+    omrade: typ === 'in' ? omrade : null,
+    kundId: typ === 'in' ? (kundId || null) : null,
+    kundNamn: typ === 'in' ? (kundNamn || null) : null,
+    tid: new Date(tid).toISOString(),
+    manuell: true, andradAv: req.user.namn || req.user.username,
+  };
+  stampling.push(event);
+  writeJSON(STAMPLING_FILE, stampling);
+  res.json({ ok: true, event });
+});
+
+app.patch('/api/stampling/logg/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const idx = stampling.findIndex(e => e.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Stämpling hittades ej' });
+
+  const befintlig = stampling[idx];
+  const userId = req.body.userId || befintlig.userId;
+  const users = readJSON(USERS_FILE, []);
+  const user = users.find(u => u.id === userId);
+  const faltAttValidera = { typ: req.body.typ ?? befintlig.typ, omrade: req.body.omrade ?? befintlig.omrade, tid: req.body.tid ?? befintlig.tid };
+  const felmeddelande = validateStamplingFalt(faltAttValidera, user);
+  if (felmeddelande) return res.status(400).json({ error: felmeddelande });
+
+  const uppdaterad = {
+    ...befintlig,
+    userId, namn: user.namn,
+    typ: faltAttValidera.typ,
+    omrade: faltAttValidera.typ === 'in' ? faltAttValidera.omrade : null,
+    kundId: faltAttValidera.typ === 'in' ? (req.body.kundId ?? befintlig.kundId ?? null) : null,
+    kundNamn: faltAttValidera.typ === 'in' ? (req.body.kundNamn ?? befintlig.kundNamn ?? null) : null,
+    tid: new Date(faltAttValidera.tid).toISOString(),
+    manuell: true, andradAv: req.user.namn || req.user.username,
+  };
+  stampling[idx] = uppdaterad;
+  writeJSON(STAMPLING_FILE, stampling);
+  res.json({ ok: true, event: uppdaterad });
+});
+
+app.delete('/api/stampling/logg/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const kvar = stampling.filter(e => e.id !== req.params.id);
+  if (kvar.length === stampling.length) return res.status(404).json({ error: 'Stämpling hittades ej' });
+  writeJSON(STAMPLING_FILE, kvar);
+  res.json({ ok: true });
 });
 
 // --- PUSH NOTIFICATIONS ---

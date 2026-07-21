@@ -422,11 +422,16 @@ function formatDatum(iso) {
 
 const STAMPLING_OMRADEN = ['Träfräs', 'Alufräs', 'Beslag'];
 
+const STAMPLING_INTERNT = { id: null, namn: 'Internt / övrigt' };
+
 function StamplingVy({ token, inloggad }) {
   const { c } = React.useContext(TemaContext) || { c: LJUST };
   const [anvandare, setAnvandare] = useState([]);
+  const [kunder, setKunder] = useState([]);
   const [vald, setVald] = useState(null); // { id, namn, status }
   const [valtOmrade, setValtOmrade] = useState(null);
+  const [valdKund, setValdKund] = useState(null); // { id, namn } eller STAMPLING_INTERNT
+  const [kundSok, setKundSok] = useState('');
   const [pinInput, setPinInput] = useState('');
   const [fel, setFel] = useState('');
   const [bekraftelse, setBekraftelse] = useState('');
@@ -445,25 +450,42 @@ function StamplingVy({ token, inloggad }) {
     return () => clearInterval(iv);
   }, [hamtaAnvandare]);
 
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API}/api/kunder`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => setKunder(Array.isArray(d) ? d : [])).catch(() => {});
+  }, [token]);
+
   const oppnaStampling = (person) => {
-    setVald(person); setPinInput(''); setFel(''); setBekraftelse(''); setValtOmrade(null);
+    setVald(person); setPinInput(''); setFel(''); setBekraftelse('');
+    setValtOmrade(null); setValdKund(null); setKundSok('');
   };
+
+  const kundTraffar = kundSok.trim()
+    ? kunder.filter(k => k.namn.toLowerCase().includes(kundSok.toLowerCase())).slice(0, 8)
+    : kunder.slice(0, 8);
 
   const stampla = async () => {
     const kommerBliIn = vald?.status !== 'in';
     if (kommerBliIn && !valtOmrade) { setFel('Välj vad du kör: Träfräs, Alufräs eller Beslag'); return; }
+    if (kommerBliIn && !valdKund) { setFel('Välj kund, eller Internt / övrigt'); return; }
     if (pinInput.length !== 4) { setFel('Ange 4 siffror'); return; }
     setSkickar(true);
     const res = await fetch(`${API}/api/stampling/stampla`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ userId: vald.id, pin: pinInput, omrade: kommerBliIn ? valtOmrade : undefined }),
+      body: JSON.stringify({
+        userId: vald.id, pin: pinInput,
+        omrade: kommerBliIn ? valtOmrade : undefined,
+        kundId: kommerBliIn ? valdKund?.id : undefined,
+        kundNamn: kommerBliIn ? valdKund?.namn : undefined,
+      }),
     });
     const data = await res.json();
     setSkickar(false);
     if (!res.ok) { setFel(data.error || 'Något gick fel'); setPinInput(''); return; }
-    const omradeText = data.event.typ === 'in' ? ` (${data.event.omrade})` : '';
-    setBekraftelse(`${vald.namn} stämplade ${data.event.typ === 'in' ? 'IN' : 'UT'}${omradeText} ${formatKlockslag(data.event.tid)}`);
+    const detaljText = data.event.typ === 'in' ? ` (${data.event.omrade} · ${data.event.kundNamn})` : '';
+    setBekraftelse(`${vald.namn} stämplade ${data.event.typ === 'in' ? 'IN' : 'UT'}${detaljText} ${formatKlockslag(data.event.tid)}`);
     setVald(null);
     hamtaAnvandare();
   };
@@ -501,7 +523,7 @@ function StamplingVy({ token, inloggad }) {
       </View>
 
       {visaLogg && inloggad?.roll === 'admin' ? (
-        <StamplingLogg token={token} anvandare={anvandare} c={c} />
+        <StamplingLogg token={token} anvandare={anvandare} kunder={kunder} c={c} />
       ) : (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
           {anvandare.length === 0 && (
@@ -521,8 +543,8 @@ function StamplingVy({ token, inloggad }) {
                   marginTop: 8, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12,
                   backgroundColor: p.status === 'in' ? '#dcfce7' : '#f0f2f5',
                 }}>
-                  <Text style={{ color: p.status === 'in' ? '#15803d' : '#888', fontWeight: '600', fontSize: 12 }}>
-                    {p.status === 'in' ? `Inne${p.omrade ? ' · ' + p.omrade : ''}` : 'Ute'}
+                  <Text style={{ color: p.status === 'in' ? '#15803d' : '#888', fontWeight: '600', fontSize: 12, textAlign: 'center' }}>
+                    {p.status === 'in' ? `Inne${p.omrade ? ' · ' + p.omrade : ''}${p.kundNamn ? ' · ' + p.kundNamn : ''}` : 'Ute'}
                   </Text>
                 </View>
                 {p.senastAndrad && (
@@ -552,7 +574,7 @@ function StamplingVy({ token, inloggad }) {
             {vald?.status !== 'in' && (
               <>
                 <Text style={{ color: c.textMuted, marginBottom: 8 }}>Vad kör du?</Text>
-                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
                   {STAMPLING_OMRADEN.map(o => (
                     <TouchableOpacity
                       key={o}
@@ -562,6 +584,38 @@ function StamplingVy({ token, inloggad }) {
                     </TouchableOpacity>
                   ))}
                 </View>
+
+                <Text style={{ color: c.textMuted, marginBottom: 8 }}>
+                  Hos vilken kund?{valdKund ? ` — vald: ${valdKund.namn}` : ''}
+                </Text>
+                <TextInput
+                  style={[um.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText, marginBottom: 8 }]}
+                  placeholder="Sök kund..." placeholderTextColor={c.textMuted}
+                  value={kundSok} onChangeText={t => { setKundSok(t); setValdKund(null); }} />
+                <ScrollView style={{ maxHeight: 130, marginBottom: 8 }}>
+                  {kundTraffar.map(k => (
+                    <TouchableOpacity
+                      key={k.id}
+                      onPress={() => { setValdKund({ id: k.id, namn: k.namn }); setKundSok(k.namn); }}
+                      style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 6, marginBottom: 4,
+                        backgroundColor: valdKund?.id === k.id ? '#2563eb' : c.input, borderWidth: 1,
+                        borderColor: valdKund?.id === k.id ? '#2563eb' : c.inputBorder }}>
+                      <Text style={{ color: valdKund?.id === k.id ? '#fff' : c.text, fontWeight: '600', fontSize: 13 }}>{k.namn}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {kunder.length === 0 && (
+                    <Text style={{ color: c.textMuted, fontSize: 12 }}>Inga kunder hittades.</Text>
+                  )}
+                </ScrollView>
+                <TouchableOpacity
+                  onPress={() => { setValdKund(STAMPLING_INTERNT); setKundSok(''); }}
+                  style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, marginBottom: 14,
+                    backgroundColor: valdKund?.id === null && valdKund ? '#2563eb' : c.input, borderWidth: 1,
+                    borderColor: valdKund?.id === null && valdKund ? '#2563eb' : c.inputBorder }}>
+                  <Text style={{ color: valdKund?.id === null && valdKund ? '#fff' : c.textMuted, fontWeight: '600', fontSize: 12 }}>
+                    Internt / övrigt (inget kundjobb)
+                  </Text>
+                </TouchableOpacity>
               </>
             )}
             <Text style={{ color: c.textMuted, marginBottom: 12 }}>
@@ -583,12 +637,92 @@ function StamplingVy({ token, inloggad }) {
   );
 }
 
-function StamplingLogg({ token, anvandare, c }) {
+function tidTillDatumOchKlocka(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return {
+    datum: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    klocka: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
+
+function StamplingLogg({ token, anvandare, kunder, c }) {
   const [events, setEvents] = useState([]);
   const [filterUserId, setFilterUserId] = useState('');
   const [fran, setFran] = useState('');
   const [till, setTill] = useState('');
   const [laddar, setLaddar] = useState(true);
+
+  const [visaForm, setVisaForm] = useState(false);
+  const [redigerarId, setRedigerarId] = useState(null);
+  const [formUserId, setFormUserId] = useState('');
+  const [formTyp, setFormTyp] = useState('in');
+  const [formOmrade, setFormOmrade] = useState(null);
+  const [formKund, setFormKund] = useState(null);
+  const [formKundSok, setFormKundSok] = useState('');
+  const [formDatum, setFormDatum] = useState('');
+  const [formKlocka, setFormKlocka] = useState('');
+  const [formFel, setFormFel] = useState('');
+  const [formSkickar, setFormSkickar] = useState(false);
+
+  const oppnaNyttFormular = () => {
+    const { datum, klocka } = tidTillDatumOchKlocka();
+    setRedigerarId(null); setFormUserId(anvandare[0]?.id || ''); setFormTyp('in');
+    setFormOmrade(null); setFormKund(null); setFormKundSok('');
+    setFormDatum(datum); setFormKlocka(klocka); setFormFel(''); setVisaForm(true);
+  };
+
+  const oppnaRedigera = (e) => {
+    const { datum, klocka } = tidTillDatumOchKlocka(e.tid);
+    setRedigerarId(e.id); setFormUserId(e.userId); setFormTyp(e.typ);
+    setFormOmrade(e.omrade || null);
+    setFormKund(e.kundNamn ? { id: e.kundId || null, namn: e.kundNamn } : null);
+    setFormKundSok(e.kundNamn || '');
+    setFormDatum(datum); setFormKlocka(klocka); setFormFel(''); setVisaForm(true);
+  };
+
+  const taBortEvent = async (e) => {
+    const fraga = `Ta bort stämplingen "${e.namn} ${e.typ === 'in' ? 'IN' : 'UT'} ${formatDatum(e.tid)}"?`;
+    const genomfor = async () => {
+      await fetch(`${API}/api/stampling/logg/${e.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      hamta();
+    };
+    if (Platform.OS === 'web') { if (window.confirm(fraga)) genomfor(); }
+    else Alert.alert('Ta bort?', fraga, [{ text: 'Avbryt', style: 'cancel' }, { text: 'Ta bort', style: 'destructive', onPress: genomfor }]);
+  };
+
+  const formKundTraffar = formKundSok.trim()
+    ? (kunder || []).filter(k => k.namn.toLowerCase().includes(formKundSok.toLowerCase())).slice(0, 8)
+    : (kunder || []).slice(0, 8);
+
+  const sparaFormular = async () => {
+    setFormFel('');
+    if (!formUserId) { setFormFel('Välj användare'); return; }
+    if (formTyp === 'in' && !formOmrade) { setFormFel('Välj vad som kördes'); return; }
+    if (formTyp === 'in' && !formKund) { setFormFel('Välj kund, eller Internt / övrigt'); return; }
+    if (!formDatum || !formKlocka) { setFormFel('Ange datum och tid'); return; }
+    const tid = new Date(`${formDatum}T${formKlocka}:00`);
+    if (isNaN(tid.getTime())) { setFormFel('Ogiltigt datum/tid'); return; }
+    setFormSkickar(true);
+    const body = {
+      userId: formUserId, typ: formTyp,
+      omrade: formTyp === 'in' ? formOmrade : undefined,
+      kundId: formTyp === 'in' ? formKund?.id : undefined,
+      kundNamn: formTyp === 'in' ? formKund?.namn : undefined,
+      tid: tid.toISOString(),
+    };
+    const url = redigerarId ? `${API}/api/stampling/logg/${redigerarId}` : `${API}/api/stampling/logg`;
+    const res = await fetch(url, {
+      method: redigerarId ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    setFormSkickar(false);
+    if (!res.ok) { setFormFel(data.error || 'Något gick fel'); return; }
+    setVisaForm(false);
+    hamta();
+  };
 
   const hamta = useCallback(() => {
     setLaddar(true);
@@ -651,6 +785,9 @@ function StamplingLogg({ token, anvandare, c }) {
         <TouchableOpacity onPress={hamta} style={{ backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' }}>
           <Text style={{ color: '#fff', fontWeight: '600' }}>Filtrera</Text>
         </TouchableOpacity>
+        <TouchableOpacity onPress={oppnaNyttFormular} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' }}>
+          <Text style={{ color: '#fff', fontWeight: '600' }}>+ Lägg till stämpling</Text>
+        </TouchableOpacity>
       </View>
 
       {timmarPerAnvandare.length > 0 && (
@@ -670,14 +807,111 @@ function StamplingLogg({ token, anvandare, c }) {
           {events.length === 0 && <Text style={{ color: c.textMuted }}>Inga stämplingar i perioden.</Text>}
           {events.map(e => (
             <View key={e.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
-              <Text style={{ color: c.text, flex: 1 }}>{e.namn}</Text>
+              <Text style={{ color: c.text, flex: 1 }}>{e.namn}{e.manuell ? ' ✎' : ''}</Text>
               <Text style={{ color: e.typ === 'in' ? '#16a34a' : '#ef4444', fontWeight: '600', width: 40 }}>{e.typ === 'in' ? 'IN' : 'UT'}</Text>
               <Text style={{ color: c.textMuted, width: 70 }}>{e.omrade || ''}</Text>
-              <Text style={{ color: c.textMuted }}>{formatDatum(e.tid)} {new Date(e.tid).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</Text>
+              <Text style={{ color: c.textMuted, width: 100 }} numberOfLines={1}>{e.kundNamn || ''}</Text>
+              <Text style={{ color: c.textMuted, width: 120 }}>{formatDatum(e.tid)} {new Date(e.tid).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</Text>
+              <TouchableOpacity onPress={() => oppnaRedigera(e)} style={{ paddingHorizontal: 6 }}>
+                <Text style={{ color: '#2563eb', fontSize: 13 }}>✎</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => taBortEvent(e)} style={{ paddingHorizontal: 6 }}>
+                <Text style={{ color: '#ef4444', fontSize: 13 }}>🗑</Text>
+              </TouchableOpacity>
             </View>
           ))}
         </View>
       )}
+
+      <Modal visible={visaForm} animationType="fade" transparent onRequestClose={() => setVisaForm(false)}>
+        <View style={um.bakgrund}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 360 }]}>
+            <View style={um.rubrikRad}>
+              <Text style={[um.rubrik, { color: c.textRubrik }]}>{redigerarId ? 'Redigera stämpling' : 'Lägg till stämpling'}</Text>
+              <TouchableOpacity onPress={() => setVisaForm(false)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 420 }}>
+              <Text style={{ color: c.textMuted, marginBottom: 6 }}>Anställd</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                {anvandare.map(a => (
+                  <TouchableOpacity key={a.id} onPress={() => setFormUserId(a.id)}
+                    style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1,
+                      backgroundColor: formUserId === a.id ? '#2563eb' : c.input, borderColor: formUserId === a.id ? '#2563eb' : c.inputBorder }}>
+                    <Text style={{ color: formUserId === a.id ? '#fff' : c.text, fontSize: 12, fontWeight: '600' }}>{a.namn}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={{ color: c.textMuted, marginBottom: 6 }}>Typ</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                {[['in', 'Stämpla IN'], ['ut', 'Stämpla UT']].map(([v, label]) => (
+                  <TouchableOpacity key={v} onPress={() => setFormTyp(v)}
+                    style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1,
+                      backgroundColor: formTyp === v ? '#2563eb' : c.input, borderColor: formTyp === v ? '#2563eb' : c.inputBorder }}>
+                    <Text style={{ color: formTyp === v ? '#fff' : c.text, fontWeight: '600', fontSize: 12 }}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {formTyp === 'in' && (
+                <>
+                  <Text style={{ color: c.textMuted, marginBottom: 6 }}>Vad kördes?</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                    {STAMPLING_OMRADEN.map(o => (
+                      <TouchableOpacity key={o} onPress={() => setFormOmrade(o)}
+                        style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1,
+                          backgroundColor: formOmrade === o ? '#2563eb' : c.input, borderColor: formOmrade === o ? '#2563eb' : c.inputBorder }}>
+                        <Text style={{ color: formOmrade === o ? '#fff' : c.text, fontWeight: '600', fontSize: 12 }}>{o}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={{ color: c.textMuted, marginBottom: 6 }}>
+                    Kund{formKund ? ` — vald: ${formKund.namn}` : ''}
+                  </Text>
+                  <TextInput
+                    style={[um.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText, marginBottom: 6 }]}
+                    placeholder="Sök kund..." placeholderTextColor={c.textMuted}
+                    value={formKundSok} onChangeText={t => { setFormKundSok(t); setFormKund(null); }} />
+                  <ScrollView style={{ maxHeight: 100, marginBottom: 6 }}>
+                    {formKundTraffar.map(k => (
+                      <TouchableOpacity key={k.id} onPress={() => { setFormKund({ id: k.id, namn: k.namn }); setFormKundSok(k.namn); }}
+                        style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, marginBottom: 4,
+                          backgroundColor: formKund?.id === k.id ? '#2563eb' : c.input, borderWidth: 1,
+                          borderColor: formKund?.id === k.id ? '#2563eb' : c.inputBorder }}>
+                        <Text style={{ color: formKund?.id === k.id ? '#fff' : c.text, fontSize: 13, fontWeight: '600' }}>{k.namn}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  <TouchableOpacity onPress={() => { setFormKund(STAMPLING_INTERNT); setFormKundSok(''); }}
+                    style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, marginBottom: 12,
+                      backgroundColor: formKund?.id === null && formKund ? '#2563eb' : c.input, borderWidth: 1,
+                      borderColor: formKund?.id === null && formKund ? '#2563eb' : c.inputBorder }}>
+                    <Text style={{ color: formKund?.id === null && formKund ? '#fff' : c.textMuted, fontWeight: '600', fontSize: 12 }}>
+                      Internt / övrigt (inget kundjobb)
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              <Text style={{ color: c.textMuted, marginBottom: 6 }}>Datum och tid</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                <TextInput
+                  style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  placeholder="ÅÅÅÅ-MM-DD" placeholderTextColor={c.textMuted} value={formDatum} onChangeText={setFormDatum} />
+                <TextInput
+                  style={[um.input, { width: 90, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  placeholder="TT:MM" placeholderTextColor={c.textMuted} value={formKlocka} onChangeText={setFormKlocka} />
+              </View>
+
+              {formFel ? <Text style={{ color: '#ef4444', marginBottom: 8 }}>{formFel}</Text> : null}
+              <TouchableOpacity style={[um.laggKnapp, formSkickar && { opacity: 0.6 }]} disabled={formSkickar} onPress={sparaFormular}>
+                <Text style={um.laggText}>{formSkickar ? 'Sparar...' : (redigerarId ? 'Spara ändringar' : 'Lägg till')}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1325,7 +1559,7 @@ export default function App() {
   const [kollarSession, setKollarSession] = useState(true);
 
   const [produkter, setProdukter] = useState([]);
-  const [aktivFlik, setAktivFlik] = useState('Alla produkter');
+  const [aktivFlik, setAktivFlik] = useState('__stampling__');
   const [sok, setSok] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [redigeraProdukt, setRedigeraProdukt] = useState(null);
