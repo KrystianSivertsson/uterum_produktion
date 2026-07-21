@@ -236,6 +236,8 @@ app.patch('/api/me/avatar', authMiddleware, (req, res) => {
 
 // --- STÄMPLING (kiosk-läge: en delad inloggning, alla användare syns och
 // stämplar in/ut med egen PIN) ---
+const STAMPLING_OMRADEN = ['Träfräs', 'Alufräs', 'Beslag'];
+
 app.get('/api/stampling/anvandare', authMiddleware, (req, res) => {
   const users = readJSON(USERS_FILE, []);
   const stampling = readJSON(STAMPLING_FILE, []);
@@ -248,17 +250,19 @@ app.get('/api/stampling/anvandare', authMiddleware, (req, res) => {
     const sisteEvent = senaste.get(u.id) || null;
     return {
       id: u.id,
+      username: u.username,
       namn: u.namn,
       avatar: u.avatar || null,
       harPin: !!u.pinHash,
       status: sisteEvent ? sisteEvent.typ : 'ut',
+      omrade: sisteEvent && sisteEvent.typ === 'in' ? (sisteEvent.omrade || null) : null,
       senastAndrad: sisteEvent ? sisteEvent.tid : null,
     };
   }));
 });
 
 app.post('/api/stampling/stampla', authMiddleware, (req, res) => {
-  const { userId, pin } = req.body;
+  const { userId, pin, omrade } = req.body;
   if (!userId || !pin) return res.status(400).json({ error: 'userId och pin krävs' });
   const users = readJSON(USERS_FILE, []);
   const user = users.find(u => u.id === userId);
@@ -269,7 +273,15 @@ app.post('/api/stampling/stampla', authMiddleware, (req, res) => {
   const stampling = readJSON(STAMPLING_FILE, []);
   const forra = stampling.filter(e => e.userId === userId).sort((a, b) => a.tid < b.tid ? 1 : -1)[0];
   const nyTyp = forra && forra.typ === 'in' ? 'ut' : 'in';
-  const event = { id: Date.now().toString() + Math.random().toString(36).slice(2, 6), userId, namn: user.namn, typ: nyTyp, tid: new Date().toISOString() };
+  if (nyTyp === 'in' && !STAMPLING_OMRADEN.includes(omrade)) {
+    return res.status(400).json({ error: 'Välj vad du kör: Träfräs, Alufräs eller Beslag' });
+  }
+  const event = {
+    id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+    userId, namn: user.namn, typ: nyTyp,
+    omrade: nyTyp === 'in' ? omrade : null,
+    tid: new Date().toISOString(),
+  };
   stampling.push(event);
   writeJSON(STAMPLING_FILE, stampling);
   res.json({ ok: true, event });

@@ -420,10 +420,13 @@ function formatDatum(iso) {
   return new Date(iso).toLocaleDateString('sv-SE');
 }
 
+const STAMPLING_OMRADEN = ['Träfräs', 'Alufräs', 'Beslag'];
+
 function StamplingVy({ token, inloggad }) {
   const { c } = React.useContext(TemaContext) || { c: LJUST };
   const [anvandare, setAnvandare] = useState([]);
   const [vald, setVald] = useState(null); // { id, namn, status }
+  const [valtOmrade, setValtOmrade] = useState(null);
   const [pinInput, setPinInput] = useState('');
   const [fel, setFel] = useState('');
   const [bekraftelse, setBekraftelse] = useState('');
@@ -443,23 +446,39 @@ function StamplingVy({ token, inloggad }) {
   }, [hamtaAnvandare]);
 
   const oppnaStampling = (person) => {
-    setVald(person); setPinInput(''); setFel(''); setBekraftelse('');
+    setVald(person); setPinInput(''); setFel(''); setBekraftelse(''); setValtOmrade(null);
   };
 
   const stampla = async () => {
+    const kommerBliIn = vald?.status !== 'in';
+    if (kommerBliIn && !valtOmrade) { setFel('Välj vad du kör: Träfräs, Alufräs eller Beslag'); return; }
     if (pinInput.length !== 4) { setFel('Ange 4 siffror'); return; }
     setSkickar(true);
     const res = await fetch(`${API}/api/stampling/stampla`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ userId: vald.id, pin: pinInput }),
+      body: JSON.stringify({ userId: vald.id, pin: pinInput, omrade: kommerBliIn ? valtOmrade : undefined }),
     });
     const data = await res.json();
     setSkickar(false);
     if (!res.ok) { setFel(data.error || 'Något gick fel'); setPinInput(''); return; }
-    setBekraftelse(`${vald.namn} stämplade ${data.event.typ === 'in' ? 'IN' : 'UT'} ${formatKlockslag(data.event.tid)}`);
+    const omradeText = data.event.typ === 'in' ? ` (${data.event.omrade})` : '';
+    setBekraftelse(`${vald.namn} stämplade ${data.event.typ === 'in' ? 'IN' : 'UT'}${omradeText} ${formatKlockslag(data.event.tid)}`);
     setVald(null);
     hamtaAnvandare();
+  };
+
+  const taBortPerson = async (person) => {
+    const genomfor = async () => {
+      await fetch(`${API}/api/users/${person.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      hamtaAnvandare();
+    };
+    const fraga = `Ta bort ${person.namn} helt (hela användarkontot, inte bara från stämplingen)?`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(fraga)) genomfor();
+    } else {
+      Alert.alert('Ta bort?', fraga, [{ text: 'Avbryt', style: 'cancel' }, { text: 'Ta bort', style: 'destructive', onPress: genomfor }]);
+    }
   };
 
   return (
@@ -489,30 +508,36 @@ function StamplingVy({ token, inloggad }) {
             <Text style={{ color: c.textMuted }}>Inga användare hittades.</Text>
           )}
           {anvandare.map(p => (
-            <TouchableOpacity
-              key={p.id}
-              onPress={() => oppnaStampling(p)}
-              style={{
-                width: 160, backgroundColor: c.kort, borderColor: p.status === 'in' ? '#16a34a' : c.kortBorder,
-                borderWidth: p.status === 'in' ? 2 : 1, borderRadius: 12, padding: 16, alignItems: 'center',
-              }}>
-              <Text style={{ fontSize: 32, marginBottom: 8 }}>{p.avatar || '👤'}</Text>
-              <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, textAlign: 'center' }}>{p.namn}</Text>
-              <View style={{
-                marginTop: 8, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12,
-                backgroundColor: p.status === 'in' ? '#dcfce7' : '#f0f2f5',
-              }}>
-                <Text style={{ color: p.status === 'in' ? '#15803d' : '#888', fontWeight: '600', fontSize: 12 }}>
-                  {p.status === 'in' ? 'Inne' : 'Ute'}
-                </Text>
-              </View>
-              {p.senastAndrad && (
-                <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 4 }}>sedan {formatKlockslag(p.senastAndrad)}</Text>
+            <View key={p.id} style={{ width: 160 }}>
+              <TouchableOpacity
+                onPress={() => oppnaStampling(p)}
+                style={{
+                  backgroundColor: c.kort, borderColor: p.status === 'in' ? '#16a34a' : c.kortBorder,
+                  borderWidth: p.status === 'in' ? 2 : 1, borderRadius: 12, padding: 16, alignItems: 'center',
+                }}>
+                <Text style={{ fontSize: 32, marginBottom: 8 }}>{p.avatar || '👤'}</Text>
+                <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, textAlign: 'center' }}>{p.namn}</Text>
+                <View style={{
+                  marginTop: 8, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12,
+                  backgroundColor: p.status === 'in' ? '#dcfce7' : '#f0f2f5',
+                }}>
+                  <Text style={{ color: p.status === 'in' ? '#15803d' : '#888', fontWeight: '600', fontSize: 12 }}>
+                    {p.status === 'in' ? `Inne${p.omrade ? ' · ' + p.omrade : ''}` : 'Ute'}
+                  </Text>
+                </View>
+                {p.senastAndrad && (
+                  <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 4 }}>sedan {formatKlockslag(p.senastAndrad)}</Text>
+                )}
+                {!p.harPin && (
+                  <Text style={{ color: '#ef4444', fontSize: 10, marginTop: 4 }}>PIN ej satt</Text>
+                )}
+              </TouchableOpacity>
+              {inloggad?.roll === 'admin' && p.username !== 'admin' && (
+                <TouchableOpacity onPress={() => taBortPerson(p)} style={{ marginTop: 6, alignItems: 'center', paddingVertical: 4 }}>
+                  <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '600' }}>🗑 Ta bort</Text>
+                </TouchableOpacity>
               )}
-              {!p.harPin && (
-                <Text style={{ color: '#ef4444', fontSize: 10, marginTop: 4 }}>PIN ej satt</Text>
-              )}
-            </TouchableOpacity>
+            </View>
           ))}
         </View>
       )}
@@ -524,6 +549,21 @@ function StamplingVy({ token, inloggad }) {
               <Text style={[um.rubrik, { color: c.textRubrik }]}>{vald?.namn}</Text>
               <TouchableOpacity onPress={() => setVald(null)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
             </View>
+            {vald?.status !== 'in' && (
+              <>
+                <Text style={{ color: c.textMuted, marginBottom: 8 }}>Vad kör du?</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                  {STAMPLING_OMRADEN.map(o => (
+                    <TouchableOpacity
+                      key={o}
+                      onPress={() => setValtOmrade(o)}
+                      style={{ flex: 1, backgroundColor: valtOmrade === o ? '#2563eb' : c.input, borderRadius: 8, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: valtOmrade === o ? '#2563eb' : c.inputBorder }}>
+                      <Text style={{ color: valtOmrade === o ? '#fff' : c.text, fontWeight: '600', fontSize: 12 }}>{o}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
             <Text style={{ color: c.textMuted, marginBottom: 12 }}>
               Ange din 4-siffriga PIN för att stämpla {vald?.status === 'in' ? 'UT' : 'IN'}.
             </Text>
@@ -629,9 +669,10 @@ function StamplingLogg({ token, anvandare, c }) {
         <View>
           {events.length === 0 && <Text style={{ color: c.textMuted }}>Inga stämplingar i perioden.</Text>}
           {events.map(e => (
-            <View key={e.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
-              <Text style={{ color: c.text }}>{e.namn}</Text>
+            <View key={e.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+              <Text style={{ color: c.text, flex: 1 }}>{e.namn}</Text>
               <Text style={{ color: e.typ === 'in' ? '#16a34a' : '#ef4444', fontWeight: '600', width: 40 }}>{e.typ === 'in' ? 'IN' : 'UT'}</Text>
+              <Text style={{ color: c.textMuted, width: 70 }}>{e.omrade || ''}</Text>
               <Text style={{ color: c.textMuted }}>{formatDatum(e.tid)} {new Date(e.tid).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</Text>
             </View>
           ))}
