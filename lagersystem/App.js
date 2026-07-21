@@ -919,7 +919,7 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
 // Stämpla + beredning direkt i kundkortets kategoriflikar — samlad aktivitetslogg
 // (vem stämplade in/ut och vad som beretts, t.ex. "ECW skickat till Alufräs") visas
 // direkt så man ser vad som är gjort och när, utan att gå via den fristående Stämpling-vyn.
-function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund, c }) {
+function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund, ecwRuns, c }) {
   const [anvandare, setAnvandare] = useState([]);
   const [stampLogg, setStampLogg] = useState([]);
   const [visaStampla, setVisaStampla] = useState(false);
@@ -983,6 +983,10 @@ function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund
   };
 
   const beredningLogg = (valdKund.logg || []).filter(e => e.kategori === kategori);
+  const materialLista = valdKund.material?.[kategori] || [];
+  const kundRuns = (ecwRuns || []).filter(run =>
+    run.projekt?.toLowerCase() === kundNamn?.toLowerCase() ||
+    (run.comNo && run.comNo.toLowerCase() === kundNamn?.toLowerCase()));
   const kombinerad = [
     ...stampLogg.map(e => ({ id: 's' + e.id, ikon: '⏱️', text: `${e.namn} stämplade ${e.typ === 'in' ? 'IN' : 'UT'}`, tid: e.tid })),
     ...beredningLogg.map(e => ({ id: 'b' + e.id, ikon: '📝', text: `${e.text} (${e.av})`, tid: e.tid })),
@@ -1060,19 +1064,78 @@ function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund
 
       <Modal visible={visaBeredning} animationType="fade" transparent onRequestClose={() => setVisaBeredning(false)}>
         <View style={um.bakgrund}>
-          <View style={[um.panel, { backgroundColor: c.modal, width: 320 }]}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 480 }]}>
             <View style={um.rubrikRad}>
               <Text style={[um.rubrik, { color: c.textRubrik }]}>Beredning · {kategori}</Text>
               <TouchableOpacity onPress={() => setVisaBeredning(false)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
             </View>
-            <Text style={{ color: c.textMuted, marginBottom: 8 }}>Vad är gjort? T.ex. "ECW skickat till Alufräs"</Text>
-            <TextInput
-              style={[um.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
-              value={beredningText} onChangeText={setBeredningText}
-              placeholder="Beskrivning..." placeholderTextColor={c.textMuted} autoFocus onSubmitEditing={sparaBeredning} />
-            <TouchableOpacity style={um.laggKnapp} onPress={sparaBeredning}>
-              <Text style={um.laggText}>Spara</Text>
-            </TouchableOpacity>
+            <ScrollView style={{ maxHeight: 500 }}>
+              {kategori === 'Glas' && (valdKund.matt?.length > 0) && (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>GLASMÅTT</Text>
+                  {valdKund.matt.map((m, i) => (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
+                      <Text style={{ color: c.textMuted, fontSize: 12 }}>Enhet {i + 1}:</Text>
+                      <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>{m.widthMm} × {m.heightMm} mm</Text>
+                      {m.leaves ? <Text style={{ color: c.textMuted, fontSize: 12 }}>· {m.leaves} båge{m.leaves === 1 ? '' : 'ar'}</Text> : null}
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {(kategori === 'Alufräs' || kategori === 'Beslag') && (
+                <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+              )}
+
+              {kategori === 'Alufräs' && (
+                <>
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ECW-FILER</Text>
+                  <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                  {kundRuns.length > 0 && (
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ECW-KÖRNINGAR</Text>
+                      {kundRuns.map(run => (
+                        <View key={run.id} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8 }]}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>✅ {run.projekt}</Text>
+                            <Text style={{ color: c.textMuted, fontSize: 12 }}>{new Date(run.tid).toLocaleString('sv-SE')}</Text>
+                          </View>
+                          {(run.partier || []).map((p, i) => (
+                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                              <Text style={{ color: c.textMuted, fontSize: 13, minWidth: 34, fontWeight: '600' }}>{p.label}</Text>
+                              <Text style={{ color: c.text, fontSize: 13 }}>{p.breddMm} × {p.hoejdMm} mm</Text>
+                              <Text style={{ color: c.textMuted, fontSize: 12 }}>{p.baagar} bågar · {p.serie}-serien</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+
+              {materialLista.length > 0 && (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>MATERIAL — {kategori}</Text>
+                  {materialLista.map(m => (
+                    <View key={m.produktId} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+                      <Text style={{ color: c.text, fontSize: 13 }}>{m.namn}</Text>
+                      <Text style={{ color: c.textMuted, fontSize: 13 }}>{m.antal}{m.enhet}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>LÄGG TILL ANTECKNING</Text>
+              <Text style={{ color: c.textMuted, marginBottom: 8 }}>Vad är gjort? T.ex. "ECW skickat till Alufräs"</Text>
+              <TextInput
+                style={[um.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                value={beredningText} onChangeText={setBeredningText}
+                placeholder="Beskrivning..." placeholderTextColor={c.textMuted} onSubmitEditing={sparaBeredning} />
+              <TouchableOpacity style={um.laggKnapp} onPress={sparaBeredning}>
+                <Text style={um.laggText}>Spara</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2852,7 +2915,7 @@ export default function App() {
                       : [];
                     return (
                       <View>
-                        <KundAktivitet token={token} valdKund={valdKund} aktivKundFlik={aktivKundFlik} inloggad={inloggad} uppdateraKund={uppdateraKund} c={c} />
+                        <KundAktivitet token={token} valdKund={valdKund} aktivKundFlik={aktivKundFlik} inloggad={inloggad} uppdateraKund={uppdateraKund} ecwRuns={ecwRuns} c={c} />
                         {(aktivKundFlik === 'Alufräs' || aktivKundFlik === 'Beslag') && (
                           <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
                         )}
