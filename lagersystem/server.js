@@ -295,6 +295,15 @@ app.post('/api/stampling/stampla', authMiddleware, (req, res) => {
   res.json({ ok: true, event });
 });
 
+// Stämplingar för en specifik kund (visas direkt i kundkortet) — alla
+// inloggade får se detta, till skillnad från den fulla admin-loggen.
+app.get('/api/stampling/kund/:kundId', authMiddleware, (req, res) => {
+  const { omrade } = req.query;
+  let events = readJSON(STAMPLING_FILE, []).filter(e => e.kundId === req.params.kundId);
+  if (omrade) events = events.filter(e => e.omrade === omrade);
+  res.json(events.sort((a, b) => a.tid < b.tid ? 1 : -1).slice(0, 200));
+});
+
 // Admin-logg — filtrerbar på användare/datumintervall (YYYY-MM-DD).
 app.get('/api/stampling/logg', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
@@ -466,9 +475,10 @@ app.put('/api/kunder/:id', authMiddleware, (req, res) => {
     });
     idx = kunder.length - 1;
   }
-  const { material, klart } = req.body || {};
+  const { material, klart, logg } = req.body || {};
   if (material !== undefined) kunder[idx].material = material;
   if (klart !== undefined) kunder[idx].klart = klart;
+  if (logg !== undefined) kunder[idx].logg = logg;
   writeJSON(KUNDER_FILE, kunder);
   res.json(kunder[idx]);
 });

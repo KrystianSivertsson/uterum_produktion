@@ -916,6 +916,170 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
   );
 }
 
+// Stämpla + beredning direkt i kundkortets kategoriflikar — samlad aktivitetslogg
+// (vem stämplade in/ut och vad som beretts, t.ex. "ECW skickat till Alufräs") visas
+// direkt så man ser vad som är gjort och när, utan att gå via den fristående Stämpling-vyn.
+function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund, c }) {
+  const [anvandare, setAnvandare] = useState([]);
+  const [stampLogg, setStampLogg] = useState([]);
+  const [visaStampla, setVisaStampla] = useState(false);
+  const [visaBeredning, setVisaBeredning] = useState(false);
+  const [vald, setVald] = useState(null);
+  const [pinInput, setPinInput] = useState('');
+  const [fel, setFel] = useState('');
+  const [skickar, setSkickar] = useState(false);
+  const [beredningText, setBeredningText] = useState('');
+
+  const kundId = valdKund.id;
+  const kundNamn = valdKund.namn;
+  const kategori = aktivKundFlik;
+  const arStamplingsbar = STAMPLING_OMRADEN.includes(kategori);
+
+  const hamtaStampling = useCallback(() => {
+    if (!token || !arStamplingsbar) { setStampLogg([]); return; }
+    fetch(`${API}/api/stampling/kund/${kundId}?omrade=${encodeURIComponent(kategori)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => setStampLogg(Array.isArray(d) ? d : [])).catch(() => {});
+  }, [token, kundId, kategori, arStamplingsbar]);
+
+  useEffect(() => { hamtaStampling(); }, [hamtaStampling]);
+
+  useEffect(() => {
+    if (!token || !arStamplingsbar) return;
+    fetch(`${API}/api/stampling/anvandare`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setAnvandare).catch(() => {});
+  }, [token, arStamplingsbar]);
+
+  const oppnaStampla = () => { setVald(null); setPinInput(''); setFel(''); setVisaStampla(true); };
+
+  const stampla = async () => {
+    if (!vald) { setFel('Välj person'); return; }
+    if (pinInput.length !== 4) { setFel('Ange 4 siffror'); return; }
+    setSkickar(true);
+    const kommerBliIn = vald.status !== 'in';
+    const res = await fetch(`${API}/api/stampling/stampla`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        userId: vald.id, pin: pinInput,
+        omrade: kommerBliIn ? kategori : undefined,
+        kundId: kommerBliIn ? kundId : undefined,
+        kundNamn: kommerBliIn ? kundNamn : undefined,
+      }),
+    });
+    const data = await res.json();
+    setSkickar(false);
+    if (!res.ok) { setFel(data.error || 'Något gick fel'); setPinInput(''); return; }
+    setVisaStampla(false);
+    hamtaStampling();
+  };
+
+  const sparaBeredning = () => {
+    const trimmed = beredningText.trim();
+    if (!trimmed) return;
+    const entry = { id: Date.now().toString(), kategori, text: trimmed, av: inloggad?.namn || inloggad?.username || '', tid: new Date().toISOString() };
+    uppdateraKund({ ...valdKund, logg: [...(valdKund.logg || []), entry] });
+    setBeredningText('');
+    setVisaBeredning(false);
+  };
+
+  const beredningLogg = (valdKund.logg || []).filter(e => e.kategori === kategori);
+  const kombinerad = [
+    ...stampLogg.map(e => ({ id: 's' + e.id, ikon: '⏱️', text: `${e.namn} stämplade ${e.typ === 'in' ? 'IN' : 'UT'}`, tid: e.tid })),
+    ...beredningLogg.map(e => ({ id: 'b' + e.id, ikon: '📝', text: `${e.text} (${e.av})`, tid: e.tid })),
+  ].sort((a, b) => a.tid < b.tid ? 1 : -1).slice(0, 8);
+
+  return (
+    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+        {arStamplingsbar && (
+          <TouchableOpacity onPress={oppnaStampla} style={{ backgroundColor: '#2563eb', borderRadius: 8, paddingVertical: 9, paddingHorizontal: 14 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>⏱️ Stämpla</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity onPress={() => setVisaBeredning(true)} style={{ backgroundColor: c.input, borderColor: c.inputBorder, borderWidth: 1, borderRadius: 8, paddingVertical: 9, paddingHorizontal: 14 }}>
+          <Text style={{ color: c.text, fontWeight: '700', fontSize: 13 }}>📝 Beredning</Text>
+        </TouchableOpacity>
+      </View>
+
+      {kombinerad.length === 0 ? (
+        <Text style={{ color: c.textMuted, fontSize: 12 }}>Inget loggat ännu för {kategori}.</Text>
+      ) : (
+        kombinerad.map(e => (
+          <Text key={e.id} style={{ color: c.textMuted, fontSize: 12, marginBottom: 3 }}>
+            {e.ikon} {e.text} · {formatKlockslag(e.tid)}
+          </Text>
+        ))
+      )}
+
+      <Modal visible={visaStampla} animationType="fade" transparent onRequestClose={() => setVisaStampla(false)}>
+        <View style={um.bakgrund}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 320 }]}>
+            <View style={um.rubrikRad}>
+              <Text style={[um.rubrik, { color: c.textRubrik }]}>Stämpla · {kategori}</Text>
+              <TouchableOpacity onPress={() => setVisaStampla(false)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+            </View>
+            {!vald ? (
+              <ScrollView style={{ maxHeight: 280 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {anvandare.length === 0 && <Text style={{ color: c.textMuted, fontSize: 12 }}>Inga användare hittades.</Text>}
+                  {anvandare.map(p => (
+                    <TouchableOpacity key={p.id} onPress={() => setVald(p)}
+                      style={{ width: 120, backgroundColor: c.input, borderColor: p.status === 'in' ? '#16a34a' : c.inputBorder, borderWidth: p.status === 'in' ? 2 : 1, borderRadius: 10, padding: 10, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 24 }}>{p.avatar || '👤'}</Text>
+                      <Text style={{ color: c.text, fontWeight: '600', fontSize: 12, textAlign: 'center', marginTop: 4 }}>{p.namn}</Text>
+                      <Text style={{ color: p.status === 'in' ? '#16a34a' : c.textMuted, fontSize: 10, marginTop: 2, textAlign: 'center' }}>
+                        {p.status === 'in' ? `Inne · ${p.omrade}${p.kundNamn ? ' · ' + p.kundNamn : ''}` : 'Ute'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            ) : (
+              <>
+                <Text style={{ color: c.textMuted, marginBottom: 8 }}>
+                  {vald.namn} — {vald.status === 'in'
+                    ? `stämplar UT${vald.kundNamn && vald.kundNamn !== kundNamn ? ` (var inne på ${vald.kundNamn})` : ''}`
+                    : `stämplar IN på ${kategori} · ${kundNamn}`}
+                </Text>
+                {fel ? <Text style={{ color: '#ef4444', marginBottom: 8 }}>{fel}</Text> : null}
+                <TextInput
+                  style={[um.input, { textAlign: 'center', fontSize: 22, letterSpacing: 6, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  value={pinInput} onChangeText={t => setPinInput(t.replace(/\D/g, '').slice(0, 4))}
+                  keyboardType="numeric" secureTextEntry maxLength={4} autoFocus onSubmitEditing={stampla} />
+                <TouchableOpacity style={[um.laggKnapp, skickar && { opacity: 0.6 }]} disabled={skickar} onPress={stampla}>
+                  <Text style={um.laggText}>{skickar ? 'Skickar...' : `Stämpla ${vald.status === 'in' ? 'UT' : 'IN'}`}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setVald(null)} style={{ marginTop: 8, alignItems: 'center' }}>
+                  <Text style={{ color: c.textMuted, fontSize: 12 }}>← Välj annan person</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={visaBeredning} animationType="fade" transparent onRequestClose={() => setVisaBeredning(false)}>
+        <View style={um.bakgrund}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 320 }]}>
+            <View style={um.rubrikRad}>
+              <Text style={[um.rubrik, { color: c.textRubrik }]}>Beredning · {kategori}</Text>
+              <TouchableOpacity onPress={() => setVisaBeredning(false)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+            </View>
+            <Text style={{ color: c.textMuted, marginBottom: 8 }}>Vad är gjort? T.ex. "ECW skickat till Alufräs"</Text>
+            <TextInput
+              style={[um.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+              value={beredningText} onChangeText={setBeredningText}
+              placeholder="Beskrivning..." placeholderTextColor={c.textMuted} autoFocus onSubmitEditing={sparaBeredning} />
+            <TouchableOpacity style={um.laggKnapp} onPress={sparaBeredning}>
+              <Text style={um.laggText}>Spara</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
 // ─── Profile modal ───────────────────────────────────────────────────────────
 const AVATARER = ['😀','😎','🧑‍💻','👷','🧰','🔧','📦','🏗️','🪟','🏠','⭐','🦊','🐺','🦁','🐻','🐼','🤖','👾'];
 
@@ -2088,6 +2252,7 @@ export default function App() {
         matt: uppdaterad.matt || [],
         material: uppdaterad.material || {},
         klart: uppdaterad.klart || {},
+        logg: uppdaterad.logg || [],
       }),
     }).catch(() => {});
   };
@@ -2687,6 +2852,7 @@ export default function App() {
                       : [];
                     return (
                       <View>
+                        <KundAktivitet token={token} valdKund={valdKund} aktivKundFlik={aktivKundFlik} inloggad={inloggad} uppdateraKund={uppdateraKund} c={c} />
                         {(aktivKundFlik === 'Alufräs' || aktivKundFlik === 'Beslag') && (
                           <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
                         )}
