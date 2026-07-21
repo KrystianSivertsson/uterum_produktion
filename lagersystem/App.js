@@ -1813,6 +1813,7 @@ export default function App() {
   const [ase60Projekt, setAse60Projekt] = useState([]);
   const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
   const [sokAse60, setSokAse60] = useState('');
+  const [valdaKunderExport, setValdaKunderExport] = useState(() => new Set());
   const [klartRuta, setKlartRuta] = useState(null); // { rader, serier, projekt, laddar, fel }
   const [visaProfil, setVisaProfil] = useState(false);
   const [visaSidebar, setVisaSidebar] = useState(false);
@@ -2610,6 +2611,53 @@ export default function App() {
     } catch { Alert.alert('Fel', 'Kunde inte exportera'); }
   };
 
+  // Alla kunder (ASE60-projekt + manuellt tillagda) med sina glasmått, för export.
+  const alleKunderMedMatt = [
+    ...ase60Projekt.map(proj => ({
+      id: proj.id, namn: proj.name,
+      matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+    })),
+    ...kunder.filter(k => !k.ase60ProjectId && !ase60Projekt.some(p => p.id === k.id)).map(k => ({ id: k.id, namn: k.namn, matt: k.matt || [] })),
+  ];
+
+  const vaxlaKundExport = (id) => {
+    setValdaKunderExport(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const exporteraGlasmatt = async () => {
+    try {
+      const valda = alleKunderMedMatt
+        .filter(k => valdaKunderExport.has(k.id))
+        .slice()
+        .sort((a, b) => a.namn.localeCompare(b.namn, 'sv'));
+      const rader = [];
+      valda.forEach(k => {
+        (k.matt || []).forEach((m, i) => {
+          rader.push({
+            Kund: k.namn,
+            Enhet: i + 1,
+            'Bredd (mm)': m.widthMm,
+            'Höjd (mm)': m.heightMm,
+            Bågar: m.leaves || '',
+          });
+        });
+      });
+      if (rader.length === 0) { Alert.alert('Inget att exportera', 'Inga glasmått hittades för de valda kunderna.'); return; }
+      const ws = utils.json_to_sheet(rader);
+      ws['!cols'] = [{ wch: 30 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 8 }];
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, ws, 'Glasmått');
+      const csv = write(wb, { type: 'string', bookType: 'csv' });
+      const filePath = FileSystem.documentDirectory + 'glasmatt.csv';
+      await FileSystem.writeAsStringAsync(filePath, csv);
+      await Sharing.shareAsync(filePath);
+    } catch { Alert.alert('Fel', 'Kunde inte exportera'); }
+  };
+
   const sortera = (kolumn) => {
     if (sorteringsKolumn === kolumn) {
       setSorteringsRiktning(r => r === 'asc' ? 'desc' : 'asc');
@@ -3135,6 +3183,23 @@ export default function App() {
                       </View>
                     </View>
                   )}
+                  {alleKunderMedMatt.length > 0 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+                      <Text style={{ color: c.textMuted, fontSize: 12 }}>
+                        {valdaKunderExport.size > 0 ? `${valdaKunderExport.size} kund${valdaKunderExport.size === 1 ? '' : 'er'} vald${valdaKunderExport.size === 1 ? '' : 'a'}` : 'Kryssa i kunder för att exportera glasmått'}
+                      </Text>
+                      {valdaKunderExport.size > 0 && (
+                        <>
+                          <TouchableOpacity onPress={exporteraGlasmatt} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 }}>
+                            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📊 Exportera glasmått ({valdaKunderExport.size})</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => setValdaKunderExport(new Set())} style={{ paddingHorizontal: 8, paddingVertical: 7 }}>
+                            <Text style={{ color: c.textMuted, fontSize: 12 }}>Rensa val</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  )}
                   {ase60Projekt.length === 0 && kunder.length === 0 && !visaLaggTillKund && (
                     <View style={{ alignItems: 'center', marginTop: 60 }}>
                       <Text style={{ color: c.textMuted, fontSize: 15, marginBottom: 12 }}>Inga kunder eller ASE60-projekt hittades.</Text>
@@ -3160,6 +3225,11 @@ export default function App() {
                           setKundMaterialSok('');
                         }}
                         style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                        <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); vaxlaKundExport(proj.id); }}
+                          style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 2, marginRight: 12, alignItems: 'center', justifyContent: 'center',
+                            backgroundColor: valdaKunderExport.has(proj.id) ? '#16a34a' : 'transparent', borderColor: valdaKunderExport.has(proj.id) ? '#16a34a' : c.inputBorder }}>
+                          {valdaKunderExport.has(proj.id) && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</Text>}
+                        </TouchableOpacity>
                         <View style={{ flex: 1 }}>
                           <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {proj.name}</Text>
                           {proj.color ? (
@@ -3189,7 +3259,12 @@ export default function App() {
                       key={kund.id}
                       onPress={() => { setValdKund(kund); setAktivKundFlik('Träfräs'); setKundMaterialSok(''); }}
                       style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-                      <View>
+                      <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); vaxlaKundExport(kund.id); }}
+                        style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 2, marginRight: 12, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: valdaKunderExport.has(kund.id) ? '#16a34a' : 'transparent', borderColor: valdaKunderExport.has(kund.id) ? '#16a34a' : c.inputBorder }}>
+                        {valdaKunderExport.has(kund.id) && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</Text>}
+                      </TouchableOpacity>
+                      <View style={{ flex: 1 }}>
                         <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {kund.namn}</Text>
                         <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>Träfräs · Alufräs · Beslag · Glas</Text>
                       </View>
