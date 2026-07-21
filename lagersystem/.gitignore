@@ -46,6 +46,7 @@ data/ecw.json
 data/ecw/
 data/pdf.json
 data/pdf/
+data/stampling.json
 
 # typescript
 *.tsbuildinfo

@@ -96,6 +96,7 @@ const PUSH_SUBS_FILE = path.join(DATA_DIR, 'push_subs.json');
 const CHANGES_FILE = path.join(DATA_DIR, 'changes.json');
 const KUNDER_FILE = path.join(DATA_DIR, 'kunder.json');
 const ECW_RUNS_FILE = path.join(DATA_DIR, 'ecw_runs.json');
+const STAMPLING_FILE = path.join(DATA_DIR, 'stampling.json');
 
 // Maskinnyckel för integrationen från ase60-generatorn (ECW-exporter).
 // Kan bytas via miljövariabeln ECW_API_KEY — måste då matcha ase60-servern.
@@ -131,6 +132,7 @@ if (!fs.existsSync(TOKENS_FILE)) writeJSON(TOKENS_FILE, {});
 if (!fs.existsSync(CHANGES_FILE)) writeJSON(CHANGES_FILE, []);
 if (!fs.existsSync(KUNDER_FILE)) writeJSON(KUNDER_FILE, []);
 if (!fs.existsSync(ECW_RUNS_FILE)) writeJSON(ECW_RUNS_FILE, []);
+if (!fs.existsSync(STAMPLING_FILE)) writeJSON(STAMPLING_FILE, []);
 
 // Auth middleware — accepts header OR query param (for iframe/PDF)
 const authMiddleware = (req, res, next) => {
@@ -168,7 +170,7 @@ app.get('/api/me', authMiddleware, (req, res) => res.json(req.user));
 app.get('/api/users', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
   const users = readJSON(USERS_FILE, []);
-  res.json(users.map(u => ({ id: u.id, username: u.username, roll: u.role, namn: u.namn })));
+  res.json(users.map(u => ({ id: u.id, username: u.username, roll: u.role, namn: u.namn, harPin: !!u.pinHash })));
 });
 
 app.post('/api/users', authMiddleware, (req, res) => {
@@ -189,6 +191,19 @@ app.delete('/api/users/:id', authMiddleware, (req, res) => {
   const kvar = users.filter(u => u.id !== req.params.id);
   if (kvar.length === users.length) return res.status(404).json({ error: 'Hittades ej' });
   writeJSON(USERS_FILE, kvar);
+  res.json({ ok: true });
+});
+
+// Admin sätter/återställer en användares 4-siffriga stämplings-PIN.
+app.patch('/api/users/:id/pin', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const { pin } = req.body;
+  if (!/^\d{4}$/.test(String(pin || ''))) return res.status(400).json({ error: 'PIN måste vara 4 siffror' });
+  const users = readJSON(USERS_FILE, []);
+  const idx = users.findIndex(u => u.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Hittades ej' });
+  users[idx].pinHash = hash(pin);
+  writeJSON(USERS_FILE, users);
   res.json({ ok: true });
 });
 
@@ -217,6 +232,58 @@ app.patch('/api/me/avatar', authMiddleware, (req, res) => {
   Object.keys(tokens).forEach(t => { if (tokens[t].id === req.user.id) tokens[t].avatar = avatar; });
   writeJSON(TOKENS_FILE, tokens);
   res.json({ ok: true, avatar });
+});
+
+// --- STÄMPLING (kiosk-läge: en delad inloggning, alla användare syns och
+// stämplar in/ut med egen PIN) ---
+app.get('/api/stampling/anvandare', authMiddleware, (req, res) => {
+  const users = readJSON(USERS_FILE, []);
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const senaste = new Map();
+  for (const e of stampling) {
+    const prev = senaste.get(e.userId);
+    if (!prev || e.tid > prev.tid) senaste.set(e.userId, e);
+  }
+  res.json(users.map(u => {
+    const sisteEvent = senaste.get(u.id) || null;
+    return {
+      id: u.id,
+      namn: u.namn,
+      avatar: u.avatar || null,
+      harPin: !!u.pinHash,
+      status: sisteEvent ? sisteEvent.typ : 'ut',
+      senastAndrad: sisteEvent ? sisteEvent.tid : null,
+    };
+  }));
+});
+
+app.post('/api/stampling/stampla', authMiddleware, (req, res) => {
+  const { userId, pin } = req.body;
+  if (!userId || !pin) return res.status(400).json({ error: 'userId och pin krävs' });
+  const users = readJSON(USERS_FILE, []);
+  const user = users.find(u => u.id === userId);
+  if (!user) return res.status(404).json({ error: 'Användare hittades ej' });
+  if (!user.pinHash) return res.status(400).json({ error: 'Ingen PIN satt för denna användare — be admin sätta en' });
+  if (user.pinHash !== hash(String(pin))) return res.status(401).json({ error: 'Fel PIN' });
+
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const forra = stampling.filter(e => e.userId === userId).sort((a, b) => a.tid < b.tid ? 1 : -1)[0];
+  const nyTyp = forra && forra.typ === 'in' ? 'ut' : 'in';
+  const event = { id: Date.now().toString() + Math.random().toString(36).slice(2, 6), userId, namn: user.namn, typ: nyTyp, tid: new Date().toISOString() };
+  stampling.push(event);
+  writeJSON(STAMPLING_FILE, stampling);
+  res.json({ ok: true, event });
+});
+
+// Admin-logg — filtrerbar på användare/datumintervall (YYYY-MM-DD).
+app.get('/api/stampling/logg', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const { userId, fran, till } = req.query;
+  let events = readJSON(STAMPLING_FILE, []);
+  if (userId) events = events.filter(e => e.userId === userId);
+  if (fran) events = events.filter(e => e.tid >= fran);
+  if (till) events = events.filter(e => e.tid <= till + 'T23:59:59.999Z');
+  res.json(events.sort((a, b) => a.tid < b.tid ? 1 : -1).slice(0, 2000));
 });
 
 // --- PUSH NOTIFICATIONS ---

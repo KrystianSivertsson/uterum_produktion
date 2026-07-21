@@ -274,12 +274,28 @@ function AnvandarHantering({ token, onStang }) {
   const [nyttRoll, setNyttRoll] = useState('user');
   const [nyttVisningsnamn, setNyttVisningsnamn] = useState('');
   const [fel, setFel] = useState('');
+  const [pinRedigerarId, setPinRedigerarId] = useState(null);
+  const [pinVarde, setPinVarde] = useState('');
+  const [pinFel, setPinFel] = useState('');
 
   useEffect(() => { hamtaAnvandare(); }, []);
 
   const hamtaAnvandare = async () => {
     const res = await fetch(`${API}/api/users`, { headers: { Authorization: `Bearer ${token}` } });
     if (res.ok) setAnvandare(await res.json());
+  };
+
+  const sparaPin = async (id) => {
+    if (!/^\d{4}$/.test(pinVarde)) { setPinFel('PIN måste vara exakt 4 siffror'); return; }
+    const res = await fetch(`${API}/api/users/${id}/pin`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pin: pinVarde }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setPinFel(data.error); return; }
+    setPinRedigerarId(null); setPinVarde(''); setPinFel('');
+    hamtaAnvandare();
   };
 
   const laggTill = async () => {
@@ -311,17 +327,39 @@ function AnvandarHantering({ token, onStang }) {
           <FlatList
             data={anvandare}
             keyExtractor={i => i.id}
-            style={{ maxHeight: 220, marginBottom: 16 }}
+            style={{ maxHeight: 280, marginBottom: 16 }}
             renderItem={({ item }) => (
-              <View style={[um.rad, { borderBottomColor: c.kortBorder }]}>
-                <View>
-                  <Text style={[um.radNamn, { color: c.textRubrik }]}>{item.namn}</Text>
-                  <Text style={[um.radUser, { color: c.textMuted }]}>@{item.username} · {item.roll}</Text>
+              <View style={[um.rad, { borderBottomColor: c.kortBorder, flexDirection: 'column', alignItems: 'stretch' }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View>
+                    <Text style={[um.radNamn, { color: c.textRubrik }]}>{item.namn}</Text>
+                    <Text style={[um.radUser, { color: c.textMuted }]}>@{item.username} · {item.roll} · PIN: {item.harPin ? '✓ satt' : '— ej satt'}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      style={[um.taBortKnapp, { backgroundColor: '#dbeafe' }]}
+                      onPress={() => { setPinRedigerarId(pinRedigerarId === item.id ? null : item.id); setPinVarde(''); setPinFel(''); }}>
+                      <Text style={[um.taBortText, { color: '#2563eb' }]}>{item.harPin ? 'Byt PIN' : 'Sätt PIN'}</Text>
+                    </TouchableOpacity>
+                    {item.username !== 'admin' &&
+                      <TouchableOpacity style={um.taBortKnapp} onPress={() => taBort(item.id)}>
+                        <Text style={um.taBortText}>Ta bort</Text>
+                      </TouchableOpacity>}
+                  </View>
                 </View>
-                {item.username !== 'admin' &&
-                  <TouchableOpacity style={um.taBortKnapp} onPress={() => taBort(item.id)}>
-                    <Text style={um.taBortText}>Ta bort</Text>
-                  </TouchableOpacity>}
+                {pinRedigerarId === item.id && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                      placeholder="4 siffror" placeholderTextColor={c.textMuted}
+                      value={pinVarde} onChangeText={t => setPinVarde(t.replace(/\D/g, '').slice(0, 4))}
+                      keyboardType="numeric" secureTextEntry maxLength={4} />
+                    <TouchableOpacity style={[um.laggKnapp, { paddingHorizontal: 14 }]} onPress={() => sparaPin(item.id)}>
+                      <Text style={um.laggText}>Spara</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {pinRedigerarId === item.id && pinFel ? <Text style={{ color: '#ef4444', marginTop: 6, fontSize: 12 }}>{pinFel}</Text> : null}
               </View>
             )}
           />
@@ -371,6 +409,237 @@ const um = StyleSheet.create({
   laggKnapp: { backgroundColor: '#16a34a', borderRadius: 8, padding: 12, alignItems: 'center' },
   laggText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });
+
+// ─── Stämpling (kiosk-läge: en delad inloggning, alla anställda syns och
+// stämplar in/ut med egen PIN) ──────────────────────────────────────────────
+function formatKlockslag(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
+}
+function formatDatum(iso) {
+  return new Date(iso).toLocaleDateString('sv-SE');
+}
+
+function StamplingVy({ token, inloggad }) {
+  const { c } = React.useContext(TemaContext) || { c: LJUST };
+  const [anvandare, setAnvandare] = useState([]);
+  const [vald, setVald] = useState(null); // { id, namn, status }
+  const [pinInput, setPinInput] = useState('');
+  const [fel, setFel] = useState('');
+  const [bekraftelse, setBekraftelse] = useState('');
+  const [skickar, setSkickar] = useState(false);
+  const [visaLogg, setVisaLogg] = useState(false);
+
+  const hamtaAnvandare = useCallback(() => {
+    if (!token) return;
+    fetch(`${API}/api/stampling/anvandare`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setAnvandare).catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    hamtaAnvandare();
+    const iv = setInterval(hamtaAnvandare, 20000);
+    return () => clearInterval(iv);
+  }, [hamtaAnvandare]);
+
+  const oppnaStampling = (person) => {
+    setVald(person); setPinInput(''); setFel(''); setBekraftelse('');
+  };
+
+  const stampla = async () => {
+    if (pinInput.length !== 4) { setFel('Ange 4 siffror'); return; }
+    setSkickar(true);
+    const res = await fetch(`${API}/api/stampling/stampla`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId: vald.id, pin: pinInput }),
+    });
+    const data = await res.json();
+    setSkickar(false);
+    if (!res.ok) { setFel(data.error || 'Något gick fel'); setPinInput(''); return; }
+    setBekraftelse(`${vald.namn} stämplade ${data.event.typ === 'in' ? 'IN' : 'UT'} ${formatKlockslag(data.event.tid)}`);
+    setVald(null);
+    hamtaAnvandare();
+  };
+
+  return (
+    <ScrollView style={{ flex: 1 }}>
+      {bekraftelse ? (
+        <View style={{ backgroundColor: '#dcfce7', borderColor: '#16a34a', borderWidth: 1, borderRadius: 8, padding: 14, marginBottom: 16 }}>
+          <Text style={{ color: '#15803d', fontWeight: '700' }}>✓ {bekraftelse}</Text>
+        </View>
+      ) : null}
+
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Text style={[styles.kategoriRubrik, { color: c.textRubrik }]}>⏱️ Stämpling</Text>
+        {inloggad?.roll === 'admin' && (
+          <TouchableOpacity
+            onPress={() => setVisaLogg(v => !v)}
+            style={{ backgroundColor: visaLogg ? '#2563eb' : c.input, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: c.inputBorder }}>
+            <Text style={{ color: visaLogg ? '#fff' : c.text, fontWeight: '600' }}>{visaLogg ? '← Tillbaka' : '📋 Logg & rapport'}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {visaLogg && inloggad?.roll === 'admin' ? (
+        <StamplingLogg token={token} anvandare={anvandare} c={c} />
+      ) : (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+          {anvandare.length === 0 && (
+            <Text style={{ color: c.textMuted }}>Inga användare hittades.</Text>
+          )}
+          {anvandare.map(p => (
+            <TouchableOpacity
+              key={p.id}
+              onPress={() => oppnaStampling(p)}
+              style={{
+                width: 160, backgroundColor: c.kort, borderColor: p.status === 'in' ? '#16a34a' : c.kortBorder,
+                borderWidth: p.status === 'in' ? 2 : 1, borderRadius: 12, padding: 16, alignItems: 'center',
+              }}>
+              <Text style={{ fontSize: 32, marginBottom: 8 }}>{p.avatar || '👤'}</Text>
+              <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, textAlign: 'center' }}>{p.namn}</Text>
+              <View style={{
+                marginTop: 8, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12,
+                backgroundColor: p.status === 'in' ? '#dcfce7' : '#f0f2f5',
+              }}>
+                <Text style={{ color: p.status === 'in' ? '#15803d' : '#888', fontWeight: '600', fontSize: 12 }}>
+                  {p.status === 'in' ? 'Inne' : 'Ute'}
+                </Text>
+              </View>
+              {p.senastAndrad && (
+                <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 4 }}>sedan {formatKlockslag(p.senastAndrad)}</Text>
+              )}
+              {!p.harPin && (
+                <Text style={{ color: '#ef4444', fontSize: 10, marginTop: 4 }}>PIN ej satt</Text>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      <Modal visible={!!vald} animationType="fade" transparent onRequestClose={() => setVald(null)}>
+        <View style={um.bakgrund}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 340 }]}>
+            <View style={um.rubrikRad}>
+              <Text style={[um.rubrik, { color: c.textRubrik }]}>{vald?.namn}</Text>
+              <TouchableOpacity onPress={() => setVald(null)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+            </View>
+            <Text style={{ color: c.textMuted, marginBottom: 12 }}>
+              Ange din 4-siffriga PIN för att stämpla {vald?.status === 'in' ? 'UT' : 'IN'}.
+            </Text>
+            {fel ? <Text style={{ color: '#ef4444', marginBottom: 8 }}>{fel}</Text> : null}
+            <TextInput
+              style={[um.input, { textAlign: 'center', fontSize: 24, letterSpacing: 8, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+              value={pinInput} onChangeText={t => setPinInput(t.replace(/\D/g, '').slice(0, 4))}
+              keyboardType="numeric" secureTextEntry maxLength={4} autoFocus
+              onSubmitEditing={stampla} />
+            <TouchableOpacity style={[um.laggKnapp, skickar && { opacity: 0.6 }]} disabled={skickar} onPress={stampla}>
+              <Text style={um.laggText}>{skickar ? 'Skickar...' : `Stämpla ${vald?.status === 'in' ? 'UT' : 'IN'}`}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+function StamplingLogg({ token, anvandare, c }) {
+  const [events, setEvents] = useState([]);
+  const [filterUserId, setFilterUserId] = useState('');
+  const [fran, setFran] = useState('');
+  const [till, setTill] = useState('');
+  const [laddar, setLaddar] = useState(true);
+
+  const hamta = useCallback(() => {
+    setLaddar(true);
+    const qs = new URLSearchParams();
+    if (filterUserId) qs.set('userId', filterUserId);
+    if (fran) qs.set('fran', fran);
+    if (till) qs.set('till', till);
+    fetch(`${API}/api/stampling/logg?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => { setEvents(Array.isArray(d) ? d : []); setLaddar(false); })
+      .catch(() => setLaddar(false));
+  }, [token, filterUserId, fran, till]);
+
+  useEffect(() => { hamta(); }, [hamta]);
+
+  // Enkel timsammanställning: parar ihop kronologiska in/ut-par per användare
+  // inom den filtrerade perioden.
+  const timmarPerAnvandare = React.useMemo(() => {
+    const perAnvandare = new Map();
+    for (const e of events) {
+      const lista = perAnvandare.get(e.userId) || [];
+      lista.push(e);
+      perAnvandare.set(e.userId, lista);
+    }
+    const resultat = [];
+    for (const [userId, lista] of perAnvandare) {
+      const sorterad = [...lista].sort((a, b) => a.tid < b.tid ? -1 : 1);
+      let totalMs = 0;
+      let inTid = null;
+      for (const e of sorterad) {
+        if (e.typ === 'in') inTid = e.tid;
+        else if (e.typ === 'ut' && inTid) { totalMs += new Date(e.tid) - new Date(inTid); inTid = null; }
+      }
+      resultat.push({ userId, namn: sorterad[0]?.namn || '?', timmar: totalMs / 3600000 });
+    }
+    return resultat.sort((a, b) => b.timmar - a.timmar);
+  }, [events]);
+
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+        <View style={{ backgroundColor: c.input, borderRadius: 8, borderWidth: 1, borderColor: c.inputBorder, minWidth: 160 }}>
+          <TouchableOpacity
+            onPress={() => {
+              const idx = anvandare.findIndex(a => a.id === filterUserId);
+              const next = anvandare[idx + 1];
+              setFilterUserId(filterUserId === '' ? (anvandare[0]?.id || '') : (next ? next.id : ''));
+            }}
+            style={{ padding: 10 }}>
+            <Text style={{ color: c.text }}>
+              {filterUserId ? `👤 ${anvandare.find(a => a.id === filterUserId)?.namn || '?'}` : '👤 Alla användare (tryck för att bläddra)'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <TextInput
+          style={[um.input, { marginBottom: 0, width: 140, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+          placeholder="Från (ÅÅÅÅ-MM-DD)" placeholderTextColor={c.textMuted} value={fran} onChangeText={setFran} />
+        <TextInput
+          style={[um.input, { marginBottom: 0, width: 140, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+          placeholder="Till (ÅÅÅÅ-MM-DD)" placeholderTextColor={c.textMuted} value={till} onChangeText={setTill} />
+        <TouchableOpacity onPress={hamta} style={{ backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' }}>
+          <Text style={{ color: '#fff', fontWeight: '600' }}>Filtrera</Text>
+        </TouchableOpacity>
+      </View>
+
+      {timmarPerAnvandare.length > 0 && (
+        <View style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+          <Text style={{ color: c.textRubrik, fontWeight: '700', marginBottom: 8 }}>Sammanställning (avslutade pass i perioden)</Text>
+          {timmarPerAnvandare.map(t => (
+            <View key={t.userId} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+              <Text style={{ color: c.text }}>{t.namn}</Text>
+              <Text style={{ color: c.textRubrik, fontWeight: '600' }}>{t.timmar.toFixed(1)} h</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {laddar ? <Text style={{ color: c.textMuted }}>Laddar...</Text> : (
+        <View>
+          {events.length === 0 && <Text style={{ color: c.textMuted }}>Inga stämplingar i perioden.</Text>}
+          {events.map(e => (
+            <View key={e.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+              <Text style={{ color: c.text }}>{e.namn}</Text>
+              <Text style={{ color: e.typ === 'in' ? '#16a34a' : '#ef4444', fontWeight: '600', width: 40 }}>{e.typ === 'in' ? 'IN' : 'UT'}</Text>
+              <Text style={{ color: c.textMuted }}>{formatDatum(e.tid)} {new Date(e.tid).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
 
 // ─── Profile modal ───────────────────────────────────────────────────────────
 const AVATARER = ['😀','😎','🧑‍💻','👷','🧰','🔧','📦','🏗️','🪟','🏠','⭐','🦊','🐺','🦁','🐻','🐼','🤖','👾'];
@@ -1469,6 +1738,7 @@ export default function App() {
   const arRitning = RITNINGAR.some(r => r.id === aktivFlik);
   const arAndringslogg = aktivFlik === '__andringar__';
   const arKunder = aktivFlik === '__kunder__';
+  const arStampling = aktivFlik === '__stampling__';
 
   useEffect(() => {
     if (arKunder && token) {
@@ -1722,7 +1992,7 @@ export default function App() {
   const oppnaLaggTill = () => {
     setRedigeraProdukt(null);
     setFormNamn(''); setFormArtikel(''); setFormAntal('');
-    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg ? '' : aktivFlik);
+    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
     setFormBild(null); setFormFarger([]); setFormLangder([]);
     setModalVisible(true);
@@ -1971,6 +2241,15 @@ export default function App() {
             )}
           </TouchableOpacity>
 
+          <View style={styles.sidebarDivider} />
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arStampling && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__stampling__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arStampling && styles.sidebarFlikTextAktiv]}>
+              ⏱️ Stämpling
+            </Text>
+          </TouchableOpacity>
+
           {inloggad.roll === 'admin' && <>
             <View style={styles.sidebarDivider} />
             <TouchableOpacity
@@ -2070,6 +2349,10 @@ export default function App() {
                 </View>
               ))}
             </ScrollView>
+          )}
+
+          {!valdProdukt && arStampling && (
+            <StamplingVy token={token} inloggad={inloggad} />
           )}
 
           {!valdProdukt && arKunder && (
@@ -2434,7 +2717,7 @@ export default function App() {
             });
           })()}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && <>
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>
