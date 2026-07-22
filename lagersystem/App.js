@@ -16,6 +16,12 @@ const API = typeof window !== 'undefined'
       : window.location.origin)
   : 'http://localhost:3001';
 
+// ASE60-generatorn körs som egen app (samma origin, nginx-proxad på /ase60/)
+// — inbäddad i en egen ruta/etapp här, inte en API-proxy som ase60Projekt.
+const ASE60_URL = typeof window !== 'undefined'
+  ? `${window.location.origin}/ase60/`
+  : 'https://three.nordiska.io/ase60/';
+
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -2242,6 +2248,7 @@ export default function App() {
   const arAndringslogg = aktivFlik === '__andringar__';
   const arKunder = aktivFlik === '__kunder__';
   const arStampling = aktivFlik === '__stampling__';
+  const arAse60 = aktivFlik === '__ase60__';
 
   useEffect(() => {
     if (arKunder && token) {
@@ -2496,7 +2503,7 @@ export default function App() {
   const oppnaLaggTill = () => {
     setRedigeraProdukt(null);
     setFormNamn(''); setFormArtikel(''); setFormAntal('');
-    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling ? '' : aktivFlik);
+    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
     setFormBild(null); setFormFarger([]); setFormLangder([]);
     setModalVisible(true);
@@ -2667,7 +2674,7 @@ export default function App() {
     }
   };
 
-  const filtreradeLista = arRitning ? [] : (() => {
+  const filtreradeLista = (arRitning || arAse60) ? [] : (() => {
     const filtered = produkter.filter(p => {
       const matcherFlik = aktivFlik === 'Alla produkter' || p.kategori === aktivFlik;
       const matcherSok =
@@ -2798,6 +2805,16 @@ export default function App() {
             onPress={() => { setAktivFlik('__stampling__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
             <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arStampling && styles.sidebarFlikTextAktiv]}>
               ⏱️ Stämpling
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.sidebarDivider} />
+          <Text style={styles.sidebarTitel}>ASE 60</Text>
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arAse60 && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__ase60__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arAse60 && styles.sidebarFlikTextAktiv]}>
+              🪟 ASE60-generator
             </Text>
           </TouchableOpacity>
 
@@ -3296,7 +3313,14 @@ export default function App() {
             });
           })()}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && <>
+          {!valdProdukt && arAse60 && Platform.OS === 'web' && React.createElement('iframe', {
+            key: 'ase60',
+            src: ASE60_URL,
+            style: { width: '100%', height: '100%', border: 'none', borderRadius: 8 },
+            title: 'ASE60-generator',
+          })}
+
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>
