@@ -695,6 +695,14 @@ app.post('/api/convert-step', authMiddleware, (req, res) => {
 // --- Artikel-bilder ---
 app.use('/artikel-bilder', express.static(path.join(__dirname, 'artikel-bilder')));
 
+// --- Hem-meny (portal mellan systemen på three.nordiska.io) ---
+// nginx proxar /start hit; /partiberedning och /produktion är egna
+// nginx-redirects (till /ase60/ resp. /UterumLager/) så länkarna funkar
+// direkt utan att gå via denna server.
+app.get('/start', (req, res) => {
+  res.sendFile(path.join(__dirname, 'start.html'));
+});
+
 // --- Static web app ---
 // Lokalt (utan nginx som strippar prefixet) serveras bygget även under /UterumLager
 app.use('/UterumLager', express.static(path.join(__dirname, 'dist')));
