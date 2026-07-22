@@ -440,7 +440,7 @@ app.get('/api/kunder', authMiddleware, (req, res) => {
 });
 
 app.post('/api/kunder', authMiddleware, (req, res) => {
-  const { namn, farg, ase60ProjectId, matt } = req.body;
+  const { namn, farg, ase60ProjectId, matt, paket } = req.body;
   if (!namn?.trim()) return res.status(400).json({ error: 'Namn krävs' });
   const kunder = readJSON(KUNDER_FILE, []);
   const ny = {
@@ -451,6 +451,7 @@ app.post('/api/kunder', authMiddleware, (req, res) => {
     farg: farg || '',
     ase60ProjectId: ase60ProjectId || null,
     matt: Array.isArray(matt) ? matt : [],
+    paket: paket || null,
   };
   kunder.push(ny);
   writeJSON(KUNDER_FILE, kunder);
@@ -463,7 +464,7 @@ app.put('/api/kunder/:id', authMiddleware, (req, res) => {
   const kunder = readJSON(KUNDER_FILE, []);
   let idx = kunder.findIndex(k => k.id === req.params.id);
   if (idx === -1) {
-    const { namn, farg, ase60ProjectId, matt } = req.body || {};
+    const { namn, farg, ase60ProjectId, matt, paket } = req.body || {};
     kunder.push({
       id: req.params.id,
       namn: (namn || '').trim() || req.params.id,
@@ -472,13 +473,15 @@ app.put('/api/kunder/:id', authMiddleware, (req, res) => {
       farg: farg || '',
       ase60ProjectId: ase60ProjectId || null,
       matt: Array.isArray(matt) ? matt : [],
+      paket: paket || null,
     });
     idx = kunder.length - 1;
   }
-  const { material, klart, logg } = req.body || {};
+  const { material, klart, logg, paket } = req.body || {};
   if (material !== undefined) kunder[idx].material = material;
   if (klart !== undefined) kunder[idx].klart = klart;
   if (logg !== undefined) kunder[idx].logg = logg;
+  if (paket !== undefined) kunder[idx].paket = paket;
   writeJSON(KUNDER_FILE, kunder);
   res.json(kunder[idx]);
 });

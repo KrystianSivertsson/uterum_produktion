@@ -33,6 +33,15 @@ const TOKEN_KEY = 'lagersystem_token';
 const TEMA_KEY = 'lagersystem_tema';
 const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Trä balkar', 'Osorterat'];
 const FORINSTALLDA_FARGER = ['Svart/RAL9005', 'Vit/NCS-0502-Y', 'Antracitgrå/RAL7016'];
+// Paket kunden köpt — styr vilket system (ASE60/ASS32) den räknas som i
+// Sammanställningen. Bostandard = ASE60 (helårs, aluminium skjutparti).
+// Vår-/Höst-/Vinterpaket = ASS32 (säsongsinglasning).
+const PAKET_OPTIONS = ['Bostandard', 'Vårpaket', 'Höstpaket', 'Vinterpaket'];
+function paketTillSystem(paket) {
+  if (paket === 'Bostandard') return 'ASE60';
+  if (paket === 'Vårpaket' || paket === 'Höstpaket' || paket === 'Vinterpaket') return 'ASS32';
+  return null;
+}
 const RITNINGAR = [
   { id: 'ase60', label: 'ASE 60 Ritningar', fil: 'ritningar_ase60.pdf' },
   { id: 'ass32', label: 'ASS 32 Ritningar', fil: 'ritningar_ass32.pdf' },
@@ -1149,6 +1158,119 @@ function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund
   );
 }
 
+// Sammanställning — ungefärlig summering av alla kunders glas/mått/material,
+// grupperat per system (ASE60 = Bostandard, ASS32 = Vår-/Höst-/Vinterpaket)
+// via kundens paket-tagg. Kunder utan paket men med ASE60-koppling räknas
+// ändå som ASE60 (de har mått/glasdata som bevisar systemet).
+function SammanstallningVy({ kunder, ase60Projekt, c }) {
+  const alla = React.useMemo(() => {
+    const combined = [];
+    for (const proj of ase60Projekt) {
+      const sparad = kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id);
+      combined.push({
+        id: proj.id, namn: proj.name,
+        matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+        material: sparad?.material || {},
+        paket: sparad?.paket || null,
+        ase60ProjectId: proj.id,
+      });
+    }
+    for (const k of kunder.filter(k => !k.ase60ProjectId && !ase60Projekt.some(p => p.id === k.id))) {
+      combined.push({ id: k.id, namn: k.namn, matt: k.matt || [], material: k.material || {}, paket: k.paket || null, ase60ProjectId: null });
+    }
+    return combined;
+  }, [kunder, ase60Projekt]);
+
+  const systemFor = (k) => paketTillSystem(k.paket) || ((k.ase60ProjectId || k.matt?.length > 0) ? 'ASE60' : 'Ospecificerat');
+
+  const grupper = React.useMemo(() => {
+    const map = new Map();
+    for (const k of alla) {
+      const s = systemFor(k);
+      const g = map.get(s) || { namn: s, kunder: [], glasAntal: 0, glasYtaM2: 0, material: new Map() };
+      g.kunder.push(k);
+      for (const m of (k.matt || [])) {
+        const leaves = m.leaves || 1;
+        g.glasAntal += leaves;
+        g.glasYtaM2 += (m.widthMm / 1000) * (m.heightMm / 1000) * leaves;
+      }
+      for (const kategori of Object.keys(k.material || {})) {
+        for (const item of (k.material[kategori] || [])) {
+          const key = item.artikel || item.produktId;
+          const ex = g.material.get(key) || { namn: item.namn, artikel: item.artikel, enhet: item.enhet, antal: 0 };
+          ex.antal += parseInt(item.antal) || 0;
+          g.material.set(key, ex);
+        }
+      }
+      map.set(s, g);
+    }
+    return [...map.values()].sort((a, b) => b.kunder.length - a.kunder.length);
+  }, [alla]);
+
+  const rubrikFor = (namn) => {
+    if (namn === 'ASE60') return '🪟 ASE 60 (Bostandard)';
+    if (namn === 'ASS32') return '🏡 ASS 32 (Vår-/Höst-/Vinterpaket)';
+    return '❔ Ospecificerat paket';
+  };
+
+  return (
+    <ScrollView style={{ flex: 1 }}>
+      <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 4 }]}>📊 Sammanställning</Text>
+      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 16 }}>
+        Ungefärlig beräkning baserad på inlagda kunder, mått och material — ingen exakt lagerinventering.
+      </Text>
+
+      <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+        <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 4 }}>TOTALT ANTAL KUNDER</Text>
+        <Text style={{ color: c.textRubrik, fontSize: 28, fontWeight: '700' }}>{alla.length}</Text>
+      </View>
+
+      {grupper.map(g => {
+        const material = [...g.material.values()].sort((a, b) => b.antal - a.antal);
+        return (
+          <View key={g.namn} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16, marginBottom: 10 }}>{rubrikFor(g.namn)}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 20, marginBottom: 12 }}>
+              <View>
+                <Text style={{ color: c.textMuted, fontSize: 11 }}>Kunder</Text>
+                <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 20 }}>{g.kunder.length}</Text>
+              </View>
+              {g.glasAntal > 0 && (
+                <>
+                  <View>
+                    <Text style={{ color: c.textMuted, fontSize: 11 }}>Glas (st)</Text>
+                    <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 20 }}>{g.glasAntal}</Text>
+                  </View>
+                  <View>
+                    <Text style={{ color: c.textMuted, fontSize: 11 }}>Glasyta (ca m²)</Text>
+                    <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 20 }}>{g.glasYtaM2.toFixed(1)}</Text>
+                  </View>
+                </>
+              )}
+            </View>
+            {material.length > 0 && (
+              <View style={{ marginBottom: 10 }}>
+                <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 }}>
+                  MATERIAL/PROFILER (topp {Math.min(10, material.length)} av {material.length})
+                </Text>
+                {material.slice(0, 10).map((m, i) => (
+                  <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+                    <Text style={{ color: c.text, fontSize: 13 }}>{m.namn}{m.artikel ? ` (${m.artikel})` : ''}</Text>
+                    <Text style={{ color: c.textMuted, fontSize: 13 }}>{m.antal}{m.enhet || ''}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <Text style={{ color: c.textMuted, fontSize: 11 }}>
+              Kunder: {g.kunder.map(k => k.namn).join(', ')}
+            </Text>
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
 // ─── Profile modal ───────────────────────────────────────────────────────────
 const AVATARER = ['😀','😎','🧑‍💻','👷','🧰','🔧','📦','🏗️','🪟','🏠','⭐','🦊','🐺','🦁','🐻','🐼','🤖','👾'];
 
@@ -1815,6 +1937,7 @@ export default function App() {
   const [aktivKundFlik, setAktivKundFlik] = useState('Träfräs');
   const [visaLaggTillKund, setVisaLaggTillKund] = useState(false);
   const [nyKundNamn, setNyKundNamn] = useState('');
+  const [nyKundPaket, setNyKundPaket] = useState(null);
   const [kundMaterialSok, setKundMaterialSok] = useState('');
   const [ase60Projekt, setAse60Projekt] = useState([]);
   const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
@@ -2249,6 +2372,7 @@ export default function App() {
   const arKunder = aktivFlik === '__kunder__';
   const arStampling = aktivFlik === '__stampling__';
   const arAse60 = aktivFlik === '__ase60__';
+  const arSammanstallning = aktivFlik === '__sammanstallning__';
 
   useEffect(() => {
     if (arKunder && token) {
@@ -2276,7 +2400,7 @@ export default function App() {
       .then(r => r.json()).then(setAse60Projekt).catch(() => {});
   };
 
-  useEffect(() => { if (arKunder) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder]);
+  useEffect(() => { if (arKunder || arSammanstallning) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder, arSammanstallning]);
 
   const laggTillKund = () => {
     if (!nyKundNamn.trim()) return;
@@ -2285,6 +2409,7 @@ export default function App() {
       farg: valdAse60Projekt?.color || '',
       ase60ProjectId: valdAse60Projekt?.id || null,
       matt: valdAse60Projekt?.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+      paket: nyKundPaket,
     };
     fetch(`${API}/api/kunder`, {
       method: 'POST',
@@ -2293,6 +2418,7 @@ export default function App() {
     }).then(r => r.json()).then(ny => {
       setKunder(prev => [...prev, ny]);
       setNyKundNamn('');
+      setNyKundPaket(null);
       setValdAse60Projekt(null);
       setSokAse60('');
       setVisaLaggTillKund(false);
@@ -2324,6 +2450,7 @@ export default function App() {
         material: uppdaterad.material || {},
         klart: uppdaterad.klart || {},
         logg: uppdaterad.logg || [],
+        paket: uppdaterad.paket ?? null,
       }),
     }).catch(() => {});
   };
@@ -2503,7 +2630,7 @@ export default function App() {
   const oppnaLaggTill = () => {
     setRedigeraProdukt(null);
     setFormNamn(''); setFormArtikel(''); setFormAntal('');
-    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 ? '' : aktivFlik);
+    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSammanstallning ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
     setFormBild(null); setFormFarger([]); setFormLangder([]);
     setModalVisible(true);
@@ -2674,7 +2801,7 @@ export default function App() {
     }
   };
 
-  const filtreradeLista = (arRitning || arAse60) ? [] : (() => {
+  const filtreradeLista = (arRitning || arAse60 || arSammanstallning) ? [] : (() => {
     const filtered = produkter.filter(p => {
       const matcherFlik = aktivFlik === 'Alla produkter' || p.kategori === aktivFlik;
       const matcherSok =
@@ -2818,6 +2945,15 @@ export default function App() {
             </Text>
           </TouchableOpacity>
 
+          <View style={styles.sidebarDivider} />
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arSammanstallning && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__sammanstallning__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arSammanstallning && styles.sidebarFlikTextAktiv]}>
+              📊 Sammanställning
+            </Text>
+          </TouchableOpacity>
+
           {inloggad.roll === 'admin' && <>
             <View style={styles.sidebarDivider} />
             <TouchableOpacity
@@ -2931,7 +3067,17 @@ export default function App() {
                   <TouchableOpacity onPress={() => setValdKund(null)} style={{ marginBottom: 16 }}>
                     <Text style={{ color: '#2563eb', fontSize: 14 }}>← Tillbaka till kunder</Text>
                   </TouchableOpacity>
-                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 12 }]}>👤 {valdKund.namn}</Text>
+                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 8 }]}>👤 {valdKund.namn}</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                    <Text style={{ color: c.textMuted, fontSize: 11 }}>Paket:</Text>
+                    {PAKET_OPTIONS.map(p => (
+                      <TouchableOpacity key={p} onPress={() => uppdateraKund({ ...valdKund, paket: valdKund.paket === p ? null : p })}
+                        style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 6, borderWidth: 1,
+                          backgroundColor: valdKund.paket === p ? '#2563eb' : c.input, borderColor: valdKund.paket === p ? '#2563eb' : c.inputBorder }}>
+                        <Text style={{ color: valdKund.paket === p ? '#fff' : c.textMuted, fontSize: 11, fontWeight: '600' }}>{p}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                   {(valdKund.farg || valdKund.matt?.length > 0) && (
                     <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
                       <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ASE60 PROJEKT</Text>
@@ -3190,11 +3336,21 @@ export default function App() {
                         onSubmitEditing={laggTillKund}
                         autoFocus
                       />
+                      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 6 }}>Paket (styr system i Sammanställningen)</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                        {PAKET_OPTIONS.map(p => (
+                          <TouchableOpacity key={p} onPress={() => setNyKundPaket(nyKundPaket === p ? null : p)}
+                            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1,
+                              backgroundColor: nyKundPaket === p ? '#2563eb' : c.input, borderColor: nyKundPaket === p ? '#2563eb' : c.inputBorder }}>
+                            <Text style={{ color: nyKundPaket === p ? '#fff' : c.text, fontSize: 12, fontWeight: '600' }}>{p}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <TouchableOpacity onPress={laggTillKund} style={{ flex: 1, backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
                           <Text style={{ color: '#fff', fontWeight: '700' }}>Spara</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); setValdAse60Projekt(null); setSokAse60(''); }} style={{ padding: 10 }}>
+                        <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); setNyKundPaket(null); setValdAse60Projekt(null); setSokAse60(''); }} style={{ padding: 10 }}>
                           <Text style={{ color: '#ef4444', fontSize: 18 }}>✕</Text>
                         </TouchableOpacity>
                       </View>
@@ -3236,7 +3392,7 @@ export default function App() {
                           setValdKund({
                             id: proj.id, namn: proj.name, farg: proj.color, ase60ProjectId: proj.id,
                             matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
-                            material: sparad?.material || {}, klart: sparad?.klart || {},
+                            material: sparad?.material || {}, klart: sparad?.klart || {}, paket: sparad?.paket || null,
                           });
                           setAktivKundFlik('Träfräs');
                           setKundMaterialSok('');
@@ -3320,7 +3476,11 @@ export default function App() {
             title: 'ASE60-generator',
           })}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && <>
+          {!valdProdukt && arSammanstallning && (
+            <SammanstallningVy kunder={kunder} ase60Projekt={ase60Projekt} c={c} />
+          )}
+
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>
