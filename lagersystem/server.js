@@ -84,6 +84,40 @@ app.post('/api/btl-filer/intern', (req, res) => {
   res.json({ ok: true });
 });
 
+// Kundkort-synk (INTE en ECW-körning) — anropas av Uterum-Konfiguratorn vid
+// VARJE projektsparning, oavsett om projektet innehåller ASE60-dörrar eller
+// ej. Beslut: kunden ska synas i uterum-lager direkt när den sparas i
+// uterum2, inte bara när/om den senare skickas till ase60-generator (som
+// annars är enda vägen ett kundkort skapas på, se POST /api/ecw-runs nedan
+// — den kräver riktiga dörrpartier och loggar en "ECW-körning", vilket är
+// fel semantik för en ren spar-händelse).
+const _KUNDER_FILE_EARLY = path.join(__dirname, 'data', 'kunder.json');
+app.post('/api/kund-sync/intern', (req, res) => {
+  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
+  const { projectId, projectName, farg, kalla } = req.body || {};
+  if (!projectId || !projectName?.trim()) return res.status(400).json({ error: 'projectId och projectName krävs' });
+  const kunder = _readJSONEarly(_KUNDER_FILE_EARLY, []);
+  let idx = kunder.findIndex(k => k.ase60ProjectId === projectId);
+  if (idx === -1) idx = kunder.findIndex(k => (k.namn || '').toLowerCase() === projectName.trim().toLowerCase());
+  if (idx === -1) {
+    kunder.push({
+      id: Date.now().toString(),
+      namn: projectName.trim(),
+      skapad: new Date().toISOString(),
+      skapadAv: kalla || 'uterum-konfigurator',
+      farg: farg || '',
+      ase60ProjectId: projectId,
+      matt: [],
+    });
+  } else {
+    kunder[idx].namn = projectName.trim();
+    if (farg) kunder[idx].farg = farg;
+    kunder[idx].ase60ProjectId = projectId;
+  }
+  _writeJSONEarly(_KUNDER_FILE_EARLY, kunder);
+  res.json({ ok: true });
+});
+
 // Redirect HTTP → HTTPS (only when HTTPS server is running).
 // Maskinanrop med x-api-key (t.ex. ase60-generatorns ECW-notiser) hoppar
 // över redirecten — Node-fetch klarar inte självsignerade cert och en
