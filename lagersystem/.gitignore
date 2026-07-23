@@ -48,6 +48,8 @@ data/pdf.json
 data/pdf/
 data/btl.json
 data/btl/
+data/step.json
+data/step/
 data/stampling.json
 
 # typescript
