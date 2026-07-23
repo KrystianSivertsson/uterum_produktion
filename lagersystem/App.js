@@ -34,14 +34,17 @@ const TEMA_KEY = 'lagersystem_tema';
 const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Trä balkar', 'Osorterat'];
 const FORINSTALLDA_FARGER = ['Svart/RAL9005', 'Vit/NCS-0502-Y', 'Antracitgrå/RAL7016'];
 // Paket kunden köpt — styr vilket system (ASE60/ASS32) den räknas som i
-// Sammanställningen. Bostandard = ASE60 (helårs, aluminium skjutparti).
-// Vår-/Höst-/Vinterpaket = ASS32 (säsongsinglasning). OBS: annat begrepp än
-// paket-registret nedan (produktsystem ASE60/ASS32/AWS70HI/AOC50) — namnkrock,
-// inte samma sak.
-const PAKET_OPTIONS = ['Bostandard', 'Vårpaket', 'Höstpaket', 'Vinterpaket'];
+// Sammanställningen. Exakt samma lista + mappning som Uterum-Konfiguratorns
+// egen paket-väljare (paketTillSystem, wireframeModel.js) och ase60-
+// generatorns systemmeny (client/src/main.ts) — hölls tidigare bara
+// Bostandard/Vårpaket/Höstpaket/Vinterpaket här, vilket gjorde att kund-sync
+// aldrig kunde sätta Boyta/Sommar/Förlängd Sommar korrekt. OBS: annat begrepp
+// än paket-registret nedan (produktsystem ASE60/ASS32/AWS70HI/AOC50) —
+// namnkrock, inte samma sak.
+const PAKET_OPTIONS = ['Bostandard', 'Boyta', 'Sommar', 'Förlängd Sommar', 'Vår & Höst', 'Vinter'];
 function paketTillSystem(paket) {
-  if (paket === 'Bostandard') return 'ASE60';
-  if (paket === 'Vårpaket' || paket === 'Höstpaket' || paket === 'Vinterpaket') return 'ASS32';
+  if (paket === 'Bostandard' || paket === 'Boyta') return 'ASE60';
+  if (paket === 'Sommar' || paket === 'Förlängd Sommar' || paket === 'Vår & Höst' || paket === 'Vinter') return 'ASS32';
   return null;
 }
 // Fallback/initialt värde — ersätts live av GET /api/paket (proxy till
@@ -282,6 +285,82 @@ function BtlFlik({ ase60ProjectId, token, API, c, roll }) {
           style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 12,
             padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <Text style={{ fontSize: 22 }}>🪵</Text>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => laddaNer(fil)}>
+            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{fil.filename}</Text>
+            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+              {new Date(fil.skapad).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => laddaNer(fil)}>
+            <Text style={{ color: '#2563eb', fontWeight: '600', fontSize: 13 }}>⬇ Ladda ner</Text>
+          </TouchableOpacity>
+          {roll === 'admin' && (
+            <TouchableOpacity onPress={() => taBort(fil)}>
+              <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 13 }}>🗑 Ta bort</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ─── STEP-filer (3D CAD-montering: takstolar+bärlinor+stolpar+glas som
+// solids, zip med assembly + platta delar) från Uterum-Konfiguratorns
+// "Exportera STEP"-knapp — samma mönster som BtlFlik ovan.
+function StepFlik({ ase60ProjectId, token, API, c, roll }) {
+  const [filer, setFiler] = useState([]);
+  const [laddar, setLaddar] = useState(true);
+
+  const laddaFiler = () => {
+    if (!ase60ProjectId || !token) { setLaddar(false); return; }
+    fetch(`${API}/api/step-filer/${encodeURIComponent(ase60ProjectId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setFiler(Array.isArray(data) ? data : []); setLaddar(false); })
+      .catch(() => setLaddar(false));
+  };
+
+  useEffect(() => { laddaFiler(); }, [ase60ProjectId]);
+
+  const laddaNer = (fil) => {
+    const url = `${API}/api/step-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}/ladda-ner?token=${token}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fil.filename;
+    a.click();
+  };
+
+  const taBort = async (fil) => {
+    if (!window.confirm(`Ta bort "${fil.filename}"?`)) return;
+    await fetch(`${API}/api/step-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    laddaFiler();
+  };
+
+  if (laddar) return (
+    <View style={{ padding: 32, alignItems: 'center' }}>
+      <Text style={{ color: c.textMuted }}>Hämtar STEP-filer...</Text>
+    </View>
+  );
+
+  if (filer.length === 0) return (
+    <View style={{ padding: 16, alignItems: 'center', marginBottom: 12 }}>
+      <Text style={{ color: c.textMuted, fontSize: 14, textAlign: 'center' }}>
+        Inga STEP-filer ännu.{'\n'}Exportera STEP från Uterum-Konfiguratorn och filen dyker upp här automatiskt.
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      {filer.slice().reverse().map(fil => (
+        <View
+          key={fil.id}
+          style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 12,
+            padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={{ fontSize: 22 }}>📐</Text>
           <TouchableOpacity style={{ flex: 1 }} onPress={() => laddaNer(fil)}>
             <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{fil.filename}</Text>
             <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
@@ -1186,6 +1265,8 @@ function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund
                 <>
                   <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>BTL-FILER</Text>
                   <BtlFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8, marginTop: 4 }}>STEP-FILER</Text>
+                  <StepFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
                 </>
               )}
 
@@ -3233,7 +3314,10 @@ export default function App() {
                       <View>
                         <KundAktivitet token={token} valdKund={valdKund} aktivKundFlik={aktivKundFlik} inloggad={inloggad} uppdateraKund={uppdateraKund} ecwRuns={ecwRuns} c={c} />
                         {aktivKundFlik === 'Träfräs' && (
-                          <BtlFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                          <>
+                            <BtlFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                            <StepFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                          </>
                         )}
                         {(aktivKundFlik === 'Alufräs' || aktivKundFlik === 'Beslag') && (
                           <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
