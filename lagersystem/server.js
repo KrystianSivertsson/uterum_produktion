@@ -327,6 +327,27 @@ async function ase60Fetch(apiPath, opts) {
   throw senasteFel;
 }
 
+// Paket = produktsystem (ASE 60, ASS 32, AWS/ADS 70 HI, AOC 50, ...). ase60-generator
+// äger listan (data/paket.json där); tidigare låg samma lista hårdkodad här som
+// RITNINGAR i App.js. Ingen auth (var alltid publik som konstant tidigare) och en
+// lokal fallback så sidopanelen inte går sönder om ase60-generator är nere.
+const PAKET_FALLBACK = [
+  { id: 'ase60', namn: 'ASE 60', status: 'aktiv' },
+  { id: 'ass32', namn: 'ASS 32', status: 'under_utveckling' },
+  { id: 'aws70hi', namn: 'AWS/ADS 70 HI', status: 'planerad' },
+  { id: 'aoc50', namn: 'AOC 50', status: 'planerad' },
+];
+app.get('/api/paket', async (req, res) => {
+  try {
+    const r = await ase60Fetch('/api/paket');
+    if (!r.ok) throw new Error(`ase60-generator ${r.status}`);
+    const data = await r.json();
+    res.json({ paket: data.paket || PAKET_FALLBACK });
+  } catch {
+    res.json({ paket: PAKET_FALLBACK });
+  }
+});
+
 // Proxy ASE60 projects for linking to customers
 app.get('/api/ase60-projekt', authMiddleware, async (req, res) => {
   try {

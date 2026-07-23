@@ -27,7 +27,11 @@ const TOKEN_KEY = 'lagersystem_token';
 const TEMA_KEY = 'lagersystem_tema';
 const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Trä balkar', 'Osorterat'];
 const FORINSTALLDA_FARGER = ['Svart/RAL9005', 'Vit/NCS-0502-Y', 'Antracitgrå/RAL7016'];
-const RITNINGAR = [
+// Fallback/initialt värde — ersätts live av GET /api/paket (proxy till
+// ase60-generatorns paket-registry) i App(), se laddaPaket(). Filnamnen är
+// lagersystemets egna (data/*.pdf) och känns inte till av ase60-generator.
+const RITNING_FIL = { ase60: 'ritningar_ase60.pdf', ass32: 'ritningar_ass32.pdf', aws70hi: 'ritningar_aws70hi.pdf', aoc50: 'ritningar_aoc50.pdf' };
+const RITNINGAR_FALLBACK = [
   { id: 'ase60', label: 'ASE 60 Ritningar', fil: 'ritningar_ase60.pdf' },
   { id: 'ass32', label: 'ASS 32 Ritningar', fil: 'ritningar_ass32.pdf' },
   { id: 'aws70hi', label: 'AWS/ADS 70 HI Ritningar', fil: 'ritningar_aws70hi.pdf' },
@@ -1039,6 +1043,7 @@ export default function App() {
   const [visaLaggTillKund, setVisaLaggTillKund] = useState(false);
   const [nyKundNamn, setNyKundNamn] = useState('');
   const [kundMaterialSok, setKundMaterialSok] = useState('');
+  const [ritningar, setRitningar] = useState(RITNINGAR_FALLBACK);
   const [ase60Projekt, setAse60Projekt] = useState([]);
   const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
   const [sokAse60, setSokAse60] = useState('');
@@ -1465,7 +1470,7 @@ export default function App() {
     try { await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista)); } catch {}
   };
 
-  const arRitning = RITNINGAR.some(r => r.id === aktivFlik);
+  const arRitning = ritningar.some(r => r.id === aktivFlik);
   const arAndringslogg = aktivFlik === '__andringar__';
   const arKunder = aktivFlik === '__kunder__';
 
@@ -1496,6 +1501,23 @@ export default function App() {
   };
 
   useEffect(() => { if (arKunder) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder]);
+
+  // Paket-listan (ASE 60 / ASS 32 / ...) är delad med ase60-generator och
+  // Uterum-Konfigurator via GET /api/paket — ingen inloggning krävs, samma
+  // som RITNINGAR_FALLBACK alltid varit synlig innan sidan laddade. Faller
+  // tillbaka på RITNINGAR_FALLBACK om anropet misslyckas (servern gör
+  // samma fallback, så det här är bara ett extra skyddslager).
+  useEffect(() => {
+    fetch(`${API}/api/paket`)
+      .then(r => r.json())
+      .then(data => {
+        const lista = (data.paket || [])
+          .filter(p => RITNING_FIL[p.id])
+          .map(p => ({ id: p.id, label: `${p.namn} Ritningar`, fil: RITNING_FIL[p.id], status: p.status }));
+        if (lista.length) setRitningar(lista);
+      })
+      .catch(() => {});
+  }, []);
 
   const laggTillKund = () => {
     if (!nyKundNamn.trim()) return;
@@ -1939,7 +1961,7 @@ export default function App() {
           <View style={styles.sidebarDivider} />
 
           <Text style={styles.sidebarTitel}>Ritningar</Text>
-          {RITNINGAR.map(r => (
+          {ritningar.map(r => (
             <TouchableOpacity
               key={r.id}
               style={[styles.sidebarFlik, aktivFlik === r.id && styles.sidebarFlikAktiv]}
@@ -2417,7 +2439,7 @@ export default function App() {
           )}
 
           {!valdProdukt && arRitning && !arAndringslogg && Platform.OS === 'web' && (() => {
-            const ritning = RITNINGAR.find(r => r.id === aktivFlik);
+            const ritning = ritningar.find(r => r.id === aktivFlik);
             return React.createElement('iframe', {
               key: ritning.id,
               src: `${API}/api/pdf/${ritning.fil}?token=${token}`,
