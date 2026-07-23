@@ -1262,8 +1262,8 @@ function SammanstallningVy({ kunder, ase60Projekt, c }) {
         ase60ProjectId: proj.id,
       });
     }
-    for (const k of kunder.filter(k => !k.ase60ProjectId && !ase60Projekt.some(p => p.id === k.id))) {
-      combined.push({ id: k.id, namn: k.namn, matt: k.matt || [], material: k.material || {}, paket: k.paket || null, ase60ProjectId: null });
+    for (const k of kunder.filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id))) {
+      combined.push({ id: k.id, namn: k.namn, matt: k.matt || [], material: k.material || {}, paket: k.paket || null, ase60ProjectId: k.ase60ProjectId || null });
     }
     return combined;
   }, [kunder, ase60Projekt]);
@@ -2856,7 +2856,7 @@ export default function App() {
       id: proj.id, namn: proj.name,
       matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
     })),
-    ...kunder.filter(k => !k.ase60ProjectId && !ase60Projekt.some(p => p.id === k.id)).map(k => ({ id: k.id, namn: k.namn, matt: k.matt || [] })),
+    ...kunder.filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id)).map(k => ({ id: k.id, namn: k.namn, matt: k.matt || [] })),
   ];
 
   const vaxlaKundExport = (id) => {
@@ -3534,8 +3534,11 @@ export default function App() {
                       </TouchableOpacity>
                     );
                   })}
-                  {/* Manuellt tillagda kunder (utan ASE60-koppling) */}
-                  {kunder.filter(k => !k.ase60ProjectId && !ase60Projekt.some(p => p.id === k.id)).map(kund => (
+                  {/* Kunder utan koppling till ett riktigt ase60-generator-projekt (ase60Projekt,
+                      dess egen SQLite) — manuellt tillagda ELLER synkade från Uterum-Konfigurator
+                      (ase60ProjectId pekar då på ett Konfigurator/Supabase-id, inte ett ase60Projekt-id,
+                      så en enkel !k.ase60ProjectId-koll dolde tidigare alla Konfigurator-kunder). */}
+                  {kunder.filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id)).map(kund => (
                     <TouchableOpacity
                       key={kund.id}
                       onPress={() => { setValdKund(kund); setAktivKundFlik('Träfräs'); setKundMaterialSok(''); }}
