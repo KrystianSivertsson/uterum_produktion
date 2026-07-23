@@ -96,6 +96,7 @@ const PUSH_SUBS_FILE = path.join(DATA_DIR, 'push_subs.json');
 const CHANGES_FILE = path.join(DATA_DIR, 'changes.json');
 const KUNDER_FILE = path.join(DATA_DIR, 'kunder.json');
 const ECW_RUNS_FILE = path.join(DATA_DIR, 'ecw_runs.json');
+const STAMPLING_FILE = path.join(DATA_DIR, 'stampling.json');
 
 // Maskinnyckel för integrationen från ase60-generatorn (ECW-exporter).
 // Kan bytas via miljövariabeln ECW_API_KEY — måste då matcha ase60-servern.
@@ -131,6 +132,7 @@ if (!fs.existsSync(TOKENS_FILE)) writeJSON(TOKENS_FILE, {});
 if (!fs.existsSync(CHANGES_FILE)) writeJSON(CHANGES_FILE, []);
 if (!fs.existsSync(KUNDER_FILE)) writeJSON(KUNDER_FILE, []);
 if (!fs.existsSync(ECW_RUNS_FILE)) writeJSON(ECW_RUNS_FILE, []);
+if (!fs.existsSync(STAMPLING_FILE)) writeJSON(STAMPLING_FILE, []);
 
 // Auth middleware — accepts header OR query param (for iframe/PDF)
 const authMiddleware = (req, res, next) => {
@@ -168,7 +170,7 @@ app.get('/api/me', authMiddleware, (req, res) => res.json(req.user));
 app.get('/api/users', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
   const users = readJSON(USERS_FILE, []);
-  res.json(users.map(u => ({ id: u.id, username: u.username, roll: u.role, namn: u.namn })));
+  res.json(users.map(u => ({ id: u.id, username: u.username, roll: u.role, namn: u.namn, harPin: !!u.pinHash })));
 });
 
 app.post('/api/users', authMiddleware, (req, res) => {
@@ -189,6 +191,19 @@ app.delete('/api/users/:id', authMiddleware, (req, res) => {
   const kvar = users.filter(u => u.id !== req.params.id);
   if (kvar.length === users.length) return res.status(404).json({ error: 'Hittades ej' });
   writeJSON(USERS_FILE, kvar);
+  res.json({ ok: true });
+});
+
+// Admin sätter/återställer en användares 4-siffriga stämplings-PIN.
+app.patch('/api/users/:id/pin', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const { pin } = req.body;
+  if (!/^\d{4}$/.test(String(pin || ''))) return res.status(400).json({ error: 'PIN måste vara 4 siffror' });
+  const users = readJSON(USERS_FILE, []);
+  const idx = users.findIndex(u => u.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Hittades ej' });
+  users[idx].pinHash = hash(pin);
+  writeJSON(USERS_FILE, users);
   res.json({ ok: true });
 });
 
@@ -217,6 +232,158 @@ app.patch('/api/me/avatar', authMiddleware, (req, res) => {
   Object.keys(tokens).forEach(t => { if (tokens[t].id === req.user.id) tokens[t].avatar = avatar; });
   writeJSON(TOKENS_FILE, tokens);
   res.json({ ok: true, avatar });
+});
+
+// --- STÄMPLING (kiosk-läge: en delad inloggning, alla användare syns och
+// stämplar in/ut med egen PIN) ---
+const STAMPLING_OMRADEN = ['Träfräs', 'Alufräs', 'Beslag'];
+
+app.get('/api/stampling/anvandare', authMiddleware, (req, res) => {
+  const users = readJSON(USERS_FILE, []);
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const senaste = new Map();
+  for (const e of stampling) {
+    const prev = senaste.get(e.userId);
+    if (!prev || e.tid > prev.tid) senaste.set(e.userId, e);
+  }
+  res.json(users.filter(u => u.username !== 'admin').map(u => {
+    const sisteEvent = senaste.get(u.id) || null;
+    const arInne = sisteEvent && sisteEvent.typ === 'in';
+    return {
+      id: u.id,
+      username: u.username,
+      namn: u.namn,
+      avatar: u.avatar || null,
+      harPin: !!u.pinHash,
+      status: sisteEvent ? sisteEvent.typ : 'ut',
+      omrade: arInne ? (sisteEvent.omrade || null) : null,
+      kundId: arInne ? (sisteEvent.kundId || null) : null,
+      kundNamn: arInne ? (sisteEvent.kundNamn || null) : null,
+      senastAndrad: sisteEvent ? sisteEvent.tid : null,
+    };
+  }));
+});
+
+app.post('/api/stampling/stampla', authMiddleware, (req, res) => {
+  const { userId, pin, omrade, kundId, kundNamn } = req.body;
+  if (!userId || !pin) return res.status(400).json({ error: 'userId och pin krävs' });
+  const users = readJSON(USERS_FILE, []);
+  const user = users.find(u => u.id === userId);
+  if (!user) return res.status(404).json({ error: 'Användare hittades ej' });
+  if (!user.pinHash) return res.status(400).json({ error: 'Ingen PIN satt för denna användare — be admin sätta en' });
+  if (user.pinHash !== hash(String(pin))) return res.status(401).json({ error: 'Fel PIN' });
+
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const forra = stampling.filter(e => e.userId === userId).sort((a, b) => a.tid < b.tid ? 1 : -1)[0];
+  const nyTyp = forra && forra.typ === 'in' ? 'ut' : 'in';
+  if (nyTyp === 'in' && !STAMPLING_OMRADEN.includes(omrade)) {
+    return res.status(400).json({ error: 'Välj vad du kör: Träfräs, Alufräs eller Beslag' });
+  }
+  if (nyTyp === 'in' && !kundNamn) {
+    return res.status(400).json({ error: 'Välj kund, eller Internt / övrigt' });
+  }
+  const event = {
+    id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+    userId, namn: user.namn, typ: nyTyp,
+    omrade: nyTyp === 'in' ? omrade : null,
+    kundId: nyTyp === 'in' ? (kundId || null) : null,
+    kundNamn: nyTyp === 'in' ? kundNamn : null,
+    tid: new Date().toISOString(),
+  };
+  stampling.push(event);
+  writeJSON(STAMPLING_FILE, stampling);
+  res.json({ ok: true, event });
+});
+
+// Stämplingar för en specifik kund (visas direkt i kundkortet) — alla
+// inloggade får se detta, till skillnad från den fulla admin-loggen.
+app.get('/api/stampling/kund/:kundId', authMiddleware, (req, res) => {
+  const { omrade } = req.query;
+  let events = readJSON(STAMPLING_FILE, []).filter(e => e.kundId === req.params.kundId);
+  if (omrade) events = events.filter(e => e.omrade === omrade);
+  res.json(events.sort((a, b) => a.tid < b.tid ? 1 : -1).slice(0, 200));
+});
+
+// Admin-logg — filtrerbar på användare/datumintervall (YYYY-MM-DD).
+app.get('/api/stampling/logg', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const { userId, fran, till } = req.query;
+  let events = readJSON(STAMPLING_FILE, []);
+  if (userId) events = events.filter(e => e.userId === userId);
+  if (fran) events = events.filter(e => e.tid >= fran);
+  if (till) events = events.filter(e => e.tid <= till + 'T23:59:59.999Z');
+  res.json(events.sort((a, b) => a.tid < b.tid ? 1 : -1).slice(0, 2000));
+});
+
+// Admin: lägg till en stämpling manuellt (retroaktivt) eller redigera/ta bort en befintlig.
+function validateStamplingFalt(body, user) {
+  const { typ, omrade, tid } = body;
+  if (typ !== 'in' && typ !== 'ut') return 'typ måste vara "in" eller "ut"';
+  if (typ === 'in' && !STAMPLING_OMRADEN.includes(omrade)) return 'Välj vad som kördes: Träfräs, Alufräs eller Beslag';
+  if (!tid || isNaN(new Date(tid).getTime())) return 'Ogiltig tid';
+  if (!user) return 'Användare hittades ej';
+  return null;
+}
+
+app.post('/api/stampling/logg', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const { userId, typ, omrade, kundId, kundNamn, tid } = req.body;
+  const users = readJSON(USERS_FILE, []);
+  const user = users.find(u => u.id === userId);
+  const felmeddelande = validateStamplingFalt(req.body, user);
+  if (felmeddelande) return res.status(400).json({ error: felmeddelande });
+
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const event = {
+    id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+    userId, namn: user.namn, typ,
+    omrade: typ === 'in' ? omrade : null,
+    kundId: typ === 'in' ? (kundId || null) : null,
+    kundNamn: typ === 'in' ? (kundNamn || null) : null,
+    tid: new Date(tid).toISOString(),
+    manuell: true, andradAv: req.user.namn || req.user.username,
+  };
+  stampling.push(event);
+  writeJSON(STAMPLING_FILE, stampling);
+  res.json({ ok: true, event });
+});
+
+app.patch('/api/stampling/logg/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const idx = stampling.findIndex(e => e.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Stämpling hittades ej' });
+
+  const befintlig = stampling[idx];
+  const userId = req.body.userId || befintlig.userId;
+  const users = readJSON(USERS_FILE, []);
+  const user = users.find(u => u.id === userId);
+  const faltAttValidera = { typ: req.body.typ ?? befintlig.typ, omrade: req.body.omrade ?? befintlig.omrade, tid: req.body.tid ?? befintlig.tid };
+  const felmeddelande = validateStamplingFalt(faltAttValidera, user);
+  if (felmeddelande) return res.status(400).json({ error: felmeddelande });
+
+  const uppdaterad = {
+    ...befintlig,
+    userId, namn: user.namn,
+    typ: faltAttValidera.typ,
+    omrade: faltAttValidera.typ === 'in' ? faltAttValidera.omrade : null,
+    kundId: faltAttValidera.typ === 'in' ? (req.body.kundId ?? befintlig.kundId ?? null) : null,
+    kundNamn: faltAttValidera.typ === 'in' ? (req.body.kundNamn ?? befintlig.kundNamn ?? null) : null,
+    tid: new Date(faltAttValidera.tid).toISOString(),
+    manuell: true, andradAv: req.user.namn || req.user.username,
+  };
+  stampling[idx] = uppdaterad;
+  writeJSON(STAMPLING_FILE, stampling);
+  res.json({ ok: true, event: uppdaterad });
+});
+
+app.delete('/api/stampling/logg/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const kvar = stampling.filter(e => e.id !== req.params.id);
+  if (kvar.length === stampling.length) return res.status(404).json({ error: 'Stämpling hittades ej' });
+  writeJSON(STAMPLING_FILE, kvar);
+  res.json({ ok: true });
 });
 
 // --- PUSH NOTIFICATIONS ---
@@ -273,7 +440,7 @@ app.get('/api/kunder', authMiddleware, (req, res) => {
 });
 
 app.post('/api/kunder', authMiddleware, (req, res) => {
-  const { namn, farg, ase60ProjectId, matt } = req.body;
+  const { namn, farg, ase60ProjectId, matt, paket } = req.body;
   if (!namn?.trim()) return res.status(400).json({ error: 'Namn krävs' });
   const kunder = readJSON(KUNDER_FILE, []);
   const ny = {
@@ -284,6 +451,7 @@ app.post('/api/kunder', authMiddleware, (req, res) => {
     farg: farg || '',
     ase60ProjectId: ase60ProjectId || null,
     matt: Array.isArray(matt) ? matt : [],
+    paket: paket || null,
   };
   kunder.push(ny);
   writeJSON(KUNDER_FILE, kunder);
@@ -296,7 +464,7 @@ app.put('/api/kunder/:id', authMiddleware, (req, res) => {
   const kunder = readJSON(KUNDER_FILE, []);
   let idx = kunder.findIndex(k => k.id === req.params.id);
   if (idx === -1) {
-    const { namn, farg, ase60ProjectId, matt } = req.body || {};
+    const { namn, farg, ase60ProjectId, matt, paket } = req.body || {};
     kunder.push({
       id: req.params.id,
       namn: (namn || '').trim() || req.params.id,
@@ -305,12 +473,15 @@ app.put('/api/kunder/:id', authMiddleware, (req, res) => {
       farg: farg || '',
       ase60ProjectId: ase60ProjectId || null,
       matt: Array.isArray(matt) ? matt : [],
+      paket: paket || null,
     });
     idx = kunder.length - 1;
   }
-  const { material, klart } = req.body || {};
+  const { material, klart, logg, paket } = req.body || {};
   if (material !== undefined) kunder[idx].material = material;
   if (klart !== undefined) kunder[idx].klart = klart;
+  if (logg !== undefined) kunder[idx].logg = logg;
+  if (paket !== undefined) kunder[idx].paket = paket;
   writeJSON(KUNDER_FILE, kunder);
   res.json(kunder[idx]);
 });
@@ -369,23 +540,24 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
     if (!Array.isArray(proj.units) || proj.units.length === 0) {
       return res.json({ projekt: proj.name || '', serier: [], profiler: [] });
     }
-    const flippedSash = !!(proj.ecwSettings && (proj.ecwSettings.flippedSash || proj.ecwSettings.sashFlip));
-    const packR = await ase60Fetch('/api/pack', {
+    // Fullstandig materiallista (profiler + beslag/tatningar/glas) — se
+    // ase60-generator/server/domain/bom.ts. Ersatte tidigare /api/pack-anropet
+    // som bara raknade av de tva raprofilerna (karm + baga).
+    const bomR = await ase60Fetch('/api/bom', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ units: proj.units, pack: 'stock', flippedSash }),
+      body: JSON.stringify({ units: proj.units }),
     });
-    if (!packR.ok) return res.status(502).json({ error: 'Optimeringen misslyckades i ASE60-generatorn' });
-    const pack = await packR.json();
-    const grupper = new Map();
-    for (const bin of pack.bins || []) {
-      const key = `${bin.profile}|${bin.stockLengthMm}`;
-      const g = grupper.get(key) || { artikel: bin.profile, beskrivning: bin.profileDescription || '', langdMm: bin.stockLengthMm, antal: 0 };
-      g.antal += 1;
-      grupper.set(key, g);
-    }
+    if (!bomR.ok) return res.status(502).json({ error: 'Materiallistan misslyckades i ASE60-generatorn' });
+    const bomResult = await bomR.json();
+    const profiler = (bomResult.lines || []).map(l => ({
+      artikel: l.art,
+      beskrivning: l.desc,
+      langdMm: l.lengthMm || null,
+      antal: l.qty,
+    }));
     const serier = [...new Set(proj.units.map(u => u && u.series).filter(Boolean))];
-    res.json({ projekt: proj.name || '', serier, profiler: [...grupper.values()] });
+    res.json({ projekt: proj.name || '', serier, profiler, bomWarnings: bomResult.warnings || [] });
   } catch {
     res.status(502).json({ error: 'Kunde inte nå ASE60-generatorn' });
   }
@@ -546,6 +718,14 @@ app.post('/api/convert-step', authMiddleware, (req, res) => {
 
 // --- Artikel-bilder ---
 app.use('/artikel-bilder', express.static(path.join(__dirname, 'artikel-bilder')));
+
+// --- Hem-meny (portal mellan systemen på three.nordiska.io) ---
+// nginx proxar /start hit; /partiberedning och /produktion är egna
+// nginx-redirects (till /ase60/ resp. /UterumLager/) så länkarna funkar
+// direkt utan att gå via denna server.
+app.get('/start', (req, res) => {
+  res.sendFile(path.join(__dirname, 'start.html'));
+});
 
 // --- Static web app ---
 // Lokalt (utan nginx som strippar prefixet) serveras bygget även under /UterumLager

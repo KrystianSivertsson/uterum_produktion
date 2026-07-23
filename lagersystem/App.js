@@ -5,7 +5,7 @@ import {
   useWindowDimensions, Animated
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SEED_PRODUKTER, SEED_AWS70HI, SEED_AOC50, SEED_TRABALKAR } from './seedData';
+import { SEED_PRODUKTER, SEED_AWS70HI, SEED_AOC50, SEED_TRABALKAR, SEED_ASE60_82MM_NYA } from './seedData';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { utils, write } from 'xlsx';
@@ -15,6 +15,12 @@ const API = typeof window !== 'undefined'
       ? `${window.location.origin}/UterumLager`
       : window.location.origin)
   : 'http://localhost:3001';
+
+// ASE60-generatorn körs som egen app (samma origin, nginx-proxad på /ase60/)
+// — inbäddad i en egen ruta/etapp här, inte en API-proxy som ase60Projekt.
+const ASE60_URL = typeof window !== 'undefined'
+  ? `${window.location.origin}/ase60/`
+  : 'https://three.nordiska.io/ase60/';
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -27,6 +33,17 @@ const TOKEN_KEY = 'lagersystem_token';
 const TEMA_KEY = 'lagersystem_tema';
 const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Trä balkar', 'Osorterat'];
 const FORINSTALLDA_FARGER = ['Svart/RAL9005', 'Vit/NCS-0502-Y', 'Antracitgrå/RAL7016'];
+// Paket kunden köpt — styr vilket system (ASE60/ASS32) den räknas som i
+// Sammanställningen. Bostandard = ASE60 (helårs, aluminium skjutparti).
+// Vår-/Höst-/Vinterpaket = ASS32 (säsongsinglasning). OBS: annat begrepp än
+// paket-registret nedan (produktsystem ASE60/ASS32/AWS70HI/AOC50) — namnkrock,
+// inte samma sak.
+const PAKET_OPTIONS = ['Bostandard', 'Vårpaket', 'Höstpaket', 'Vinterpaket'];
+function paketTillSystem(paket) {
+  if (paket === 'Bostandard') return 'ASE60';
+  if (paket === 'Vårpaket' || paket === 'Höstpaket' || paket === 'Vinterpaket') return 'ASS32';
+  return null;
+}
 // Fallback/initialt värde — ersätts live av GET /api/paket (proxy till
 // ase60-generatorns paket-registry) i App(), se laddaPaket(). Filnamnen är
 // lagersystemets egna (data/*.pdf) och känns inte till av ase60-generator.
@@ -278,12 +295,28 @@ function AnvandarHantering({ token, onStang }) {
   const [nyttRoll, setNyttRoll] = useState('user');
   const [nyttVisningsnamn, setNyttVisningsnamn] = useState('');
   const [fel, setFel] = useState('');
+  const [pinRedigerarId, setPinRedigerarId] = useState(null);
+  const [pinVarde, setPinVarde] = useState('');
+  const [pinFel, setPinFel] = useState('');
 
   useEffect(() => { hamtaAnvandare(); }, []);
 
   const hamtaAnvandare = async () => {
     const res = await fetch(`${API}/api/users`, { headers: { Authorization: `Bearer ${token}` } });
     if (res.ok) setAnvandare(await res.json());
+  };
+
+  const sparaPin = async (id) => {
+    if (!/^\d{4}$/.test(pinVarde)) { setPinFel('PIN måste vara exakt 4 siffror'); return; }
+    const res = await fetch(`${API}/api/users/${id}/pin`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pin: pinVarde }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setPinFel(data.error); return; }
+    setPinRedigerarId(null); setPinVarde(''); setPinFel('');
+    hamtaAnvandare();
   };
 
   const laggTill = async () => {
@@ -315,17 +348,39 @@ function AnvandarHantering({ token, onStang }) {
           <FlatList
             data={anvandare}
             keyExtractor={i => i.id}
-            style={{ maxHeight: 220, marginBottom: 16 }}
+            style={{ maxHeight: 280, marginBottom: 16 }}
             renderItem={({ item }) => (
-              <View style={[um.rad, { borderBottomColor: c.kortBorder }]}>
-                <View>
-                  <Text style={[um.radNamn, { color: c.textRubrik }]}>{item.namn}</Text>
-                  <Text style={[um.radUser, { color: c.textMuted }]}>@{item.username} · {item.roll}</Text>
+              <View style={[um.rad, { borderBottomColor: c.kortBorder, flexDirection: 'column', alignItems: 'stretch' }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View>
+                    <Text style={[um.radNamn, { color: c.textRubrik }]}>{item.namn}</Text>
+                    <Text style={[um.radUser, { color: c.textMuted }]}>@{item.username} · {item.roll} · PIN: {item.harPin ? '✓ satt' : '— ej satt'}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      style={[um.taBortKnapp, { backgroundColor: '#dbeafe' }]}
+                      onPress={() => { setPinRedigerarId(pinRedigerarId === item.id ? null : item.id); setPinVarde(''); setPinFel(''); }}>
+                      <Text style={[um.taBortText, { color: '#2563eb' }]}>{item.harPin ? 'Byt PIN' : 'Sätt PIN'}</Text>
+                    </TouchableOpacity>
+                    {item.username !== 'admin' &&
+                      <TouchableOpacity style={um.taBortKnapp} onPress={() => taBort(item.id)}>
+                        <Text style={um.taBortText}>Ta bort</Text>
+                      </TouchableOpacity>}
+                  </View>
                 </View>
-                {item.username !== 'admin' &&
-                  <TouchableOpacity style={um.taBortKnapp} onPress={() => taBort(item.id)}>
-                    <Text style={um.taBortText}>Ta bort</Text>
-                  </TouchableOpacity>}
+                {pinRedigerarId === item.id && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                      placeholder="4 siffror" placeholderTextColor={c.textMuted}
+                      value={pinVarde} onChangeText={t => setPinVarde(t.replace(/\D/g, '').slice(0, 4))}
+                      keyboardType="numeric" secureTextEntry maxLength={4} />
+                    <TouchableOpacity style={[um.laggKnapp, { paddingHorizontal: 14 }]} onPress={() => sparaPin(item.id)}>
+                      <Text style={um.laggText}>Spara</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {pinRedigerarId === item.id && pinFel ? <Text style={{ color: '#ef4444', marginTop: 6, fontSize: 12 }}>{pinFel}</Text> : null}
               </View>
             )}
           />
@@ -375,6 +430,852 @@ const um = StyleSheet.create({
   laggKnapp: { backgroundColor: '#16a34a', borderRadius: 8, padding: 12, alignItems: 'center' },
   laggText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });
+
+// ─── Stämpling (kiosk-läge: en delad inloggning, alla anställda syns och
+// stämplar in/ut med egen PIN) ──────────────────────────────────────────────
+function formatKlockslag(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
+}
+function formatDatum(iso) {
+  return new Date(iso).toLocaleDateString('sv-SE');
+}
+
+const STAMPLING_OMRADEN = ['Träfräs', 'Alufräs', 'Beslag'];
+
+const STAMPLING_INTERNT = { id: null, namn: 'Internt / övrigt' };
+
+function StamplingVy({ token, inloggad }) {
+  const { c } = React.useContext(TemaContext) || { c: LJUST };
+  const [anvandare, setAnvandare] = useState([]);
+  const [kunder, setKunder] = useState([]);
+  const [vald, setVald] = useState(null); // { id, namn, status }
+  const [valtOmrade, setValtOmrade] = useState(null);
+  const [valdKund, setValdKund] = useState(null); // { id, namn } eller STAMPLING_INTERNT
+  const [kundSok, setKundSok] = useState('');
+  const [pinInput, setPinInput] = useState('');
+  const [fel, setFel] = useState('');
+  const [bekraftelse, setBekraftelse] = useState('');
+  const [skickar, setSkickar] = useState(false);
+  const [visaLogg, setVisaLogg] = useState(false);
+
+  const hamtaAnvandare = useCallback(() => {
+    if (!token) return;
+    fetch(`${API}/api/stampling/anvandare`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setAnvandare).catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    hamtaAnvandare();
+    const iv = setInterval(hamtaAnvandare, 20000);
+    return () => clearInterval(iv);
+  }, [hamtaAnvandare]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API}/api/kunder`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => setKunder(Array.isArray(d) ? d : [])).catch(() => {});
+  }, [token]);
+
+  const oppnaStampling = (person) => {
+    setVald(person); setPinInput(''); setFel(''); setBekraftelse('');
+    setValtOmrade(null); setValdKund(null); setKundSok('');
+  };
+
+  const kundTraffar = kundSok.trim()
+    ? kunder.filter(k => k.namn.toLowerCase().includes(kundSok.toLowerCase())).slice(0, 8)
+    : kunder.slice(0, 8);
+
+  const stampla = async () => {
+    const kommerBliIn = vald?.status !== 'in';
+    if (kommerBliIn && !valtOmrade) { setFel('Välj vad du kör: Träfräs, Alufräs eller Beslag'); return; }
+    if (kommerBliIn && !valdKund) { setFel('Välj kund, eller Internt / övrigt'); return; }
+    if (pinInput.length !== 4) { setFel('Ange 4 siffror'); return; }
+    setSkickar(true);
+    const res = await fetch(`${API}/api/stampling/stampla`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        userId: vald.id, pin: pinInput,
+        omrade: kommerBliIn ? valtOmrade : undefined,
+        kundId: kommerBliIn ? valdKund?.id : undefined,
+        kundNamn: kommerBliIn ? valdKund?.namn : undefined,
+      }),
+    });
+    const data = await res.json();
+    setSkickar(false);
+    if (!res.ok) { setFel(data.error || 'Något gick fel'); setPinInput(''); return; }
+    const detaljText = data.event.typ === 'in' ? ` (${data.event.omrade} · ${data.event.kundNamn})` : '';
+    setBekraftelse(`${vald.namn} stämplade ${data.event.typ === 'in' ? 'IN' : 'UT'}${detaljText} ${formatKlockslag(data.event.tid)}`);
+    setVald(null);
+    hamtaAnvandare();
+  };
+
+  const taBortPerson = async (person) => {
+    const genomfor = async () => {
+      await fetch(`${API}/api/users/${person.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      hamtaAnvandare();
+    };
+    const fraga = `Ta bort ${person.namn} helt (hela användarkontot, inte bara från stämplingen)?`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(fraga)) genomfor();
+    } else {
+      Alert.alert('Ta bort?', fraga, [{ text: 'Avbryt', style: 'cancel' }, { text: 'Ta bort', style: 'destructive', onPress: genomfor }]);
+    }
+  };
+
+  return (
+    <ScrollView style={{ flex: 1 }}>
+      {bekraftelse ? (
+        <View style={{ backgroundColor: '#dcfce7', borderColor: '#16a34a', borderWidth: 1, borderRadius: 8, padding: 14, marginBottom: 16 }}>
+          <Text style={{ color: '#15803d', fontWeight: '700' }}>✓ {bekraftelse}</Text>
+        </View>
+      ) : null}
+
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Text style={[styles.kategoriRubrik, { color: c.textRubrik }]}>⏱️ Stämpling</Text>
+        {inloggad?.roll === 'admin' && (
+          <TouchableOpacity
+            onPress={() => setVisaLogg(v => !v)}
+            style={{ backgroundColor: visaLogg ? '#2563eb' : c.input, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: c.inputBorder }}>
+            <Text style={{ color: visaLogg ? '#fff' : c.text, fontWeight: '600' }}>{visaLogg ? '← Tillbaka' : '📋 Logg & rapport'}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {visaLogg && inloggad?.roll === 'admin' ? (
+        <StamplingLogg token={token} anvandare={anvandare} kunder={kunder} c={c} />
+      ) : (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+          {anvandare.length === 0 && (
+            <Text style={{ color: c.textMuted }}>Inga användare hittades.</Text>
+          )}
+          {anvandare.map(p => (
+            <View key={p.id} style={{ width: 160 }}>
+              <TouchableOpacity
+                onPress={() => oppnaStampling(p)}
+                style={{
+                  backgroundColor: c.kort, borderColor: p.status === 'in' ? '#16a34a' : c.kortBorder,
+                  borderWidth: p.status === 'in' ? 2 : 1, borderRadius: 12, padding: 16, alignItems: 'center',
+                }}>
+                <Text style={{ fontSize: 32, marginBottom: 8 }}>{p.avatar || '👤'}</Text>
+                <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, textAlign: 'center' }}>{p.namn}</Text>
+                <View style={{
+                  marginTop: 8, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12,
+                  backgroundColor: p.status === 'in' ? '#dcfce7' : '#f0f2f5',
+                }}>
+                  <Text style={{ color: p.status === 'in' ? '#15803d' : '#888', fontWeight: '600', fontSize: 12, textAlign: 'center' }}>
+                    {p.status === 'in' ? `Inne${p.omrade ? ' · ' + p.omrade : ''}${p.kundNamn ? ' · ' + p.kundNamn : ''}` : 'Ute'}
+                  </Text>
+                </View>
+                {p.senastAndrad && (
+                  <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 4 }}>sedan {formatKlockslag(p.senastAndrad)}</Text>
+                )}
+                {!p.harPin && (
+                  <Text style={{ color: '#ef4444', fontSize: 10, marginTop: 4 }}>PIN ej satt</Text>
+                )}
+              </TouchableOpacity>
+              {inloggad?.roll === 'admin' && p.username !== 'admin' && (
+                <TouchableOpacity onPress={() => taBortPerson(p)} style={{ marginTop: 6, alignItems: 'center', paddingVertical: 4 }}>
+                  <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '600' }}>🗑 Ta bort</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+
+      <Modal visible={!!vald} animationType="fade" transparent onRequestClose={() => setVald(null)}>
+        <View style={um.bakgrund}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 340 }]}>
+            <View style={um.rubrikRad}>
+              <Text style={[um.rubrik, { color: c.textRubrik }]}>{vald?.namn}</Text>
+              <TouchableOpacity onPress={() => setVald(null)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+            </View>
+            {vald?.status !== 'in' && (
+              <>
+                <Text style={{ color: c.textMuted, marginBottom: 8 }}>Vad kör du?</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                  {STAMPLING_OMRADEN.map(o => (
+                    <TouchableOpacity
+                      key={o}
+                      onPress={() => setValtOmrade(o)}
+                      style={{ flex: 1, backgroundColor: valtOmrade === o ? '#2563eb' : c.input, borderRadius: 8, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: valtOmrade === o ? '#2563eb' : c.inputBorder }}>
+                      <Text style={{ color: valtOmrade === o ? '#fff' : c.text, fontWeight: '600', fontSize: 12 }}>{o}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={{ color: c.textMuted, marginBottom: 8 }}>
+                  Hos vilken kund?{valdKund ? ` — vald: ${valdKund.namn}` : ''}
+                </Text>
+                <TextInput
+                  style={[um.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText, marginBottom: 8 }]}
+                  placeholder="Sök kund..." placeholderTextColor={c.textMuted}
+                  value={kundSok} onChangeText={t => { setKundSok(t); setValdKund(null); }} />
+                <ScrollView style={{ maxHeight: 130, marginBottom: 8 }}>
+                  {kundTraffar.map(k => (
+                    <TouchableOpacity
+                      key={k.id}
+                      onPress={() => { setValdKund({ id: k.id, namn: k.namn }); setKundSok(k.namn); }}
+                      style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 6, marginBottom: 4,
+                        backgroundColor: valdKund?.id === k.id ? '#2563eb' : c.input, borderWidth: 1,
+                        borderColor: valdKund?.id === k.id ? '#2563eb' : c.inputBorder }}>
+                      <Text style={{ color: valdKund?.id === k.id ? '#fff' : c.text, fontWeight: '600', fontSize: 13 }}>{k.namn}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {kunder.length === 0 && (
+                    <Text style={{ color: c.textMuted, fontSize: 12 }}>Inga kunder hittades.</Text>
+                  )}
+                </ScrollView>
+                <TouchableOpacity
+                  onPress={() => { setValdKund(STAMPLING_INTERNT); setKundSok(''); }}
+                  style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, marginBottom: 14,
+                    backgroundColor: valdKund?.id === null && valdKund ? '#2563eb' : c.input, borderWidth: 1,
+                    borderColor: valdKund?.id === null && valdKund ? '#2563eb' : c.inputBorder }}>
+                  <Text style={{ color: valdKund?.id === null && valdKund ? '#fff' : c.textMuted, fontWeight: '600', fontSize: 12 }}>
+                    Internt / övrigt (inget kundjobb)
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+            <Text style={{ color: c.textMuted, marginBottom: 12 }}>
+              Ange din 4-siffriga PIN för att stämpla {vald?.status === 'in' ? 'UT' : 'IN'}.
+            </Text>
+            {fel ? <Text style={{ color: '#ef4444', marginBottom: 8 }}>{fel}</Text> : null}
+            <TextInput
+              style={[um.input, { textAlign: 'center', fontSize: 24, letterSpacing: 8, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+              value={pinInput} onChangeText={t => setPinInput(t.replace(/\D/g, '').slice(0, 4))}
+              keyboardType="numeric" secureTextEntry maxLength={4} autoFocus
+              onSubmitEditing={stampla} />
+            <TouchableOpacity style={[um.laggKnapp, skickar && { opacity: 0.6 }]} disabled={skickar} onPress={stampla}>
+              <Text style={um.laggText}>{skickar ? 'Skickar...' : `Stämpla ${vald?.status === 'in' ? 'UT' : 'IN'}`}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+function tidTillDatumOchKlocka(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return {
+    datum: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    klocka: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
+
+function StamplingLogg({ token, anvandare, kunder, c }) {
+  const [events, setEvents] = useState([]);
+  const [filterUserId, setFilterUserId] = useState('');
+  const [fran, setFran] = useState('');
+  const [till, setTill] = useState('');
+  const [laddar, setLaddar] = useState(true);
+
+  const [visaForm, setVisaForm] = useState(false);
+  const [redigerarId, setRedigerarId] = useState(null);
+  const [formUserId, setFormUserId] = useState('');
+  const [formTyp, setFormTyp] = useState('in');
+  const [formOmrade, setFormOmrade] = useState(null);
+  const [formKund, setFormKund] = useState(null);
+  const [formKundSok, setFormKundSok] = useState('');
+  const [formDatum, setFormDatum] = useState('');
+  const [formKlocka, setFormKlocka] = useState('');
+  const [formFel, setFormFel] = useState('');
+  const [formSkickar, setFormSkickar] = useState(false);
+
+  const oppnaNyttFormular = () => {
+    const { datum, klocka } = tidTillDatumOchKlocka();
+    setRedigerarId(null); setFormUserId(anvandare[0]?.id || ''); setFormTyp('in');
+    setFormOmrade(null); setFormKund(null); setFormKundSok('');
+    setFormDatum(datum); setFormKlocka(klocka); setFormFel(''); setVisaForm(true);
+  };
+
+  const oppnaRedigera = (e) => {
+    const { datum, klocka } = tidTillDatumOchKlocka(e.tid);
+    setRedigerarId(e.id); setFormUserId(e.userId); setFormTyp(e.typ);
+    setFormOmrade(e.omrade || null);
+    setFormKund(e.kundNamn ? { id: e.kundId || null, namn: e.kundNamn } : null);
+    setFormKundSok(e.kundNamn || '');
+    setFormDatum(datum); setFormKlocka(klocka); setFormFel(''); setVisaForm(true);
+  };
+
+  const taBortEvent = async (e) => {
+    const fraga = `Ta bort stämplingen "${e.namn} ${e.typ === 'in' ? 'IN' : 'UT'} ${formatDatum(e.tid)}"?`;
+    const genomfor = async () => {
+      await fetch(`${API}/api/stampling/logg/${e.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      hamta();
+    };
+    if (Platform.OS === 'web') { if (window.confirm(fraga)) genomfor(); }
+    else Alert.alert('Ta bort?', fraga, [{ text: 'Avbryt', style: 'cancel' }, { text: 'Ta bort', style: 'destructive', onPress: genomfor }]);
+  };
+
+  const formKundTraffar = formKundSok.trim()
+    ? (kunder || []).filter(k => k.namn.toLowerCase().includes(formKundSok.toLowerCase())).slice(0, 8)
+    : (kunder || []).slice(0, 8);
+
+  const sparaFormular = async () => {
+    setFormFel('');
+    if (!formUserId) { setFormFel('Välj användare'); return; }
+    if (formTyp === 'in' && !formOmrade) { setFormFel('Välj vad som kördes'); return; }
+    if (formTyp === 'in' && !formKund) { setFormFel('Välj kund, eller Internt / övrigt'); return; }
+    if (!formDatum || !formKlocka) { setFormFel('Ange datum och tid'); return; }
+    const tid = new Date(`${formDatum}T${formKlocka}:00`);
+    if (isNaN(tid.getTime())) { setFormFel('Ogiltigt datum/tid'); return; }
+    setFormSkickar(true);
+    const body = {
+      userId: formUserId, typ: formTyp,
+      omrade: formTyp === 'in' ? formOmrade : undefined,
+      kundId: formTyp === 'in' ? formKund?.id : undefined,
+      kundNamn: formTyp === 'in' ? formKund?.namn : undefined,
+      tid: tid.toISOString(),
+    };
+    const url = redigerarId ? `${API}/api/stampling/logg/${redigerarId}` : `${API}/api/stampling/logg`;
+    const res = await fetch(url, {
+      method: redigerarId ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    setFormSkickar(false);
+    if (!res.ok) { setFormFel(data.error || 'Något gick fel'); return; }
+    setVisaForm(false);
+    hamta();
+  };
+
+  const hamta = useCallback(() => {
+    setLaddar(true);
+    const qs = new URLSearchParams();
+    if (filterUserId) qs.set('userId', filterUserId);
+    if (fran) qs.set('fran', fran);
+    if (till) qs.set('till', till);
+    fetch(`${API}/api/stampling/logg?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => { setEvents(Array.isArray(d) ? d : []); setLaddar(false); })
+      .catch(() => setLaddar(false));
+  }, [token, filterUserId, fran, till]);
+
+  useEffect(() => { hamta(); }, [hamta]);
+
+  // Enkel timsammanställning: parar ihop kronologiska in/ut-par per användare
+  // inom den filtrerade perioden.
+  const timmarPerAnvandare = React.useMemo(() => {
+    const perAnvandare = new Map();
+    for (const e of events) {
+      const lista = perAnvandare.get(e.userId) || [];
+      lista.push(e);
+      perAnvandare.set(e.userId, lista);
+    }
+    const resultat = [];
+    for (const [userId, lista] of perAnvandare) {
+      const sorterad = [...lista].sort((a, b) => a.tid < b.tid ? -1 : 1);
+      let totalMs = 0;
+      let inTid = null;
+      for (const e of sorterad) {
+        if (e.typ === 'in') inTid = e.tid;
+        else if (e.typ === 'ut' && inTid) { totalMs += new Date(e.tid) - new Date(inTid); inTid = null; }
+      }
+      resultat.push({ userId, namn: sorterad[0]?.namn || '?', timmar: totalMs / 3600000 });
+    }
+    return resultat.sort((a, b) => b.timmar - a.timmar);
+  }, [events]);
+
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+        <View style={{ backgroundColor: c.input, borderRadius: 8, borderWidth: 1, borderColor: c.inputBorder, minWidth: 160 }}>
+          <TouchableOpacity
+            onPress={() => {
+              const idx = anvandare.findIndex(a => a.id === filterUserId);
+              const next = anvandare[idx + 1];
+              setFilterUserId(filterUserId === '' ? (anvandare[0]?.id || '') : (next ? next.id : ''));
+            }}
+            style={{ padding: 10 }}>
+            <Text style={{ color: c.text }}>
+              {filterUserId ? `👤 ${anvandare.find(a => a.id === filterUserId)?.namn || '?'}` : '👤 Alla användare (tryck för att bläddra)'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <TextInput
+          style={[um.input, { marginBottom: 0, width: 140, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+          placeholder="Från (ÅÅÅÅ-MM-DD)" placeholderTextColor={c.textMuted} value={fran} onChangeText={setFran} />
+        <TextInput
+          style={[um.input, { marginBottom: 0, width: 140, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+          placeholder="Till (ÅÅÅÅ-MM-DD)" placeholderTextColor={c.textMuted} value={till} onChangeText={setTill} />
+        <TouchableOpacity onPress={hamta} style={{ backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' }}>
+          <Text style={{ color: '#fff', fontWeight: '600' }}>Filtrera</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={oppnaNyttFormular} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' }}>
+          <Text style={{ color: '#fff', fontWeight: '600' }}>+ Lägg till stämpling</Text>
+        </TouchableOpacity>
+      </View>
+
+      {timmarPerAnvandare.length > 0 && (
+        <View style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+          <Text style={{ color: c.textRubrik, fontWeight: '700', marginBottom: 8 }}>Sammanställning (avslutade pass i perioden)</Text>
+          {timmarPerAnvandare.map(t => (
+            <View key={t.userId} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+              <Text style={{ color: c.text }}>{t.namn}</Text>
+              <Text style={{ color: c.textRubrik, fontWeight: '600' }}>{t.timmar.toFixed(1)} h</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {laddar ? <Text style={{ color: c.textMuted }}>Laddar...</Text> : (
+        <View>
+          {events.length === 0 && <Text style={{ color: c.textMuted }}>Inga stämplingar i perioden.</Text>}
+          {events.map(e => (
+            <View key={e.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+              <Text style={{ color: c.text, flex: 1 }}>{e.namn}{e.manuell ? ' ✎' : ''}</Text>
+              <Text style={{ color: e.typ === 'in' ? '#16a34a' : '#ef4444', fontWeight: '600', width: 40 }}>{e.typ === 'in' ? 'IN' : 'UT'}</Text>
+              <Text style={{ color: c.textMuted, width: 70 }}>{e.omrade || ''}</Text>
+              <Text style={{ color: c.textMuted, width: 100 }} numberOfLines={1}>{e.kundNamn || ''}</Text>
+              <Text style={{ color: c.textMuted, width: 120 }}>{formatDatum(e.tid)} {new Date(e.tid).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</Text>
+              <TouchableOpacity onPress={() => oppnaRedigera(e)} style={{ paddingHorizontal: 6 }}>
+                <Text style={{ color: '#2563eb', fontSize: 13 }}>✎</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => taBortEvent(e)} style={{ paddingHorizontal: 6 }}>
+                <Text style={{ color: '#ef4444', fontSize: 13 }}>🗑</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <Modal visible={visaForm} animationType="fade" transparent onRequestClose={() => setVisaForm(false)}>
+        <View style={um.bakgrund}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 360 }]}>
+            <View style={um.rubrikRad}>
+              <Text style={[um.rubrik, { color: c.textRubrik }]}>{redigerarId ? 'Redigera stämpling' : 'Lägg till stämpling'}</Text>
+              <TouchableOpacity onPress={() => setVisaForm(false)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 420 }}>
+              <Text style={{ color: c.textMuted, marginBottom: 6 }}>Anställd</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                {anvandare.map(a => (
+                  <TouchableOpacity key={a.id} onPress={() => setFormUserId(a.id)}
+                    style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1,
+                      backgroundColor: formUserId === a.id ? '#2563eb' : c.input, borderColor: formUserId === a.id ? '#2563eb' : c.inputBorder }}>
+                    <Text style={{ color: formUserId === a.id ? '#fff' : c.text, fontSize: 12, fontWeight: '600' }}>{a.namn}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={{ color: c.textMuted, marginBottom: 6 }}>Typ</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                {[['in', 'Stämpla IN'], ['ut', 'Stämpla UT']].map(([v, label]) => (
+                  <TouchableOpacity key={v} onPress={() => setFormTyp(v)}
+                    style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1,
+                      backgroundColor: formTyp === v ? '#2563eb' : c.input, borderColor: formTyp === v ? '#2563eb' : c.inputBorder }}>
+                    <Text style={{ color: formTyp === v ? '#fff' : c.text, fontWeight: '600', fontSize: 12 }}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {formTyp === 'in' && (
+                <>
+                  <Text style={{ color: c.textMuted, marginBottom: 6 }}>Vad kördes?</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                    {STAMPLING_OMRADEN.map(o => (
+                      <TouchableOpacity key={o} onPress={() => setFormOmrade(o)}
+                        style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1,
+                          backgroundColor: formOmrade === o ? '#2563eb' : c.input, borderColor: formOmrade === o ? '#2563eb' : c.inputBorder }}>
+                        <Text style={{ color: formOmrade === o ? '#fff' : c.text, fontWeight: '600', fontSize: 12 }}>{o}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={{ color: c.textMuted, marginBottom: 6 }}>
+                    Kund{formKund ? ` — vald: ${formKund.namn}` : ''}
+                  </Text>
+                  <TextInput
+                    style={[um.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText, marginBottom: 6 }]}
+                    placeholder="Sök kund..." placeholderTextColor={c.textMuted}
+                    value={formKundSok} onChangeText={t => { setFormKundSok(t); setFormKund(null); }} />
+                  <ScrollView style={{ maxHeight: 100, marginBottom: 6 }}>
+                    {formKundTraffar.map(k => (
+                      <TouchableOpacity key={k.id} onPress={() => { setFormKund({ id: k.id, namn: k.namn }); setFormKundSok(k.namn); }}
+                        style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, marginBottom: 4,
+                          backgroundColor: formKund?.id === k.id ? '#2563eb' : c.input, borderWidth: 1,
+                          borderColor: formKund?.id === k.id ? '#2563eb' : c.inputBorder }}>
+                        <Text style={{ color: formKund?.id === k.id ? '#fff' : c.text, fontSize: 13, fontWeight: '600' }}>{k.namn}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  <TouchableOpacity onPress={() => { setFormKund(STAMPLING_INTERNT); setFormKundSok(''); }}
+                    style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, marginBottom: 12,
+                      backgroundColor: formKund?.id === null && formKund ? '#2563eb' : c.input, borderWidth: 1,
+                      borderColor: formKund?.id === null && formKund ? '#2563eb' : c.inputBorder }}>
+                    <Text style={{ color: formKund?.id === null && formKund ? '#fff' : c.textMuted, fontWeight: '600', fontSize: 12 }}>
+                      Internt / övrigt (inget kundjobb)
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              <Text style={{ color: c.textMuted, marginBottom: 6 }}>Datum och tid</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                <TextInput
+                  style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  placeholder="ÅÅÅÅ-MM-DD" placeholderTextColor={c.textMuted} value={formDatum} onChangeText={setFormDatum} />
+                <TextInput
+                  style={[um.input, { width: 90, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  placeholder="TT:MM" placeholderTextColor={c.textMuted} value={formKlocka} onChangeText={setFormKlocka} />
+              </View>
+
+              {formFel ? <Text style={{ color: '#ef4444', marginBottom: 8 }}>{formFel}</Text> : null}
+              <TouchableOpacity style={[um.laggKnapp, formSkickar && { opacity: 0.6 }]} disabled={formSkickar} onPress={sparaFormular}>
+                <Text style={um.laggText}>{formSkickar ? 'Sparar...' : (redigerarId ? 'Spara ändringar' : 'Lägg till')}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+// Stämpla + beredning direkt i kundkortets kategoriflikar — samlad aktivitetslogg
+// (vem stämplade in/ut och vad som beretts, t.ex. "ECW skickat till Alufräs") visas
+// direkt så man ser vad som är gjort och när, utan att gå via den fristående Stämpling-vyn.
+function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund, ecwRuns, c }) {
+  const [anvandare, setAnvandare] = useState([]);
+  const [stampLogg, setStampLogg] = useState([]);
+  const [visaStampla, setVisaStampla] = useState(false);
+  const [visaBeredning, setVisaBeredning] = useState(false);
+  const [vald, setVald] = useState(null);
+  const [pinInput, setPinInput] = useState('');
+  const [fel, setFel] = useState('');
+  const [skickar, setSkickar] = useState(false);
+  const [beredningText, setBeredningText] = useState('');
+
+  const kundId = valdKund.id;
+  const kundNamn = valdKund.namn;
+  const kategori = aktivKundFlik;
+  const arStamplingsbar = STAMPLING_OMRADEN.includes(kategori);
+
+  const hamtaStampling = useCallback(() => {
+    if (!token || !arStamplingsbar) { setStampLogg([]); return; }
+    fetch(`${API}/api/stampling/kund/${kundId}?omrade=${encodeURIComponent(kategori)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => setStampLogg(Array.isArray(d) ? d : [])).catch(() => {});
+  }, [token, kundId, kategori, arStamplingsbar]);
+
+  useEffect(() => { hamtaStampling(); }, [hamtaStampling]);
+
+  useEffect(() => {
+    if (!token || !arStamplingsbar) return;
+    fetch(`${API}/api/stampling/anvandare`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setAnvandare).catch(() => {});
+  }, [token, arStamplingsbar]);
+
+  const oppnaStampla = () => { setVald(null); setPinInput(''); setFel(''); setVisaStampla(true); };
+
+  const stampla = async () => {
+    if (!vald) { setFel('Välj person'); return; }
+    if (pinInput.length !== 4) { setFel('Ange 4 siffror'); return; }
+    setSkickar(true);
+    const kommerBliIn = vald.status !== 'in';
+    const res = await fetch(`${API}/api/stampling/stampla`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        userId: vald.id, pin: pinInput,
+        omrade: kommerBliIn ? kategori : undefined,
+        kundId: kommerBliIn ? kundId : undefined,
+        kundNamn: kommerBliIn ? kundNamn : undefined,
+      }),
+    });
+    const data = await res.json();
+    setSkickar(false);
+    if (!res.ok) { setFel(data.error || 'Något gick fel'); setPinInput(''); return; }
+    setVisaStampla(false);
+    hamtaStampling();
+  };
+
+  const sparaBeredning = () => {
+    const trimmed = beredningText.trim();
+    if (!trimmed) return;
+    const entry = { id: Date.now().toString(), kategori, text: trimmed, av: inloggad?.namn || inloggad?.username || '', tid: new Date().toISOString() };
+    uppdateraKund({ ...valdKund, logg: [...(valdKund.logg || []), entry] });
+    setBeredningText('');
+    setVisaBeredning(false);
+  };
+
+  const beredningLogg = (valdKund.logg || []).filter(e => e.kategori === kategori);
+  const materialLista = valdKund.material?.[kategori] || [];
+  const kundRuns = (ecwRuns || []).filter(run =>
+    run.projekt?.toLowerCase() === kundNamn?.toLowerCase() ||
+    (run.comNo && run.comNo.toLowerCase() === kundNamn?.toLowerCase()));
+  const kombinerad = [
+    ...stampLogg.map(e => ({ id: 's' + e.id, ikon: '⏱️', text: `${e.namn} stämplade ${e.typ === 'in' ? 'IN' : 'UT'}`, tid: e.tid })),
+    ...beredningLogg.map(e => ({ id: 'b' + e.id, ikon: '📝', text: `${e.text} (${e.av})`, tid: e.tid })),
+  ].sort((a, b) => a.tid < b.tid ? 1 : -1).slice(0, 8);
+
+  return (
+    <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+        {arStamplingsbar && (
+          <TouchableOpacity onPress={oppnaStampla} style={{ backgroundColor: '#2563eb', borderRadius: 8, paddingVertical: 9, paddingHorizontal: 14 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>⏱️ Stämpla</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity onPress={() => setVisaBeredning(true)} style={{ backgroundColor: c.input, borderColor: c.inputBorder, borderWidth: 1, borderRadius: 8, paddingVertical: 9, paddingHorizontal: 14 }}>
+          <Text style={{ color: c.text, fontWeight: '700', fontSize: 13 }}>📝 Beredning</Text>
+        </TouchableOpacity>
+      </View>
+
+      {kombinerad.length === 0 ? (
+        <Text style={{ color: c.textMuted, fontSize: 12 }}>Inget loggat ännu för {kategori}.</Text>
+      ) : (
+        kombinerad.map(e => (
+          <Text key={e.id} style={{ color: c.textMuted, fontSize: 12, marginBottom: 3 }}>
+            {e.ikon} {e.text} · {formatKlockslag(e.tid)}
+          </Text>
+        ))
+      )}
+
+      <Modal visible={visaStampla} animationType="fade" transparent onRequestClose={() => setVisaStampla(false)}>
+        <View style={um.bakgrund}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 320 }]}>
+            <View style={um.rubrikRad}>
+              <Text style={[um.rubrik, { color: c.textRubrik }]}>Stämpla · {kategori}</Text>
+              <TouchableOpacity onPress={() => setVisaStampla(false)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+            </View>
+            {!vald ? (
+              <ScrollView style={{ maxHeight: 280 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {anvandare.length === 0 && <Text style={{ color: c.textMuted, fontSize: 12 }}>Inga användare hittades.</Text>}
+                  {anvandare.map(p => (
+                    <TouchableOpacity key={p.id} onPress={() => setVald(p)}
+                      style={{ width: 120, backgroundColor: c.input, borderColor: p.status === 'in' ? '#16a34a' : c.inputBorder, borderWidth: p.status === 'in' ? 2 : 1, borderRadius: 10, padding: 10, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 24 }}>{p.avatar || '👤'}</Text>
+                      <Text style={{ color: c.text, fontWeight: '600', fontSize: 12, textAlign: 'center', marginTop: 4 }}>{p.namn}</Text>
+                      <Text style={{ color: p.status === 'in' ? '#16a34a' : c.textMuted, fontSize: 10, marginTop: 2, textAlign: 'center' }}>
+                        {p.status === 'in' ? `Inne · ${p.omrade}${p.kundNamn ? ' · ' + p.kundNamn : ''}` : 'Ute'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            ) : (
+              <>
+                <Text style={{ color: c.textMuted, marginBottom: 8 }}>
+                  {vald.namn} — {vald.status === 'in'
+                    ? `stämplar UT${vald.kundNamn && vald.kundNamn !== kundNamn ? ` (var inne på ${vald.kundNamn})` : ''}`
+                    : `stämplar IN på ${kategori} · ${kundNamn}`}
+                </Text>
+                {fel ? <Text style={{ color: '#ef4444', marginBottom: 8 }}>{fel}</Text> : null}
+                <TextInput
+                  style={[um.input, { textAlign: 'center', fontSize: 22, letterSpacing: 6, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  value={pinInput} onChangeText={t => setPinInput(t.replace(/\D/g, '').slice(0, 4))}
+                  keyboardType="numeric" secureTextEntry maxLength={4} autoFocus onSubmitEditing={stampla} />
+                <TouchableOpacity style={[um.laggKnapp, skickar && { opacity: 0.6 }]} disabled={skickar} onPress={stampla}>
+                  <Text style={um.laggText}>{skickar ? 'Skickar...' : `Stämpla ${vald.status === 'in' ? 'UT' : 'IN'}`}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setVald(null)} style={{ marginTop: 8, alignItems: 'center' }}>
+                  <Text style={{ color: c.textMuted, fontSize: 12 }}>← Välj annan person</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={visaBeredning} animationType="fade" transparent onRequestClose={() => setVisaBeredning(false)}>
+        <View style={um.bakgrund}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 480 }]}>
+            <View style={um.rubrikRad}>
+              <Text style={[um.rubrik, { color: c.textRubrik }]}>Beredning · {kategori}</Text>
+              <TouchableOpacity onPress={() => setVisaBeredning(false)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 500 }}>
+              {kategori === 'Glas' && (valdKund.matt?.length > 0) && (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>GLASMÅTT</Text>
+                  {valdKund.matt.map((m, i) => (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
+                      <Text style={{ color: c.textMuted, fontSize: 12 }}>Enhet {i + 1}:</Text>
+                      <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>{m.widthMm} × {m.heightMm} mm</Text>
+                      {m.leaves ? <Text style={{ color: c.textMuted, fontSize: 12 }}>· {m.leaves} båge{m.leaves === 1 ? '' : 'ar'}</Text> : null}
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {(kategori === 'Alufräs' || kategori === 'Beslag') && (
+                <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+              )}
+
+              {kategori === 'Alufräs' && (
+                <>
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ECW-FILER</Text>
+                  <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                  {kundRuns.length > 0 && (
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ECW-KÖRNINGAR</Text>
+                      {kundRuns.map(run => (
+                        <View key={run.id} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8 }]}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>✅ {run.projekt}</Text>
+                            <Text style={{ color: c.textMuted, fontSize: 12 }}>{new Date(run.tid).toLocaleString('sv-SE')}</Text>
+                          </View>
+                          {(run.partier || []).map((p, i) => (
+                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                              <Text style={{ color: c.textMuted, fontSize: 13, minWidth: 34, fontWeight: '600' }}>{p.label}</Text>
+                              <Text style={{ color: c.text, fontSize: 13 }}>{p.breddMm} × {p.hoejdMm} mm</Text>
+                              <Text style={{ color: c.textMuted, fontSize: 12 }}>{p.baagar} bågar · {p.serie}-serien</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+
+              {materialLista.length > 0 && (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>MATERIAL — {kategori}</Text>
+                  {materialLista.map(m => (
+                    <View key={m.produktId} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+                      <Text style={{ color: c.text, fontSize: 13 }}>{m.namn}</Text>
+                      <Text style={{ color: c.textMuted, fontSize: 13 }}>{m.antal}{m.enhet}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>LÄGG TILL ANTECKNING</Text>
+              <Text style={{ color: c.textMuted, marginBottom: 8 }}>Vad är gjort? T.ex. "ECW skickat till Alufräs"</Text>
+              <TextInput
+                style={[um.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                value={beredningText} onChangeText={setBeredningText}
+                placeholder="Beskrivning..." placeholderTextColor={c.textMuted} onSubmitEditing={sparaBeredning} />
+              <TouchableOpacity style={um.laggKnapp} onPress={sparaBeredning}>
+                <Text style={um.laggText}>Spara</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+// Sammanställning — ungefärlig summering av alla kunders glas/mått/material,
+// grupperat per system (ASE60 = Bostandard, ASS32 = Vår-/Höst-/Vinterpaket)
+// via kundens paket-tagg. Kunder utan paket men med ASE60-koppling räknas
+// ändå som ASE60 (de har mått/glasdata som bevisar systemet).
+function SammanstallningVy({ kunder, ase60Projekt, c }) {
+  const alla = React.useMemo(() => {
+    const combined = [];
+    for (const proj of ase60Projekt) {
+      const sparad = kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id);
+      combined.push({
+        id: proj.id, namn: proj.name,
+        matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+        material: sparad?.material || {},
+        paket: sparad?.paket || null,
+        ase60ProjectId: proj.id,
+      });
+    }
+    for (const k of kunder.filter(k => !k.ase60ProjectId && !ase60Projekt.some(p => p.id === k.id))) {
+      combined.push({ id: k.id, namn: k.namn, matt: k.matt || [], material: k.material || {}, paket: k.paket || null, ase60ProjectId: null });
+    }
+    return combined;
+  }, [kunder, ase60Projekt]);
+
+  const systemFor = (k) => paketTillSystem(k.paket) || ((k.ase60ProjectId || k.matt?.length > 0) ? 'ASE60' : 'Ospecificerat');
+
+  const grupper = React.useMemo(() => {
+    const map = new Map();
+    for (const k of alla) {
+      const s = systemFor(k);
+      const g = map.get(s) || { namn: s, kunder: [], glasAntal: 0, glasYtaM2: 0, material: new Map() };
+      g.kunder.push(k);
+      for (const m of (k.matt || [])) {
+        const leaves = m.leaves || 1;
+        g.glasAntal += leaves;
+        g.glasYtaM2 += (m.widthMm / 1000) * (m.heightMm / 1000) * leaves;
+      }
+      for (const kategori of Object.keys(k.material || {})) {
+        for (const item of (k.material[kategori] || [])) {
+          const key = item.artikel || item.produktId;
+          const ex = g.material.get(key) || { namn: item.namn, artikel: item.artikel, enhet: item.enhet, antal: 0 };
+          ex.antal += parseInt(item.antal) || 0;
+          g.material.set(key, ex);
+        }
+      }
+      map.set(s, g);
+    }
+    return [...map.values()].sort((a, b) => b.kunder.length - a.kunder.length);
+  }, [alla]);
+
+  const rubrikFor = (namn) => {
+    if (namn === 'ASE60') return '🪟 ASE 60 (Bostandard)';
+    if (namn === 'ASS32') return '🏡 ASS 32 (Vår-/Höst-/Vinterpaket)';
+    return '❔ Ospecificerat paket';
+  };
+
+  return (
+    <ScrollView style={{ flex: 1 }}>
+      <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 4 }]}>📊 Sammanställning</Text>
+      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 16 }}>
+        Ungefärlig beräkning baserad på inlagda kunder, mått och material — ingen exakt lagerinventering.
+      </Text>
+
+      <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+        <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 4 }}>TOTALT ANTAL KUNDER</Text>
+        <Text style={{ color: c.textRubrik, fontSize: 28, fontWeight: '700' }}>{alla.length}</Text>
+      </View>
+
+      {grupper.map(g => {
+        const material = [...g.material.values()].sort((a, b) => b.antal - a.antal);
+        return (
+          <View key={g.namn} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16, marginBottom: 10 }}>{rubrikFor(g.namn)}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 20, marginBottom: 12 }}>
+              <View>
+                <Text style={{ color: c.textMuted, fontSize: 11 }}>Kunder</Text>
+                <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 20 }}>{g.kunder.length}</Text>
+              </View>
+              {g.glasAntal > 0 && (
+                <>
+                  <View>
+                    <Text style={{ color: c.textMuted, fontSize: 11 }}>Glas (st)</Text>
+                    <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 20 }}>{g.glasAntal}</Text>
+                  </View>
+                  <View>
+                    <Text style={{ color: c.textMuted, fontSize: 11 }}>Glasyta (ca m²)</Text>
+                    <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 20 }}>{g.glasYtaM2.toFixed(1)}</Text>
+                  </View>
+                </>
+              )}
+            </View>
+            {material.length > 0 && (
+              <View style={{ marginBottom: 10 }}>
+                <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 }}>
+                  MATERIAL/PROFILER (topp {Math.min(10, material.length)} av {material.length})
+                </Text>
+                {material.slice(0, 10).map((m, i) => (
+                  <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
+                    <Text style={{ color: c.text, fontSize: 13 }}>{m.namn}{m.artikel ? ` (${m.artikel})` : ''}</Text>
+                    <Text style={{ color: c.textMuted, fontSize: 13 }}>{m.antal}{m.enhet || ''}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <Text style={{ color: c.textMuted, fontSize: 11 }}>
+              Kunder: {g.kunder.map(k => k.namn).join(', ')}
+            </Text>
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
+}
 
 // ─── Profile modal ───────────────────────────────────────────────────────────
 const AVATARER = ['😀','😎','🧑‍💻','👷','🧰','🔧','📦','🏗️','🪟','🏠','⭐','🦊','🐺','🦁','🐻','🐼','🤖','👾'];
@@ -1019,7 +1920,7 @@ export default function App() {
   const [kollarSession, setKollarSession] = useState(true);
 
   const [produkter, setProdukter] = useState([]);
-  const [aktivFlik, setAktivFlik] = useState('Alla produkter');
+  const [aktivFlik, setAktivFlik] = useState('__stampling__');
   const [sok, setSok] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [redigeraProdukt, setRedigeraProdukt] = useState(null);
@@ -1042,11 +1943,13 @@ export default function App() {
   const [aktivKundFlik, setAktivKundFlik] = useState('Träfräs');
   const [visaLaggTillKund, setVisaLaggTillKund] = useState(false);
   const [nyKundNamn, setNyKundNamn] = useState('');
+  const [nyKundPaket, setNyKundPaket] = useState(null);
   const [kundMaterialSok, setKundMaterialSok] = useState('');
   const [ritningar, setRitningar] = useState(RITNINGAR_FALLBACK);
   const [ase60Projekt, setAse60Projekt] = useState([]);
   const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
   const [sokAse60, setSokAse60] = useState('');
+  const [valdaKunderExport, setValdaKunderExport] = useState(() => new Set());
   const [klartRuta, setKlartRuta] = useState(null); // { rader, serier, projekt, laddar, fel }
   const [visaProfil, setVisaProfil] = useState(false);
   const [visaSidebar, setVisaSidebar] = useState(false);
@@ -1457,6 +2360,7 @@ export default function App() {
         ...SEED_AWS70HI.filter(p => !befintligaIds.has(p.id)),
         ...SEED_AOC50.filter(p => !befintligaIds.has(p.id)),
         ...SEED_TRABALKAR.filter(p => !befintligaIds.has(p.id)),
+        ...SEED_ASE60_82MM_NYA.filter(p => !befintligaIds.has(p.id)),
       ];
       if (nya.length > 0) {
         lista = [...lista, ...nya];
@@ -1473,6 +2377,9 @@ export default function App() {
   const arRitning = ritningar.some(r => r.id === aktivFlik);
   const arAndringslogg = aktivFlik === '__andringar__';
   const arKunder = aktivFlik === '__kunder__';
+  const arStampling = aktivFlik === '__stampling__';
+  const arAse60 = aktivFlik === '__ase60__';
+  const arSammanstallning = aktivFlik === '__sammanstallning__';
 
   useEffect(() => {
     if (arKunder && token) {
@@ -1500,7 +2407,7 @@ export default function App() {
       .then(r => r.json()).then(setAse60Projekt).catch(() => {});
   };
 
-  useEffect(() => { if (arKunder) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder]);
+  useEffect(() => { if (arKunder || arSammanstallning) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder, arSammanstallning]);
 
   // Paket-listan (ASE 60 / ASS 32 / ...) är delad med ase60-generator och
   // Uterum-Konfigurator via GET /api/paket — ingen inloggning krävs, samma
@@ -1526,6 +2433,7 @@ export default function App() {
       farg: valdAse60Projekt?.color || '',
       ase60ProjectId: valdAse60Projekt?.id || null,
       matt: valdAse60Projekt?.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+      paket: nyKundPaket,
     };
     fetch(`${API}/api/kunder`, {
       method: 'POST',
@@ -1534,6 +2442,7 @@ export default function App() {
     }).then(r => r.json()).then(ny => {
       setKunder(prev => [...prev, ny]);
       setNyKundNamn('');
+      setNyKundPaket(null);
       setValdAse60Projekt(null);
       setSokAse60('');
       setVisaLaggTillKund(false);
@@ -1564,6 +2473,8 @@ export default function App() {
         matt: uppdaterad.matt || [],
         material: uppdaterad.material || {},
         klart: uppdaterad.klart || {},
+        logg: uppdaterad.logg || [],
+        paket: uppdaterad.paket ?? null,
       }),
     }).catch(() => {});
   };
@@ -1622,7 +2533,7 @@ export default function App() {
     const manuella = (valdKund.material?.[aktivKundFlik] || [])
       .filter(m => (parseInt(m.antal) || 0) > 0)
       .map(m => ({ ...m, antal: parseInt(m.antal) || 0, typ: 'manuell' }));
-    const hamtaProfiler = aktivKundFlik === 'Alufräs' && (valdKund.ase60ProjectId || valdKund.id);
+    const hamtaProfiler = (aktivKundFlik === 'Alufräs' || aktivKundFlik === 'Glas') && (valdKund.ase60ProjectId || valdKund.id);
     if (!hamtaProfiler) {
       if (manuella.length === 0) return;
       setKlartRuta({ rader: manuella, serier: [], projekt: '', laddar: false });
@@ -1634,7 +2545,11 @@ export default function App() {
       const r = await fetch(`${API}/api/ase60-optimering/${encodeURIComponent(projId)}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || 'fel');
-      const profilRader = (data.profiler || []).map(p => {
+      // Glasraden (artikel "GLAS") hör hemma under egen Glas-flik, inte Alufräs
+      // — annars räknas den dubbelt om båda flikarna körs "Klart".
+      const radAvGlas = p => String(p.artikel).trim().toUpperCase() === 'GLAS';
+      const profilerForFlik = (data.profiler || []).filter(p => aktivKundFlik === 'Glas' ? radAvGlas(p) : !radAvGlas(p));
+      const profilRader = profilerForFlik.map(p => {
         // Matcha lagerprodukt: samma artikelnr (ASE60 har ibland bokstavssuffix,
         // t.ex. 487850A = lagrets 487850), helst med rätt längd i dimension-fältet
         const profilArt = String(p.artikel).trim();
@@ -1739,7 +2654,7 @@ export default function App() {
   const oppnaLaggTill = () => {
     setRedigeraProdukt(null);
     setFormNamn(''); setFormArtikel(''); setFormAntal('');
-    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg ? '' : aktivFlik);
+    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSammanstallning ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
     setFormBild(null); setFormFarger([]); setFormLangder([]);
     setModalVisible(true);
@@ -1854,6 +2769,53 @@ export default function App() {
     } catch { Alert.alert('Fel', 'Kunde inte exportera'); }
   };
 
+  // Alla kunder (ASE60-projekt + manuellt tillagda) med sina glasmått, för export.
+  const alleKunderMedMatt = [
+    ...ase60Projekt.map(proj => ({
+      id: proj.id, namn: proj.name,
+      matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+    })),
+    ...kunder.filter(k => !k.ase60ProjectId && !ase60Projekt.some(p => p.id === k.id)).map(k => ({ id: k.id, namn: k.namn, matt: k.matt || [] })),
+  ];
+
+  const vaxlaKundExport = (id) => {
+    setValdaKunderExport(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const exporteraGlasmatt = async () => {
+    try {
+      const valda = alleKunderMedMatt
+        .filter(k => valdaKunderExport.has(k.id))
+        .slice()
+        .sort((a, b) => a.namn.localeCompare(b.namn, 'sv'));
+      const rader = [];
+      valda.forEach(k => {
+        (k.matt || []).forEach((m, i) => {
+          rader.push({
+            Kund: k.namn,
+            Enhet: i + 1,
+            'Bredd (mm)': m.widthMm,
+            'Höjd (mm)': m.heightMm,
+            Bågar: m.leaves || '',
+          });
+        });
+      });
+      if (rader.length === 0) { Alert.alert('Inget att exportera', 'Inga glasmått hittades för de valda kunderna.'); return; }
+      const ws = utils.json_to_sheet(rader);
+      ws['!cols'] = [{ wch: 30 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 8 }];
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, ws, 'Glasmått');
+      const csv = write(wb, { type: 'string', bookType: 'csv' });
+      const filePath = FileSystem.documentDirectory + 'glasmatt.csv';
+      await FileSystem.writeAsStringAsync(filePath, csv);
+      await Sharing.shareAsync(filePath);
+    } catch { Alert.alert('Fel', 'Kunde inte exportera'); }
+  };
+
   const sortera = (kolumn) => {
     if (sorteringsKolumn === kolumn) {
       setSorteringsRiktning(r => r === 'asc' ? 'desc' : 'asc');
@@ -1863,7 +2825,7 @@ export default function App() {
     }
   };
 
-  const filtreradeLista = arRitning ? [] : (() => {
+  const filtreradeLista = (arRitning || arAse60 || arSammanstallning) ? [] : (() => {
     const filtered = produkter.filter(p => {
       const matcherFlik = aktivFlik === 'Alla produkter' || p.kategori === aktivFlik;
       const matcherSok =
@@ -1988,6 +2950,34 @@ export default function App() {
             )}
           </TouchableOpacity>
 
+          <View style={styles.sidebarDivider} />
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arStampling && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__stampling__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arStampling && styles.sidebarFlikTextAktiv]}>
+              ⏱️ Stämpling
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.sidebarDivider} />
+          <Text style={styles.sidebarTitel}>ASE 60</Text>
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arAse60 && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__ase60__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arAse60 && styles.sidebarFlikTextAktiv]}>
+              🪟 ASE60-generator
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.sidebarDivider} />
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arSammanstallning && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__sammanstallning__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arSammanstallning && styles.sidebarFlikTextAktiv]}>
+              📊 Sammanställning
+            </Text>
+          </TouchableOpacity>
+
           {inloggad.roll === 'admin' && <>
             <View style={styles.sidebarDivider} />
             <TouchableOpacity
@@ -2089,6 +3079,10 @@ export default function App() {
             </ScrollView>
           )}
 
+          {!valdProdukt && arStampling && (
+            <StamplingVy token={token} inloggad={inloggad} />
+          )}
+
           {!valdProdukt && arKunder && (
             <ScrollView style={{ flex: 1 }}>
               {/* Kunddetaljvy */}
@@ -2097,7 +3091,17 @@ export default function App() {
                   <TouchableOpacity onPress={() => setValdKund(null)} style={{ marginBottom: 16 }}>
                     <Text style={{ color: '#2563eb', fontSize: 14 }}>← Tillbaka till kunder</Text>
                   </TouchableOpacity>
-                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 12 }]}>👤 {valdKund.namn}</Text>
+                  <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 8 }]}>👤 {valdKund.namn}</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                    <Text style={{ color: c.textMuted, fontSize: 11 }}>Paket:</Text>
+                    {PAKET_OPTIONS.map(p => (
+                      <TouchableOpacity key={p} onPress={() => uppdateraKund({ ...valdKund, paket: valdKund.paket === p ? null : p })}
+                        style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 6, borderWidth: 1,
+                          backgroundColor: valdKund.paket === p ? '#2563eb' : c.input, borderColor: valdKund.paket === p ? '#2563eb' : c.inputBorder }}>
+                        <Text style={{ color: valdKund.paket === p ? '#fff' : c.textMuted, fontSize: 11, fontWeight: '600' }}>{p}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                   {(valdKund.farg || valdKund.matt?.length > 0) && (
                     <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
                       <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ASE60 PROJEKT</Text>
@@ -2118,7 +3122,7 @@ export default function App() {
                   )}
                   {/* Underfliken */}
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-                    {['Träfräs', 'Alufräs', 'Beslag'].map(flik => {
+                    {['Träfräs', 'Alufräs', 'Beslag', 'Glas'].map(flik => {
                       const flikKlar = !!valdKund.klart?.[flik];
                       return (
                         <TouchableOpacity
@@ -2146,10 +3150,13 @@ export default function App() {
                       : [];
                     return (
                       <View>
+                        <KundAktivitet token={token} valdKund={valdKund} aktivKundFlik={aktivKundFlik} inloggad={inloggad} uppdateraKund={uppdateraKund} ecwRuns={ecwRuns} c={c} />
+                        {(aktivKundFlik === 'Alufräs' || aktivKundFlik === 'Beslag') && (
+                          <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                        )}
                         {aktivKundFlik === 'Alufräs' && (
                           <>
                             <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
-                            <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
                             {(() => {
                               const kundRuns = ecwRuns.filter(run =>
                                 run.projekt?.toLowerCase() === valdKund.namn?.toLowerCase() ||
@@ -2263,7 +3270,8 @@ export default function App() {
                             {(() => {
                               const harManuellt = materialLista.filter(m => (parseInt(m.antal) || 0) > 0).length > 0;
                               const arAlufras = aktivKundFlik === 'Alufräs';
-                              const aktiv = harManuellt || arAlufras;
+                              const arGlas = aktivKundFlik === 'Glas';
+                              const aktiv = harManuellt || arAlufras || arGlas;
                               return (
                                 <TouchableOpacity
                                   onPress={oppnaKlartRuta}
@@ -2271,7 +3279,7 @@ export default function App() {
                                   style={{ backgroundColor: aktiv ? '#16a34a' : '#9ca3af',
                                     borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginBottom: 24 }}>
                                   <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
-                                    ✓ Klart{arAlufras ? ' — hämta profiler & godkänn uttag' : ' — godkänn uttag från lagret'}
+                                    ✓ Klart{arAlufras ? ' — hämta profiler & godkänn uttag' : arGlas ? ' — hämta glas & godkänn uttag' : ' — godkänn uttag från lagret'}
                                   </Text>
                                 </TouchableOpacity>
                               );
@@ -2352,14 +3360,41 @@ export default function App() {
                         onSubmitEditing={laggTillKund}
                         autoFocus
                       />
+                      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 6 }}>Paket (styr system i Sammanställningen)</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                        {PAKET_OPTIONS.map(p => (
+                          <TouchableOpacity key={p} onPress={() => setNyKundPaket(nyKundPaket === p ? null : p)}
+                            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1,
+                              backgroundColor: nyKundPaket === p ? '#2563eb' : c.input, borderColor: nyKundPaket === p ? '#2563eb' : c.inputBorder }}>
+                            <Text style={{ color: nyKundPaket === p ? '#fff' : c.text, fontSize: 12, fontWeight: '600' }}>{p}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <TouchableOpacity onPress={laggTillKund} style={{ flex: 1, backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
                           <Text style={{ color: '#fff', fontWeight: '700' }}>Spara</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); setValdAse60Projekt(null); setSokAse60(''); }} style={{ padding: 10 }}>
+                        <TouchableOpacity onPress={() => { setVisaLaggTillKund(false); setNyKundNamn(''); setNyKundPaket(null); setValdAse60Projekt(null); setSokAse60(''); }} style={{ padding: 10 }}>
                           <Text style={{ color: '#ef4444', fontSize: 18 }}>✕</Text>
                         </TouchableOpacity>
                       </View>
+                    </View>
+                  )}
+                  {alleKunderMedMatt.length > 0 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+                      <Text style={{ color: c.textMuted, fontSize: 12 }}>
+                        {valdaKunderExport.size > 0 ? `${valdaKunderExport.size} kund${valdaKunderExport.size === 1 ? '' : 'er'} vald${valdaKunderExport.size === 1 ? '' : 'a'}` : 'Kryssa i kunder för att exportera glasmått'}
+                      </Text>
+                      {valdaKunderExport.size > 0 && (
+                        <>
+                          <TouchableOpacity onPress={exporteraGlasmatt} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 }}>
+                            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📊 Exportera glasmått ({valdaKunderExport.size})</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => setValdaKunderExport(new Set())} style={{ paddingHorizontal: 8, paddingVertical: 7 }}>
+                            <Text style={{ color: c.textMuted, fontSize: 12 }}>Rensa val</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
                   )}
                   {ase60Projekt.length === 0 && kunder.length === 0 && !visaLaggTillKund && (
@@ -2381,12 +3416,17 @@ export default function App() {
                           setValdKund({
                             id: proj.id, namn: proj.name, farg: proj.color, ase60ProjectId: proj.id,
                             matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
-                            material: sparad?.material || {}, klart: sparad?.klart || {},
+                            material: sparad?.material || {}, klart: sparad?.klart || {}, paket: sparad?.paket || null,
                           });
                           setAktivKundFlik('Träfräs');
                           setKundMaterialSok('');
                         }}
                         style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                        <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); vaxlaKundExport(proj.id); }}
+                          style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 2, marginRight: 12, alignItems: 'center', justifyContent: 'center',
+                            backgroundColor: valdaKunderExport.has(proj.id) ? '#16a34a' : 'transparent', borderColor: valdaKunderExport.has(proj.id) ? '#16a34a' : c.inputBorder }}>
+                          {valdaKunderExport.has(proj.id) && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</Text>}
+                        </TouchableOpacity>
                         <View style={{ flex: 1 }}>
                           <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {proj.name}</Text>
                           {proj.color ? (
@@ -2416,9 +3456,14 @@ export default function App() {
                       key={kund.id}
                       onPress={() => { setValdKund(kund); setAktivKundFlik('Träfräs'); setKundMaterialSok(''); }}
                       style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-                      <View>
+                      <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); vaxlaKundExport(kund.id); }}
+                        style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 2, marginRight: 12, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: valdaKunderExport.has(kund.id) ? '#16a34a' : 'transparent', borderColor: valdaKunderExport.has(kund.id) ? '#16a34a' : c.inputBorder }}>
+                        {valdaKunderExport.has(kund.id) && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</Text>}
+                      </TouchableOpacity>
+                      <View style={{ flex: 1 }}>
                         <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {kund.namn}</Text>
-                        <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>Träfräs · Alufräs · Beslag</Text>
+                        <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>Träfräs · Alufräs · Beslag · Glas</Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                         {kund.klart && Object.keys(kund.klart).length > 0 && (
@@ -2448,7 +3493,18 @@ export default function App() {
             });
           })()}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && <>
+          {!valdProdukt && arAse60 && Platform.OS === 'web' && React.createElement('iframe', {
+            key: 'ase60',
+            src: ASE60_URL,
+            style: { width: '100%', height: '100%', border: 'none', borderRadius: 8 },
+            title: 'ASE60-generator',
+          })}
+
+          {!valdProdukt && arSammanstallning && (
+            <SammanstallningVy kunder={kunder} ase60Projekt={ase60Projekt} c={c} />
+          )}
+
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>
