@@ -60,6 +60,30 @@ app.post('/api/pdf-filer/intern', (req, res) => {
   res.json({ ok: true });
 });
 
+// BTL-filer (takstolar/bärlina m.m.) från Uterum-Konfiguratorn, samma mönster
+// som ECW/PDF ovan — server-till-server via localhost, x-intern-secret.
+const _BTL_DIR_EARLY = path.join(__dirname, 'data', 'btl');
+const _BTL_INDEX_EARLY = path.join(__dirname, 'data', 'btl.json');
+app.post('/api/btl-filer/intern', (req, res) => {
+  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
+  const { projectId, projectName, filename, btlBase64 } = req.body;
+  if (!projectId || !btlBase64) return res.status(400).json({ error: 'Saknar data' });
+  if (!fs.existsSync(_BTL_DIR_EARLY)) fs.mkdirSync(_BTL_DIR_EARLY, { recursive: true });
+  const safeId = String(projectId).replace(/[^a-z0-9_-]/gi, '_');
+  const projDir = path.join(_BTL_DIR_EARLY, safeId);
+  if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
+  const ts = Date.now();
+  const safeFilename = String(filename || 'takstolar.btl').replace(/[^a-z0-9._-]/gi, '_');
+  const filePath = path.join(projDir, `${ts}_${safeFilename}`);
+  fs.writeFileSync(filePath, Buffer.from(btlBase64, 'base64'));
+  if (!fs.existsSync(_BTL_INDEX_EARLY)) _writeJSONEarly(_BTL_INDEX_EARLY, []);
+  const index = _readJSONEarly(_BTL_INDEX_EARLY, []);
+  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
+  if (index.length > 500) index.splice(0, index.length - 500);
+  _writeJSONEarly(_BTL_INDEX_EARLY, index);
+  res.json({ ok: true });
+});
+
 // Redirect HTTP → HTTPS (only when HTTPS server is running).
 // Maskinanrop med x-api-key (t.ex. ase60-generatorns ECW-notiser) hoppar
 // över redirecten — Node-fetch klarar inte självsignerade cert och en
@@ -596,6 +620,42 @@ app.delete('/api/ecw-filer/:ase60ProjectId/:id', authMiddleware, (req, res) => {
   try { if (fs.existsSync(fil.filePath)) fs.unlinkSync(fil.filePath); } catch {}
   index.splice(idx, 1);
   writeJSON(ECW_INDEX_FILE, index);
+  res.json({ ok: true });
+});
+
+// --- BTL-FILER (läsa/ladda ner — autentiserade endpoints) ---
+const BTL_DIR = path.join(DATA_DIR, 'btl');
+const BTL_INDEX_FILE = path.join(DATA_DIR, 'btl.json');
+if (!fs.existsSync(BTL_DIR)) fs.mkdirSync(BTL_DIR, { recursive: true });
+if (!fs.existsSync(BTL_INDEX_FILE)) writeJSON(BTL_INDEX_FILE, []);
+
+// Lista BTL-filer för ett projekt (autentiserat)
+app.get('/api/btl-filer/:ase60ProjectId', authMiddleware, (req, res) => {
+  const index = readJSON(BTL_INDEX_FILE, []);
+  const filer = index.filter(f => f.projectId === req.params.ase60ProjectId);
+  res.json(filer.map(f => ({ id: f.id, filename: f.filename, skapad: f.skapad, projectName: f.projectName })));
+});
+
+// Ladda ner en BTL-fil
+app.get('/api/btl-filer/:ase60ProjectId/:id/ladda-ner', authMiddleware, (req, res) => {
+  const index = readJSON(BTL_INDEX_FILE, []);
+  const fil = index.find(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (!fil || !fs.existsSync(fil.filePath)) return res.status(404).json({ error: 'Fil hittades ej' });
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${fil.filename}"`);
+  res.sendFile(path.resolve(fil.filePath));
+});
+
+// Ta bort en BTL-fil (admin only)
+app.delete('/api/btl-filer/:ase60ProjectId/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
+  const index = readJSON(BTL_INDEX_FILE, []);
+  const idx = index.findIndex(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Fil hittades ej' });
+  const fil = index[idx];
+  try { if (fs.existsSync(fil.filePath)) fs.unlinkSync(fil.filePath); } catch {}
+  index.splice(idx, 1);
+  writeJSON(BTL_INDEX_FILE, index);
   res.json({ ok: true });
 });
 

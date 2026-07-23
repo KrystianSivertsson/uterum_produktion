@@ -228,6 +228,80 @@ function AlufrasFlik({ ase60ProjectId, token, API, c, roll }) {
   );
 }
 
+// ─── Träfräs (BTL-filer från Uterum-Konfiguratorn) ───────────────────────────
+function BtlFlik({ ase60ProjectId, token, API, c, roll }) {
+  const [filer, setFiler] = useState([]);
+  const [laddar, setLaddar] = useState(true);
+
+  const laddaFiler = () => {
+    if (!ase60ProjectId || !token) { setLaddar(false); return; }
+    fetch(`${API}/api/btl-filer/${encodeURIComponent(ase60ProjectId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setFiler(Array.isArray(data) ? data : []); setLaddar(false); })
+      .catch(() => setLaddar(false));
+  };
+
+  useEffect(() => { laddaFiler(); }, [ase60ProjectId]);
+
+  const laddaNer = (fil) => {
+    const url = `${API}/api/btl-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}/ladda-ner?token=${token}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fil.filename;
+    a.click();
+  };
+
+  const taBort = async (fil) => {
+    if (!window.confirm(`Ta bort "${fil.filename}"?`)) return;
+    await fetch(`${API}/api/btl-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    laddaFiler();
+  };
+
+  if (laddar) return (
+    <View style={{ padding: 32, alignItems: 'center' }}>
+      <Text style={{ color: c.textMuted }}>Hämtar BTL-filer...</Text>
+    </View>
+  );
+
+  if (filer.length === 0) return (
+    <View style={{ padding: 16, alignItems: 'center', marginBottom: 12 }}>
+      <Text style={{ color: c.textMuted, fontSize: 14, textAlign: 'center' }}>
+        Inga BTL-filer ännu.{'\n'}Exportera takstolar från Uterum-Konfiguratorn och filen dyker upp här automatiskt.
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      {filer.slice().reverse().map(fil => (
+        <View
+          key={fil.id}
+          style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 12,
+            padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={{ fontSize: 22 }}>🪵</Text>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => laddaNer(fil)}>
+            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{fil.filename}</Text>
+            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+              {new Date(fil.skapad).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => laddaNer(fil)}>
+            <Text style={{ color: '#2563eb', fontWeight: '600', fontSize: 13 }}>⬇ Ladda ner</Text>
+          </TouchableOpacity>
+          {roll === 'admin' && (
+            <TouchableOpacity onPress={() => taBort(fil)}>
+              <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 13 }}>🗑 Ta bort</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ─── PDF-dokument (ritningar/beredning från ASE60) per kund ──────────────────
 function PdfFlik({ ase60ProjectId, token, API, c, roll }) {
   const [filer, setFiler] = useState([]);
@@ -1106,6 +1180,13 @@ function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund
 
               {(kategori === 'Alufräs' || kategori === 'Beslag') && (
                 <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+              )}
+
+              {kategori === 'Träfräs' && (
+                <>
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>BTL-FILER</Text>
+                  <BtlFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                </>
               )}
 
               {kategori === 'Alufräs' && (
@@ -3151,6 +3232,9 @@ export default function App() {
                     return (
                       <View>
                         <KundAktivitet token={token} valdKund={valdKund} aktivKundFlik={aktivKundFlik} inloggad={inloggad} uppdateraKund={uppdateraKund} ecwRuns={ecwRuns} c={c} />
+                        {aktivKundFlik === 'Träfräs' && (
+                          <BtlFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                        )}
                         {(aktivKundFlik === 'Alufräs' || aktivKundFlik === 'Beslag') && (
                           <PdfFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
                         )}

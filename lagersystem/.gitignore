@@ -46,6 +46,8 @@ data/ecw.json
 data/ecw/
 data/pdf.json
 data/pdf/
+data/btl.json
+data/btl/
 data/stampling.json
 
 # typescript
