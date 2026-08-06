@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SEED_PRODUKTER, SEED_AWS70HI, SEED_AOC50, SEED_TRABALKAR, SEED_ASE60_82MM_NYA } from './seedData';
+import { INVENTERING_DATUM, appliceraInventering } from './inventeringsData';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { utils, write } from 'xlsx';
@@ -2022,7 +2023,7 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
             </TouchableOpacity>
           </Modal>
           <TouchableOpacity style={{ marginTop: 12, backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 8 }} onPress={onRedigera}>
-            <Text style={{ color: '#fff', fontWeight: '700' }}>📦 Registrera uttag</Text>
+            <Text style={{ color: '#fff', fontWeight: '700' }}>📦 Uttag / påfyllning</Text>
           </TouchableOpacity>
         </View>
 
@@ -2091,6 +2092,7 @@ export default function App() {
   const [sok, setSok] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [redigeraProdukt, setRedigeraProdukt] = useState(null);
+  const [formRiktning, setFormRiktning] = useState('uttag'); // 'uttag' | 'pafyllning' — bara vid redigering
   const [valdProdukt, setValdProdukt] = useState(null);
   const [formNamn, setFormNamn] = useState('');
   const [formArtikel, setFormArtikel] = useState('');
@@ -2534,6 +2536,16 @@ export default function App() {
         lista = [...lista, ...nya];
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
       }
+      // Fysisk inventering (U:\schuecco.xlsx) — appliceras EN gång per
+      // webbläsare, samma mönster som seed-migreringarna ovan.
+      const invKey = `lagersystem_inventering_${INVENTERING_DATUM}`;
+      if (!(await AsyncStorage.getItem(invKey))) {
+        const resultat = appliceraInventering(lista);
+        lista = resultat.lista;
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
+        await AsyncStorage.setItem(invKey, '1');
+        console.log(`Inventering ${INVENTERING_DATUM}: ${resultat.uppdaterade} uppdaterade, ${resultat.skapade.length} nya, ${resultat.nollade.length} dubbletter nollade`);
+      }
       setProdukter(lista);
     } catch {}
   };
@@ -2830,6 +2842,7 @@ export default function App() {
 
   const oppnaRedigera = (produkt) => {
     setRedigeraProdukt(produkt);
+    setFormRiktning('uttag');
     setFormNamn(produkt.namn);
     setFormArtikel(produkt.artikel || '');
     setFormAntal('');
@@ -2849,8 +2862,11 @@ export default function App() {
       ? fargerMedAntal.reduce((s, f) => s + (parseInt(f.antal) || 0), 0)
       : null;
     const uttag = antalFranFarger !== null ? antalFranFarger : (parseInt(formAntal) || 0);
+    const arPafyllning = formRiktning === 'pafyllning';
     const antal = redigeraProdukt
-      ? Math.max(0, (redigeraProdukt.antal || 0) - uttag)
+      ? (arPafyllning
+          ? (redigeraProdukt.antal || 0) + uttag
+          : Math.max(0, (redigeraProdukt.antal || 0) - uttag))
       : uttag;
     const minAntal = parseInt(formMinAntal) || 5;
     const genomfor = () => {
@@ -2858,18 +2874,24 @@ export default function App() {
       const langder = formLangder.filter(l => l.langd).map(l => ({ langd: parseFloat(l.langd) || 0, antal: parseInt(l.antal) || 0 }));
       let nyLista;
       if (redigeraProdukt) {
-        // Subtrahera uttagna färger från befintligt lager
+        // Uttag: subtrahera angivna färger från lagret. Påfyllning: addera
+        // (befintlig färg räknas upp, ny färg läggs till som rad).
         let nyFarger = [...(redigeraProdukt.farger || [])];
         fargerUttag.forEach(u => {
           const idx = nyFarger.findIndex(f => f.farg === u.farg);
-          if (idx >= 0) nyFarger[idx] = { ...nyFarger[idx], antal: Math.max(0, nyFarger[idx].antal - u.antal) };
+          if (arPafyllning) {
+            if (idx >= 0) nyFarger[idx] = { ...nyFarger[idx], antal: (nyFarger[idx].antal || 0) + u.antal };
+            else if (u.antal > 0) nyFarger.push(u);
+          } else if (idx >= 0) {
+            nyFarger[idx] = { ...nyFarger[idx], antal: Math.max(0, nyFarger[idx].antal - u.antal) };
+          }
         });
         nyFarger = nyFarger.filter(f => f.antal > 0);
         const gammal = redigeraProdukt;
         const andringar = [];
         if (gammal.namn !== formNamn.trim()) andringar.push({ falt: 'Namn', fran: gammal.namn, till: formNamn.trim() });
         if ((gammal.artikel||'') !== formArtikel.trim()) andringar.push({ falt: 'Artikelnr', fran: gammal.artikel||'', till: formArtikel.trim() });
-        if (uttag > 0) andringar.push({ falt: 'Uttag', fran: `${gammal.antal}${gammal.enhet||'st'}`, till: `${antal}${formEnhet} (-${uttag})` });
+        if (uttag > 0) andringar.push({ falt: arPafyllning ? 'Påfyllning' : 'Uttag', fran: `${gammal.antal}${gammal.enhet||'st'}`, till: `${antal}${formEnhet} (${arPafyllning ? '+' : '-'}${uttag})` });
         if ((gammal.enhet||'st') !== formEnhet) andringar.push({ falt: 'Enhet', fran: gammal.enhet||'st', till: formEnhet });
         if (gammal.kategori !== formKategori.trim()) andringar.push({ falt: 'Kategori', fran: gammal.kategori, till: formKategori.trim() });
         if (gammal.minAntal !== minAntal) andringar.push({ falt: 'Varningsgräns', fran: String(gammal.minAntal), till: String(minAntal) });
@@ -3200,11 +3222,11 @@ export default function App() {
                       <Text style={{ color: '#16a34a', fontSize: 13, fontWeight: '600' }}>{a.till}</Text>
                     </View>
                   ))}
-                  {entry.andringar.some(a => a.falt === 'Antal' || a.falt === 'Uttag') && (
+                  {entry.andringar.some(a => a.falt === 'Antal' || a.falt === 'Uttag' || a.falt === 'Påfyllning') && (
                     <TouchableOpacity
                       style={{ marginTop: 10, alignSelf: 'flex-start', backgroundColor: '#fef3c7', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 5 }}
                       onPress={() => {
-                        const antalAndring = entry.andringar.find(a => a.falt === 'Antal' || a.falt === 'Uttag');
+                        const antalAndring = entry.andringar.find(a => a.falt === 'Antal' || a.falt === 'Uttag' || a.falt === 'Påfyllning');
                         if (!antalAndring) return;
                         const gammaltAntal = parseInt(antalAndring.fran) || 0;
                         const bekrafta = () => {
@@ -3926,7 +3948,19 @@ export default function App() {
         <View style={styles.modalBakgrund}>
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
           <View style={[styles.modalKort, { backgroundColor: c.modal, width: '100%', maxWidth: 480 }]}>
-            <Text style={[styles.modalTitel, { color: c.textRubrik }]}>{redigeraProdukt ? 'Registrera uttag' : 'Ny produkt'}</Text>
+            <Text style={[styles.modalTitel, { color: c.textRubrik }]}>{redigeraProdukt ? (formRiktning === 'pafyllning' ? 'Registrera påfyllning' : 'Registrera uttag') : 'Ny produkt'}</Text>
+            {redigeraProdukt && (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {[{ id: 'uttag', label: '➖ Uttag' }, { id: 'pafyllning', label: '➕ Påfyllning' }].map(r => (
+                  <TouchableOpacity key={r.id} onPress={() => setFormRiktning(r.id)}
+                    style={{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, alignItems: 'center',
+                      backgroundColor: formRiktning === r.id ? (r.id === 'uttag' ? '#dc2626' : '#16a34a') : c.input,
+                      borderColor: formRiktning === r.id ? (r.id === 'uttag' ? '#dc2626' : '#16a34a') : c.inputBorder }}>
+                    <Text style={{ color: formRiktning === r.id ? '#fff' : c.text, fontWeight: '700', fontSize: 14 }}>{r.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
             <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]} placeholder="Produktnamn *" placeholderTextColor={c.textMuted}
               value={formNamn} onChangeText={setFormNamn} />
@@ -3944,7 +3978,7 @@ export default function App() {
               ))}
             </View>
 
-            <Text style={[styles.inputLabel, { color: c.textMuted }]}>Antal i lager</Text>
+            <Text style={[styles.inputLabel, { color: c.textMuted }]}>{redigeraProdukt ? (formRiktning === 'pafyllning' ? `Antal att fylla på (i lager nu: ${redigeraProdukt.antal ?? 0}${redigeraProdukt.enhet || 'st'})` : `Antal att ta ut (i lager nu: ${redigeraProdukt.antal ?? 0}${redigeraProdukt.enhet || 'st'})`) : 'Antal i lager'}</Text>
             {(() => {
               const fargSumma = formFarger.filter(f => f.farg.trim() && parseInt(f.antal) > 0).reduce((s, f) => s + (parseInt(f.antal) || 0), 0);
               const harFargAntal = formFarger.some(f => f.farg.trim() && parseInt(f.antal) > 0);
