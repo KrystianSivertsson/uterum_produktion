@@ -7,6 +7,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SEED_PRODUKTER, SEED_AWS70HI, SEED_AOC50, SEED_TRABALKAR, SEED_ASE60_82MM_NYA } from './seedData';
 import { INVENTERING_DATUM, appliceraInventering } from './inventeringsData';
+import { LEVERANS_NYA_2026 } from './leveransArtiklar2026';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { utils, write } from 'xlsx';
@@ -2531,6 +2532,9 @@ export default function App() {
         ...SEED_AOC50.filter(p => !befintligaIds.has(p.id)),
         ...SEED_TRABALKAR.filter(p => !befintligaIds.has(p.id)),
         ...SEED_ASE60_82MM_NYA.filter(p => !befintligaIds.has(p.id)),
+        // Vårens Schüco-leveranser som saknades i registret (saldo 0, Osorterat)
+        // — läggs bara in om id saknas, befintliga produkter rörs aldrig.
+        ...LEVERANS_NYA_2026.filter(p => !befintligaIds.has(p.id)),
       ];
       if (nya.length > 0) {
         lista = [...lista, ...nya];
