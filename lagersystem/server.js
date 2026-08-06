@@ -822,7 +822,7 @@ app.post('/api/ecw-runs', (req, res) => {
   // Auto-upsert kundkort från ASE60-exporten: kund med färg + projektkoppling
   // skapas/uppdateras direkt när ECW genereras. Alufräs-fliken räknar sedan
   // profilåtgång via ase60ProjectId och avdraget godkänns i Klart-rutan.
-  const { projectId, farg } = req.body || {};
+  const { projectId, farg, paket } = req.body || {};
   const kunder = readJSON(KUNDER_FILE, []);
   let idx = projectId ? kunder.findIndex(k => k.ase60ProjectId === projectId) : -1;
   if (idx === -1) idx = kunder.findIndex(k => (k.namn || '').toLowerCase() === projekt.trim().toLowerCase());
@@ -838,11 +838,13 @@ app.post('/api/ecw-runs', (req, res) => {
       farg: farg || '',
       ase60ProjectId: projectId || null,
       matt,
+      paket: paket || null,
     });
   } else {
     if (farg) kunder[idx].farg = farg;
     if (projectId) kunder[idx].ase60ProjectId = projectId;
     if (matt.length) kunder[idx].matt = matt;
+    if (paket) kunder[idx].paket = paket;
   }
   writeJSON(KUNDER_FILE, kunder);
 

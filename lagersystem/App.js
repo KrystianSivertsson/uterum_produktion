@@ -47,6 +47,11 @@ function paketTillSystem(paket) {
   if (paket === 'Sommar' || paket === 'Förlängd Sommar' || paket === 'Vår & Höst' || paket === 'Vinter') return 'ASS32';
   return null;
 }
+function kundSokTraff(sok, ...falt) {
+  const q = (sok || '').trim().toLowerCase();
+  if (!q) return true;
+  return falt.some(f => (f || '').toLowerCase().includes(q));
+}
 // Fallback/initialt värde — ersätts live av GET /api/paket (proxy till
 // ase60-generatorns paket-registry) i App(), se laddaPaket(). Filnamnen är
 // lagersystemets egna (data/*.pdf) och känns inte till av ase60-generator.
@@ -1339,7 +1344,7 @@ function SammanstallningVy({ kunder, ase60Projekt, c }) {
         id: proj.id, namn: proj.name,
         matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
         material: sparad?.material || {},
-        paket: sparad?.paket || null,
+        paket: sparad?.paket || proj.paket || null,
         ase60ProjectId: proj.id,
       });
     }
@@ -2111,6 +2116,7 @@ export default function App() {
   const [ase60Projekt, setAse60Projekt] = useState([]);
   const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
   const [sokAse60, setSokAse60] = useState('');
+  const [kundSok, setKundSok] = useState('');
   const [valdaKunderExport, setValdaKunderExport] = useState(() => new Set());
   const [klartRuta, setKlartRuta] = useState(null); // { rader, serier, projekt, laddar, fel }
   const [visaProfil, setVisaProfil] = useState(false);
@@ -3469,6 +3475,12 @@ export default function App() {
                       <Text style={{ color: '#fff', fontWeight: '700' }}>+ Lägg till kund</Text>
                     </TouchableOpacity>
                   </View>
+                  <TextInput
+                    style={[styles.input, { marginBottom: 12, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                    placeholder="🔍 Sök kund (namn, com-nr, färg, paket)..."
+                    placeholderTextColor={c.textMuted}
+                    value={kundSok} onChangeText={setKundSok}
+                  />
                   {visaLaggTillKund && (
                     <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16 }]}>
                       <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, marginBottom: 12 }}>Ny kund</Text>
@@ -3574,7 +3586,8 @@ export default function App() {
                     </View>
                   )}
                   {/* ASE60-projekt visas direkt som kunder (sparad material/klart-status mergas in) */}
-                  {ase60Projekt.map(proj => {
+                  {ase60Projekt.filter(p => kundSokTraff(kundSok, p.name, p.comNo, p.color, p.paket,
+                    kunder.find(k => k.id === p.id || k.ase60ProjectId === p.id)?.paket)).map(proj => {
                     const sparad = kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id);
                     const klartAntal = sparad?.klart ? Object.keys(sparad.klart).length : 0;
                     return (
@@ -3584,7 +3597,7 @@ export default function App() {
                           setValdKund({
                             id: proj.id, namn: proj.name, farg: proj.color, ase60ProjectId: proj.id,
                             matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
-                            material: sparad?.material || {}, klart: sparad?.klart || {}, paket: sparad?.paket || null,
+                            material: sparad?.material || {}, klart: sparad?.klart || {}, paket: sparad?.paket || proj.paket || null,
                           });
                           setAktivKundFlik('Träfräs');
                           setKundMaterialSok('');
@@ -3597,6 +3610,11 @@ export default function App() {
                         </TouchableOpacity>
                         <View style={{ flex: 1 }}>
                           <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {proj.name}</Text>
+                          {(sparad?.paket || proj.paket) ? (
+                            <Text style={{ color: '#2563eb', fontSize: 11, fontWeight: '700', marginTop: 2 }}>
+                              {sparad?.paket || proj.paket}{paketTillSystem(sparad?.paket || proj.paket) ? ` · ${paketTillSystem(sparad?.paket || proj.paket)}` : ''}
+                            </Text>
+                          ) : null}
                           {proj.color ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
                               <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(proj.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)' }} />
@@ -3622,7 +3640,8 @@ export default function App() {
                       dess egen SQLite) — manuellt tillagda ELLER synkade från Uterum-Konfigurator
                       (ase60ProjectId pekar då på ett Konfigurator/Supabase-id, inte ett ase60Projekt-id,
                       så en enkel !k.ase60ProjectId-koll dolde tidigare alla Konfigurator-kunder). */}
-                  {kunder.filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id)).map(kund => (
+                  {kunder.filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id))
+                    .filter(k => kundSokTraff(kundSok, k.namn, k.farg, k.paket)).map(kund => (
                     <TouchableOpacity
                       key={kund.id}
                       onPress={() => { setValdKund(kund); setAktivKundFlik('Träfräs'); setKundMaterialSok(''); }}
@@ -3634,6 +3653,11 @@ export default function App() {
                       </TouchableOpacity>
                       <View style={{ flex: 1 }}>
                         <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {kund.namn}</Text>
+                        {kund.paket ? (
+                          <Text style={{ color: '#2563eb', fontSize: 11, fontWeight: '700', marginTop: 2 }}>
+                            {kund.paket}{paketTillSystem(kund.paket) ? ` · ${paketTillSystem(kund.paket)}` : ''}
+                          </Text>
+                        ) : null}
                         <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>Träfräs · Alufräs · Beslag · Glas</Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
