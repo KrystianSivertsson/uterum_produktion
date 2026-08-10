@@ -37,24 +37,30 @@ app.post('/api/ecw-filer/intern', (req, res) => {
   res.json({ ok: true });
 });
 
-// PDF-dokument (print-HTML från ASE60: CAD-ritning + beredning/glas) per kund/projekt.
-// Lagras som självständig HTML — öppnas i flik och skrivs ut/sparas som PDF där.
+// PDF-dokument (ritningar/beredning från ASE60 och Uterum-Konfiguratorn) per
+// kund/projekt. Två format tas emot:
+//   htmlBase64 → sparas som .html (öppnas i flik, skrivs ut till PDF där)
+//   pdfBase64  → sparas som .pdf  (riktig vektor-PDF, t.ex. uterummets 2D-vyer)
+// /visa sätter Content-Type efter filändelsen.
 const _PDF_DIR_EARLY = path.join(__dirname, 'data', 'pdf');
 const _PDF_INDEX_EARLY = path.join(__dirname, 'data', 'pdf.json');
 app.post('/api/pdf-filer/intern', (req, res) => {
   if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
-  const { projectId, projectName, filename, htmlBase64 } = req.body;
-  if (!projectId || !htmlBase64) return res.status(400).json({ error: 'Saknar data' });
+  const { projectId, projectName, filename, htmlBase64, pdfBase64 } = req.body;
+  if (!projectId || (!htmlBase64 && !pdfBase64)) return res.status(400).json({ error: 'Saknar data' });
   const safeId = String(projectId).replace(/[^a-z0-9_-]/gi, '_');
   const projDir = path.join(_PDF_DIR_EARLY, safeId);
   if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
   const ts = Date.now();
-  const safeFilename = String(filename || 'ritning.html').replace(/[^a-z0-9._åäöÅÄÖ -]/gi, '_');
-  const filePath = path.join(projDir, `${ts}_${safeFilename}.html`);
-  fs.writeFileSync(filePath, Buffer.from(htmlBase64, 'base64'));
+  const ext = pdfBase64 ? '.pdf' : '.html';
+  const safeFilename = String(filename || (pdfBase64 ? 'ritning.pdf' : 'ritning.html'))
+    .replace(/[^a-z0-9._åäöÅÄÖ -]/gi, '_')
+    .replace(/\.(pdf|html)$/i, '');
+  const filePath = path.join(projDir, `${ts}_${safeFilename}${ext}`);
+  fs.writeFileSync(filePath, Buffer.from(pdfBase64 || htmlBase64, 'base64'));
   if (!fs.existsSync(_PDF_INDEX_EARLY)) _writeJSONEarly(_PDF_INDEX_EARLY, []);
   const index = _readJSONEarly(_PDF_INDEX_EARLY, []);
-  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
+  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename + ext, filePath, skapad: new Date().toISOString() });
   if (index.length > 500) index.splice(0, index.length - 500);
   _writeJSONEarly(_PDF_INDEX_EARLY, index);
   res.json({ ok: true });
@@ -773,12 +779,15 @@ app.get('/api/pdf-filer/:ase60ProjectId', authMiddleware, (req, res) => {
   res.json(filer.map(f => ({ id: f.id, filename: f.filename, skapad: f.skapad, projectName: f.projectName })));
 });
 
-// Visa dokumentet i webbläsaren (öppnas i flik → skriv ut/spara som PDF där)
+// Visa dokumentet i webbläsaren. .pdf serveras som application/pdf (öppnas i
+// PDF-läsaren), .html som HTML (öppnas i flik → skriv ut/spara som PDF där).
 app.get('/api/pdf-filer/:ase60ProjectId/:id/visa', authMiddleware, (req, res) => {
   const index = readJSON(PDF_INDEX_FILE, []);
   const fil = index.find(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
   if (!fil || !fs.existsSync(fil.filePath)) return res.status(404).json({ error: 'Fil hittades ej' });
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  const isPdf = /\.pdf$/i.test(fil.filePath);
+  res.setHeader('Content-Type', isPdf ? 'application/pdf' : 'text/html; charset=utf-8');
+  if (isPdf) res.setHeader('Content-Disposition', `inline; filename="${path.basename(fil.filePath)}"`);
   res.send(fs.readFileSync(fil.filePath));
 });
 
