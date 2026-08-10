@@ -1451,6 +1451,22 @@ function SammanstallningVy({ kunder, ase60Projekt, c }) {
 // kunder nuvarande lagersaldo räcker till per artikel. "Räcker till" =
 // lagersaldo ÷ medel per kund. Flaskhalsen (minsta räckvidden bland artiklarna)
 // visar hur många kunder hela lagret räcker till för det paketet/färgen.
+//
+// FÖRBRUKNING_ESTIMAT: teoretisk materialåtgång per genomsnittskund, beräknad
+// i ase60-generatorn (computeBeredning / computeBeredningAss32) för en
+// representativ parti 3880×2195 mm × 2,43 partier/kund (snitt av
+// konfigurator-projektens öppningar, "alla stolpar + 1"). Profiler & packningar
+// i löpmeter, beslag/tillbehör/glas i styck. Estimat — förfinas när fler
+// kunders paket/partier finns.
+const FORBRUKNING_ESTIMAT = {
+  partierPerKund: 2.43,
+  partiMm: '3880 × 2195',
+  system: [
+    { namn: 'ASS32', profilerM: 185, packningarM: 187, styck: 365 },
+    { namn: 'ASE60', profilerM: 303, packningarM: 255, styck: 923 },
+  ],
+};
+
 function LagerforslagVy({ kunder, produkter, c }) {
   const normFarg = (s) => (s || '').toLowerCase().split(/[\s/,]+/).filter(Boolean)[0] || '';
 
@@ -1529,6 +1545,34 @@ function LagerforslagVy({ kunder, produkter, c }) {
         "Räcker till" = lagersaldo ÷ medel per kund. Flaskhalsen (artikeln som tar slut först)
         avgör hur många kunder hela lagret räcker till.
       </Text>
+
+      <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+        <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, marginBottom: 2 }}>
+          📐 Förbrukning per genomsnittskund (estimat)
+        </Text>
+        <Text style={{ color: c.textMuted, fontSize: 11, marginBottom: 10 }}>
+          {fmt(FORBRUKNING_ESTIMAT.partierPerKund)} partier/kund · representativ parti {FORBRUKNING_ESTIMAT.partiMm} mm ·
+          profiler &amp; packningar i löpmeter, beslag/tillbehör/glas i styck.
+        </Text>
+        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: c.kortBorder, paddingBottom: 4, marginBottom: 4 }}>
+          <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700' }}>SYSTEM</Text>
+          <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>PROFILER</Text>
+          <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>PACKNINGAR</Text>
+          <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>BESLAG M.M.</Text>
+        </View>
+        {FORBRUKNING_ESTIMAT.system.map(s => (
+          <View key={s.namn} style={{ flexDirection: 'row', paddingVertical: 4 }}>
+            <Text style={{ flex: 1, color: c.textRubrik, fontWeight: '700', fontSize: 13 }}>{s.namn}</Text>
+            <Text style={{ flex: 1, color: c.text, fontSize: 13, textAlign: 'right' }}>{s.profilerM} m</Text>
+            <Text style={{ flex: 1, color: c.text, fontSize: 13, textAlign: 'right' }}>{s.packningarM} m</Text>
+            <Text style={{ flex: 1, color: c.text, fontSize: 13, textAlign: 'right' }}>{s.styck} st</Text>
+          </View>
+        ))}
+        <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 8 }}>
+          Estimat — partiantalet vilar ännu på ett facit (ferdi kilic = 3) och ASE60 är kalibrerat vid höjd 2280.
+          Paket per kund saknas i konfiguratorn, så sortering per paket görs när den datan finns.
+        </Text>
+      </View>
 
       {grupper.length === 0 && (
         <Text style={{ color: c.textMuted, fontSize: 13 }}>Inga kunder inlagda ännu.</Text>
