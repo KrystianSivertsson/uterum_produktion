@@ -3235,7 +3235,7 @@ export default function App() {
         )}
 
         {/* Sidebar */}
-        {(!mobil || visaSidebar) && <View style={[styles.sidebar, mobil && styles.sidebarMobil, { backgroundColor: c.sidebar }]}>
+        {(!mobil || visaSidebar) && <ScrollView style={[styles.sidebar, mobil && styles.sidebarMobil, { backgroundColor: c.sidebar, flexGrow: 0, flexShrink: 0 }]} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={true}>
           <Text style={[styles.sidebarTitel, { color: c.sidebarText }]}>Kategorier</Text>
           {FLIKAR.map(flik => (
             <TouchableOpacity
@@ -3341,7 +3341,7 @@ export default function App() {
           <TouchableOpacity style={styles.chatKnapp} onPress={() => { setVisaChat(v => !v); setVisaSidebar(false); }}>
             <Text style={styles.chatText}>💬 Chat</Text>
           </TouchableOpacity>
-        </View>}
+        </ScrollView>}
 
         {/* Innehåll */}
         <View style={[styles.innehall, { backgroundColor: c.bg }]}>
