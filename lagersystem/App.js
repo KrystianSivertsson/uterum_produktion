@@ -1446,6 +1446,145 @@ function SammanstallningVy({ kunder, ase60Projekt, c }) {
   );
 }
 
+// Lagerförslag / Räckvidd — hur länge lagret räcker: medelförbrukning per kund
+// (av inlagda kunders material) separerat per PAKET + FÄRG, och hur många
+// kunder nuvarande lagersaldo räcker till per artikel. "Räcker till" =
+// lagersaldo ÷ medel per kund. Flaskhalsen (minsta räckvidden bland artiklarna)
+// visar hur många kunder hela lagret räcker till för det paketet/färgen.
+function LagerforslagVy({ kunder, produkter, c }) {
+  const normFarg = (s) => (s || '').toLowerCase().split(/[\s/,]+/).filter(Boolean)[0] || '';
+
+  const produktByArtikel = React.useMemo(() => {
+    const m = new Map();
+    for (const p of (produkter || [])) {
+      const a = String(p.artikel || '').trim();
+      if (!a) continue;
+      // Flera produkter kan dela artikel (t.ex. extra-post) — summera saldot.
+      const ex = m.get(a);
+      if (ex) { ex.antal += parseInt(p.antal) || 0; if (Array.isArray(p.farger)) ex.farger.push(...p.farger); }
+      else m.set(a, { namn: p.namn, antal: parseInt(p.antal) || 0, farger: Array.isArray(p.farger) ? [...p.farger] : [] });
+    }
+    return m;
+  }, [produkter]);
+
+  // Lagersaldo för en artikel i en viss färg (per-färg om produkten spårar
+  // färger, annars totalt saldo — gäller färg-neutrala delar som packningar).
+  const stockForArtikelFarg = (artikel, farg) => {
+    const p = produktByArtikel.get(String(artikel).trim());
+    if (!p) return null;
+    if (p.farger && p.farger.length > 0) {
+      const nf = normFarg(farg);
+      const hit = p.farger.find(f => normFarg(f.farg) === nf);
+      return hit ? (parseInt(hit.antal) || 0) : 0;
+    }
+    return p.antal;
+  };
+
+  const grupper = React.useMemo(() => {
+    const map = new Map();
+    for (const k of (kunder || [])) {
+      const paket = (k.paket || '').trim() || 'Ospecificerat paket';
+      const farg = (k.farg || '').trim() || 'Ospecificerad färg';
+      const key = paket + '||' + farg;
+      const g = map.get(key) || { paket, farg, antalKunder: 0, medMaterial: 0, artikelSum: new Map() };
+      g.antalKunder++;
+      const harMaterial = k.material && Object.keys(k.material).length > 0;
+      if (harMaterial) {
+        g.medMaterial++;
+        for (const kat of Object.keys(k.material)) {
+          for (const item of (k.material[kat] || [])) {
+            const art = String(item.artikel || item.produktId || '').trim();
+            if (!art) continue;
+            const ex = g.artikelSum.get(art) || { namn: item.namn, artikel: art, enhet: item.enhet, sum: 0 };
+            ex.sum += parseInt(item.antal) || 0;
+            g.artikelSum.set(art, ex);
+          }
+        }
+      }
+      map.set(key, g);
+    }
+    const out = [];
+    for (const g of map.values()) {
+      const n = g.medMaterial;
+      const rader = [...g.artikelSum.values()].map(a => {
+        const medel = n > 0 ? a.sum / n : 0;
+        const lager = stockForArtikelFarg(a.artikel, g.farg);
+        const rackerTill = (medel > 0 && lager != null) ? Math.floor(lager / medel) : null;
+        return { ...a, medel, lager, rackerTill };
+      }).sort((x, y) => (x.rackerTill ?? Infinity) - (y.rackerTill ?? Infinity));
+      const medRackvidd = rader.filter(r => r.rackerTill != null);
+      const flaskhals = medRackvidd.length ? Math.min(...medRackvidd.map(r => r.rackerTill)) : null;
+      out.push({ ...g, rader, flaskhals });
+    }
+    return out.sort((a, b) => a.paket.localeCompare(b.paket, 'sv') || a.farg.localeCompare(b.farg, 'sv'));
+  }, [kunder, produktByArtikel]);
+
+  const fmt = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)).replace('.', ',');
+
+  return (
+    <ScrollView style={{ flex: 1 }}>
+      <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 4 }]}>📦 Lagerförslag — hur länge lagret räcker</Text>
+      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 16 }}>
+        Medelförbrukning per kund (av inlagda kunders material), separerat per paket och färg.
+        "Räcker till" = lagersaldo ÷ medel per kund. Flaskhalsen (artikeln som tar slut först)
+        avgör hur många kunder hela lagret räcker till.
+      </Text>
+
+      {grupper.length === 0 && (
+        <Text style={{ color: c.textMuted, fontSize: 13 }}>Inga kunder inlagda ännu.</Text>
+      )}
+
+      {grupper.map(g => (
+        <View key={g.paket + g.farg} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            <View>
+              <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>{g.paket} · {g.farg}</Text>
+              <Text style={{ color: c.textMuted, fontSize: 11 }}>
+                {g.antalKunder} kund{g.antalKunder === 1 ? '' : 'er'} · {g.medMaterial} med materiallista (medel-underlag)
+              </Text>
+            </View>
+            {g.flaskhals != null && (
+              <View style={{ backgroundColor: g.flaskhals < 3 ? '#fee2e2' : '#dcfce7', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
+                <Text style={{ color: g.flaskhals < 3 ? '#ef4444' : '#16a34a', fontWeight: '700', fontSize: 13 }}>
+                  Lagret räcker till ~{g.flaskhals} kund{g.flaskhals === 1 ? '' : 'er'}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {g.medMaterial === 0 ? (
+            <Text style={{ color: c.textMuted, fontSize: 12 }}>Ingen kund i den här gruppen har en materiallista än — kan inte beräkna medel.</Text>
+          ) : g.rader.length === 0 ? (
+            <Text style={{ color: c.textMuted, fontSize: 12 }}>Inga artiklar i materiallistorna.</Text>
+          ) : (
+            <View>
+              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: c.kortBorder, paddingBottom: 4, marginBottom: 4 }}>
+                <Text style={{ flex: 3, color: c.textMuted, fontSize: 11, fontWeight: '700' }}>ARTIKEL</Text>
+                <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>MEDEL/KUND</Text>
+                <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>I LAGER</Text>
+                <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>RÄCKER TILL</Text>
+              </View>
+              {g.rader.map(r => (
+                <View key={r.artikel} style={{ flexDirection: 'row', paddingVertical: 3 }}>
+                  <Text style={{ flex: 3, color: c.text, fontSize: 13 }} numberOfLines={1}>{r.namn || r.artikel} <Text style={{ color: c.textMuted, fontSize: 11 }}>{r.artikel}</Text></Text>
+                  <Text style={{ flex: 1, color: c.text, fontSize: 13, textAlign: 'right' }}>{fmt(r.medel)}{r.enhet || ''}</Text>
+                  <Text style={{ flex: 1, color: r.lager == null ? c.textMuted : c.text, fontSize: 13, textAlign: 'right' }}>{r.lager == null ? '—' : r.lager}</Text>
+                  <Text style={{ flex: 1, fontSize: 13, textAlign: 'right', fontWeight: '700', color: r.rackerTill == null ? c.textMuted : (r.rackerTill < 3 ? '#ef4444' : '#16a34a') }}>
+                    {r.rackerTill == null ? '—' : `${r.rackerTill} st`}
+                  </Text>
+                </View>
+              ))}
+              <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 6 }}>
+                "—" i lager = artikeln finns inte i lagerlistan (dras ej). Färg-neutrala delar räknar totalt saldo.
+              </Text>
+            </View>
+          )}
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
 // ─── Profile modal ───────────────────────────────────────────────────────────
 const AVATARER = ['😀','😎','🧑‍💻','👷','🧰','🔧','📦','🏗️','🪟','🏠','⭐','🦊','🐺','🦁','🐻','🐼','🤖','👾'];
 
@@ -2564,6 +2703,7 @@ export default function App() {
   const arStampling = aktivFlik === '__stampling__';
   const arAse60 = aktivFlik === '__ase60__';
   const arSammanstallning = aktivFlik === '__sammanstallning__';
+  const arLagerforslag = aktivFlik === '__lagerforslag__';
 
   useEffect(() => {
     if (arKunder && token) {
@@ -2591,7 +2731,7 @@ export default function App() {
       .then(r => r.json()).then(setAse60Projekt).catch(() => {});
   };
 
-  useEffect(() => { if (arKunder || arSammanstallning) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder, arSammanstallning]);
+  useEffect(() => { if (arKunder || arSammanstallning || arLagerforslag) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder, arSammanstallning, arLagerforslag]);
 
   // Paket-listan (ASE 60 / ASS 32 / ...) är delad med ase60-generator och
   // Uterum-Konfigurator via GET /api/paket — ingen inloggning krävs, samma
@@ -2838,7 +2978,7 @@ export default function App() {
   const oppnaLaggTill = () => {
     setRedigeraProdukt(null);
     setFormNamn(''); setFormArtikel(''); setFormAntal('');
-    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSammanstallning ? '' : aktivFlik);
+    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSammanstallning || arLagerforslag ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
     setFormBild(null); setFormFarger([]); setFormLangder([]);
     setModalVisible(true);
@@ -3019,7 +3159,7 @@ export default function App() {
     }
   };
 
-  const filtreradeLista = (arRitning || arAse60 || arSammanstallning) ? [] : (() => {
+  const filtreradeLista = (arRitning || arAse60 || arSammanstallning || arLagerforslag) ? [] : (() => {
     const filtered = produkter.filter(p => {
       const matcherFlik = aktivFlik === 'Alla produkter' || p.kategori === aktivFlik;
       const matcherSok =
@@ -3169,6 +3309,13 @@ export default function App() {
             onPress={() => { setAktivFlik('__sammanstallning__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
             <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arSammanstallning && styles.sidebarFlikTextAktiv]}>
               📊 Sammanställning
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arLagerforslag && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__lagerforslag__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arLagerforslag && styles.sidebarFlikTextAktiv]}>
+              📦 Lagerförslag
             </Text>
           </TouchableOpacity>
 
@@ -3723,6 +3870,10 @@ export default function App() {
 
           {!valdProdukt && arSammanstallning && (
             <SammanstallningVy kunder={kunder} ase60Projekt={ase60Projekt} c={c} />
+          )}
+
+          {!valdProdukt && arLagerforslag && (
+            <LagerforslagVy kunder={kunder} produkter={produkter} c={c} />
           )}
 
           {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && <>
