@@ -1462,8 +1462,63 @@ const FORBRUKNING_ESTIMAT = {
   partierPerKund: 2.43,
   partiMm: '3880 × 2195',
   system: [
-    { namn: 'ASS32', profilerM: 185, packningarM: 187, styck: 365 },
-    { namn: 'ASE60', profilerM: 303, packningarM: 255, styck: 923 },
+    {
+      namn: 'ASS32', styck: 365,
+      profiler: [
+        { a: '376150', n: 'Outer frame 46 / karm', m: 29.5 },
+        { a: '308130', n: 'Track / löpskena', m: 27.7 },
+        { a: '284084', n: 'Interlock PVC', m: 20.6 },
+        { a: '309190', n: 'Attach-profil 36', m: 18.8 },
+        { a: '224634', n: 'Cover horisontell', m: 18.7 },
+        { a: '133720', n: 'Vent frame 68 / ribba', m: 18.1 },
+        { a: '224690', n: 'Cover vertikal', m: 10.3 },
+        { a: '284348', n: 'Cover vertikal', m: 10.3 },
+        { a: '309320', n: 'Vent frame / bågram', m: 10.3 },
+        { a: '309330', n: 'Glaslist 50', m: 10.3 },
+        { a: '133730', n: 'Vent frame 53 / stolpe', m: 10.2 },
+      ],
+      packningar: [
+        { a: '224497', n: 'Brush seal centre bar', m: 77.2 },
+        { a: '284262', n: 'Cover gasket', m: 62.1 },
+        { a: '224481', n: 'Glazing gasket 24', m: 48.0 },
+      ],
+    },
+    {
+      namn: 'ASE60', styck: 923,
+      profiler: [
+        { a: '504010', n: 'Vent frame 60/82 (bågram)', m: 39.2 },
+        { a: '184020', n: 'Glaslist 22-7', m: 36.4 },
+        { a: '487000', n: 'Outer frame 48/48 (karm)', m: 20.1 },
+        { a: '203195', n: 'Insert prof.', m: 19.3 },
+        { a: '203194', n: 'Guide profile', m: 18.4 },
+        { a: '201316', n: 'Track St 15', m: 18.4 },
+        { a: '278419', n: 'Slider / topprofil', m: 17.7 },
+        { a: '460640', n: 'Cover 2/3-tr', m: 10.3 },
+        { a: '278368', n: 'Clip-on magnetlist', m: 10.2 },
+        { a: '490240', n: 'Cover VF 60', m: 10.2 },
+        { a: '542000', n: 'Cover OF', m: 10.1 },
+        { a: '220777', n: 'Interlock P-p', m: 10.0 },
+        { a: '220787', n: 'Cover prof.', m: 10.0 },
+        { a: '203198', n: 'Cover prof.', m: 9.9 },
+        { a: '513000', n: 'Struct. prf.', m: 9.5 },
+        { a: '487860', n: 'Outer frame botten/tröskel', m: 9.4 },
+        { a: '333480', n: 'Gutter 47', m: 9.4 },
+        { a: '359700', n: 'Drip bar 36', m: 9.3 },
+        { a: '203196', n: 'Insert prof.', m: 9.2 },
+        { a: '219657', n: 'Bar 8mm / spanjolett', m: 6.8 },
+        { a: '246434', n: 'Glazing clip', m: 4.7 },
+        { a: '306300', n: 'Glaslist BS 15-7', m: 4.7 },
+      ],
+      packningar: [
+        { a: '244058', n: 'Gasket cord 2,5', m: 89.3 },
+        { a: '244829', n: 'Rebate gasket', m: 40.5 },
+        { a: '284321', n: 'Glazing rebate 6', m: 37.0 },
+        { a: '284834', n: 'Glazing gasket 3-4', m: 37.0 },
+        { a: '244670', n: 'Brush seal centre 8', m: 21.1 },
+        { a: '244830', n: 'Rebate gasket', m: 19.3 },
+        { a: '244669', n: 'Centre gasket', m: 10.5 },
+      ],
+    },
   ],
 };
 
@@ -1546,33 +1601,43 @@ function LagerforslagVy({ kunder, produkter, c }) {
         avgör hur många kunder hela lagret räcker till.
       </Text>
 
-      <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+      <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 12, padding: 14 }]}>
         <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15, marginBottom: 2 }}>
           📐 Förbrukning per genomsnittskund (estimat)
         </Text>
-        <Text style={{ color: c.textMuted, fontSize: 11, marginBottom: 10 }}>
+        <Text style={{ color: c.textMuted, fontSize: 11 }}>
           {fmt(FORBRUKNING_ESTIMAT.partierPerKund)} partier/kund · representativ parti {FORBRUKNING_ESTIMAT.partiMm} mm ·
-          profiler &amp; packningar i löpmeter, beslag/tillbehör/glas i styck.
+          profiler &amp; packningar i löpmeter per artikel, beslag/tillbehör/glas i styck.
         </Text>
-        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: c.kortBorder, paddingBottom: 4, marginBottom: 4 }}>
-          <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700' }}>SYSTEM</Text>
-          <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>PROFILER</Text>
-          <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>PACKNINGAR</Text>
-          <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>BESLAG M.M.</Text>
-        </View>
-        {FORBRUKNING_ESTIMAT.system.map(s => (
-          <View key={s.namn} style={{ flexDirection: 'row', paddingVertical: 4 }}>
-            <Text style={{ flex: 1, color: c.textRubrik, fontWeight: '700', fontSize: 13 }}>{s.namn}</Text>
-            <Text style={{ flex: 1, color: c.text, fontSize: 13, textAlign: 'right' }}>{s.profilerM} m</Text>
-            <Text style={{ flex: 1, color: c.text, fontSize: 13, textAlign: 'right' }}>{s.packningarM} m</Text>
-            <Text style={{ flex: 1, color: c.text, fontSize: 13, textAlign: 'right' }}>{s.styck} st</Text>
-          </View>
-        ))}
-        <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 8 }}>
+        <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 6 }}>
           Estimat — partiantalet vilar ännu på ett facit (ferdi kilic = 3) och ASE60 är kalibrerat vid höjd 2280.
           Paket per kund saknas i konfiguratorn, så sortering per paket görs när den datan finns.
         </Text>
       </View>
+
+      {FORBRUKNING_ESTIMAT.system.map(sys => {
+        const sumProf = sys.profiler.reduce((s, p) => s + p.m, 0);
+        const sumPack = sys.packningar.reduce((s, p) => s + p.m, 0);
+        const rad = (p) => (
+          <View key={p.a} style={{ flexDirection: 'row', paddingVertical: 2 }}>
+            <Text style={{ width: 60, color: c.textMuted, fontSize: 12 }}>{p.a}</Text>
+            <Text style={{ flex: 1, color: c.text, fontSize: 12 }} numberOfLines={1}>{p.n}</Text>
+            <Text style={{ width: 62, color: c.text, fontSize: 12, textAlign: 'right', fontWeight: '600' }}>{fmt(p.m)} m</Text>
+          </View>
+        );
+        return (
+          <View key={sys.namn} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 12, padding: 14 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>{sys.namn}</Text>
+              <Text style={{ color: c.textMuted, fontSize: 11 }}>{fmt(sumProf)} m profil · {fmt(sumPack)} m packn. · {sys.styck} st beslag</Text>
+            </View>
+            <Text style={{ color: '#3b82f6', fontWeight: '700', fontSize: 12, marginBottom: 3 }}>Profiler (löpmeter) · {sys.profiler.length} st</Text>
+            {sys.profiler.map(rad)}
+            <Text style={{ color: '#3b82f6', fontWeight: '700', fontSize: 12, marginTop: 8, marginBottom: 3 }}>Packningar (löpmeter) · {sys.packningar.length} st</Text>
+            {sys.packningar.map(rad)}
+          </View>
+        );
+      })}
 
       {grupper.length === 0 && (
         <Text style={{ color: c.textMuted, fontSize: 13 }}>Inga kunder inlagda ännu.</Text>
