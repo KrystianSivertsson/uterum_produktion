@@ -10,7 +10,7 @@ import { INVENTERING_DATUM, appliceraInventering } from './inventeringsData';
 import { LEVERANS_NYA_2026 } from './leveransArtiklar2026';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
-import { utils, write } from 'xlsx';
+import { utils, write, read } from 'xlsx';
 
 const API = typeof window !== 'undefined'
   ? (window.location.pathname.startsWith('/UterumLager')
@@ -1777,11 +1777,14 @@ function parseOrderMail(text) {
       .replace(/[|;:#*=]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
     if (!namn) namn = before.replace(/^\s*(?:pos\.?\s*)?\d+[\s.)]*/i, '').replace(/\d{1,4}\s*[x×]\s*$/i, '').replace(/\s{2,}/g, ' ').trim();
     namn = namn.replace(/^[-–\s]+/, '').slice(0, 42);
+    // dimension (stocklängd) om den finns på raden — matar produktens dimension
+    const dimM = (before + '  ' + after).match(/\b(\d{3,5})\s*mm\b/i);
+    const dimension = dimM ? dimM[1] + ' mm' : '';
     const ex = map.get(artikel);
-    if (ex) { if (antal != null) ex.antal = (ex.antal || 0) + antal; }
-    else map.set(artikel, { artikel, antal, namn });
+    if (ex) { if (antal != null) ex.antal = (ex.antal || 0) + antal; if (!ex.dimension && dimension) ex.dimension = dimension; }
+    else map.set(artikel, { artikel, antal, namn, dimension });
   }
-  return [...map.values()].map(x => ({ artikel: x.artikel, antal: x.antal != null ? String(x.antal) : '', namn: x.namn, kategori: '', enhet: 'st', dimension: '' }));
+  return [...map.values()].map(x => ({ artikel: x.artikel, antal: x.antal != null ? String(x.antal) : '', namn: x.namn, kategori: '', enhet: 'st', dimension: x.dimension || '' }));
 }
 
 // Plocka ut ordernr + leverantör ur mejlet (best effort) för förifyllning och
@@ -1817,6 +1820,7 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
   const [notering, setNotering] = React.useState('');
   const [rader, setRader] = React.useState([nyRad()]);
   const [mejl, setMejl] = React.useState('');
+  const [bilder, setBilder] = React.useState([]);
 
   const byArtikel = React.useMemo(() => {
     const m = new Map();
@@ -1829,23 +1833,91 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
   const laggRad = () => setRader(rs => [...rs, nyRad()]);
   const taBortRad = (i) => setRader(rs => rs.length > 1 ? rs.filter((_, j) => j !== i) : rs);
 
+  // Fil-import: Excel/CSV → parseOrderMail på ihopslagna rader; bild → nedskalad
+  // data-URI bifogad på ordern. Drag-drop + fil-väljare (webb).
+  const valjFil = (accept, onFil) => {
+    if (Platform.OS !== 'web') return;
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = accept;
+    input.onchange = (e) => { const f = e.target.files && e.target.files[0]; if (f) onFil(f); };
+    input.click();
+  };
+  const laesExcel = (file) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = read(ev.target.result, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+        const text = rows.map(r => Array.isArray(r) ? r.join('  ') : '').join('\n');
+        const p = parseOrderMail(text);
+        if (p.length) setRader(p);
+        else if (Platform.OS === 'web') window.alert('Hittade inga artiklar (6-siffrigt artikelnr + antal) i filen.');
+        const meta = parseOrderMeta(text);
+        if (meta.referens) setReferens(r => r || meta.referens);
+        if (meta.leverantor) setLeverantor(l => l || meta.leverantor);
+      } catch (err) { if (Platform.OS === 'web') window.alert('Kunde inte läsa filen: ' + err.message); }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  const bifogaBild = (file) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      if (Platform.OS === 'web') {
+        const img = new window.Image();
+        img.onload = () => {
+          const max = 1000; let w = img.width, h = img.height;
+          if (w > max || h > max) { const s = max / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+          try {
+            const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            setBilder(bs => [...bs, canvas.toDataURL('image/jpeg', 0.7)]);
+          } catch { setBilder(bs => [...bs, dataUrl]); }
+        };
+        img.onerror = () => setBilder(bs => [...bs, dataUrl]);
+        img.src = dataUrl;
+      } else setBilder(bs => [...bs, dataUrl]);
+    };
+    reader.readAsDataURL(file);
+  };
+  const hanteraFil = (file) => {
+    if (!file) return;
+    const namn = (file.name || '').toLowerCase();
+    if ((file.type && file.type.indexOf('image/') === 0) || /\.(png|jpe?g|gif|webp|heic)$/.test(namn)) bifogaBild(file);
+    else if (/\.(xlsx?|csv)$/.test(namn) || /sheet|excel|csv/.test(file.type || '')) laesExcel(file);
+    else if (Platform.OS === 'web') window.alert('Släpp en Excel/CSV-fil eller en bild.');
+  };
+
   const fmtDatum = (iso) => { try { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch { return iso; } };
 
   const avlasta = rader.filter(r => String(r.artikel || '').trim()).length;
   const nyckelNu = orderNyckel(referens, rader);
   const dubblett = nyckelNu ? ordrar.find(o => o.nyckel === nyckelNu) : null;
 
+  const importRad = (
+    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <TouchableOpacity onPress={() => valjFil('.xlsx,.xls,.csv', laesExcel)} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
+        <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>📎 Excel / CSV</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => valjFil('image/*', bifogaBild)} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
+        <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>🖼 Bild</Text>
+      </TouchableOpacity>
+      <Text style={{ color: c.textMuted, fontSize: 11 }}>eller släpp filen här</Text>
+    </View>
+  );
+
   const spara = () => {
     const giltiga = rader.filter(r => r.artikel.trim() && (parseInt(r.antal) || 0) > 0);
-    if (!giltiga.length) { if (Platform.OS === 'web') window.alert('Lägg till minst en rad med artikelnr och antal.'); return; }
+    if (!giltiga.length && !bilder.length) { if (Platform.OS === 'web') window.alert('Lägg till minst en rad, eller bifoga en fil/bild.'); return; }
     const nyckel = orderNyckel(referens, giltiga);
     const dup = nyckel ? ordrar.find(o => o.nyckel === nyckel) : null;
     if (dup && Platform.OS === 'web') {
       const fraga = `Denna beställning verkar redan inlagd (${dup.referens || fmtDatum(dup.tid)}).\nLägg in igen ändå? Lagersaldot ökas då en gång till.`;
       if (!window.confirm(fraga)) return;
     }
-    onLaggInOrder({ leverantor, referens, notering, rader: giltiga, nyckel });
-    setLeverantor(''); setReferens(''); setNotering(''); setRader([nyRad()]); setMejl(''); setVisaForm(false);
+    onLaggInOrder({ leverantor, referens, notering, rader: giltiga, nyckel, bilder });
+    setLeverantor(''); setReferens(''); setNotering(''); setRader([nyRad()]); setMejl(''); setBilder([]); setVisaForm(false);
   };
 
   return (
@@ -1888,6 +1960,27 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
               <Text style={{ color: '#92400e', fontSize: 12, fontWeight: '600' }}>⚠ Verkar redan inlagd {dubblett.referens ? `(${dubblett.referens})` : fmtDatum(dubblett.tid)} — spara inte igen om det är samma order.</Text>
             </View>
           ) : null}
+
+          {Platform.OS === 'web'
+            ? React.createElement('div', {
+                onDragOver: (e) => { e.preventDefault(); },
+                onDrop: (e) => { e.preventDefault(); const fs = e.dataTransfer && e.dataTransfer.files; if (fs) { for (let i = 0; i < fs.length; i++) hanteraFil(fs[i]); } },
+                style: { border: '1px dashed ' + c.inputBorder, borderRadius: '8px', padding: '10px', marginTop: '10px' },
+              }, importRad)
+            : importRad}
+
+          {bilder.length > 0 && (
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+              {bilder.map((b, i) => (
+                <View key={i} style={{ position: 'relative' }}>
+                  <Image source={{ uri: b }} style={{ width: 64, height: 48, borderRadius: 6, borderWidth: 1, borderColor: c.kortBorder }} resizeMode="cover" />
+                  <TouchableOpacity onPress={() => setBilder(bs => bs.filter((_, j) => j !== i))} style={{ position: 'absolute', top: -6, right: -6, backgroundColor: '#ef4444', borderRadius: 10, width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 11 }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
 
           <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 12, marginBottom: 4 }}>Eller fyll i manuellt / justera nedan:</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
@@ -1953,7 +2046,14 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
               </View>
             ))}
             {o.notering ? <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 6, fontStyle: 'italic' }}>{o.notering}</Text> : null}
-            <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 6 }}>{antalRader} artikl{antalRader === 1 ? 'a' : 'ar'}{nya ? ` · ${nya} ny` : ''}{o.av ? ` · inlagd av ${o.av}` : ''}</Text>
+            {o.bilder && o.bilder.length > 0 && (
+              <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                {o.bilder.map((b, i) => (
+                  <Image key={i} source={{ uri: b }} style={{ width: 72, height: 54, borderRadius: 6, borderWidth: 1, borderColor: c.kortBorder }} resizeMode="cover" />
+                ))}
+              </View>
+            )}
+            <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 6 }}>{antalRader} artikl{antalRader === 1 ? 'a' : 'ar'}{nya ? ` · ${nya} ny` : ''}{o.bilder && o.bilder.length ? ` · ${o.bilder.length} bild${o.bilder.length === 1 ? '' : 'er'}` : ''}{o.av ? ` · inlagd av ${o.av}` : ''}</Text>
           </View>
         );
       })}
@@ -3080,7 +3180,7 @@ export default function App() {
 
   // Lägg in en inköpsbeställning: kända artiklar fyller på lagersaldot, nya
   // artiklar skapas som produkter (auto-avläsning mot befintlig katalog).
-  const laggInOrder = ({ leverantor, referens, notering, rader, nyckel }) => {
+  const laggInOrder = ({ leverantor, referens, notering, rader, nyckel, bilder }) => {
     const nyProdukter = [...produkter];
     const orderRader = [];
     for (const r of (rader || [])) {
@@ -3104,7 +3204,7 @@ export default function App() {
         orderRader.push({ artikel: art, namn: ny.namn, antal, enhet: ny.enhet, status: 'ny', nyttSaldo: antal });
       }
     }
-    if (orderRader.length === 0) return;
+    if (orderRader.length === 0 && !(Array.isArray(bilder) && bilder.length)) return;
     setProdukter(nyProdukter);
     sparaProdukter(nyProdukter);
     const order = {
@@ -3116,6 +3216,7 @@ export default function App() {
       notering: (notering || '').trim(),
       nyckel: nyckel || orderNyckel(referens, rader),
       rader: orderRader,
+      bilder: Array.isArray(bilder) ? bilder : [],
     };
     const nyOrdrar = [order, ...ordrar];
     setOrdrar(nyOrdrar);
