@@ -1524,6 +1524,7 @@ const FORBRUKNING_ESTIMAT = {
 
 function LagerforslagVy({ kunder, produkter, c }) {
   const normFarg = (s) => (s || '').toLowerCase().split(/[\s/,]+/).filter(Boolean)[0] || '';
+  const parseDimMm = (d) => { const m = /(\d[\d\s]*)\s*mm/i.exec(String(d || '')); return m ? parseInt(m[1].replace(/\s/g, ''), 10) : null; };
 
   const produktByArtikel = React.useMemo(() => {
     const m = new Map();
@@ -1532,11 +1533,20 @@ function LagerforslagVy({ kunder, produkter, c }) {
       if (!a) continue;
       // Flera produkter kan dela artikel (t.ex. extra-post) — summera saldot.
       const ex = m.get(a);
-      if (ex) { ex.antal += parseInt(p.antal) || 0; if (Array.isArray(p.farger)) ex.farger.push(...p.farger); }
-      else m.set(a, { namn: p.namn, antal: parseInt(p.antal) || 0, farger: Array.isArray(p.farger) ? [...p.farger] : [] });
+      if (ex) { ex.antal += parseInt(p.antal) || 0; if (Array.isArray(p.farger)) ex.farger.push(...p.farger); if (!ex.dimMm) ex.dimMm = parseDimMm(p.dimension); }
+      else m.set(a, { namn: p.namn, antal: parseInt(p.antal) || 0, farger: Array.isArray(p.farger) ? [...p.farger] : [], dimMm: parseDimMm(p.dimension), enhet: p.enhet || 'st' });
     }
     return m;
   }, [produkter]);
+
+  // Lagersaldo i löpmeter för en artikel: packningar lagras redan i meter,
+  // profiler i stänger → antal × stocklängd (dimension, fallback 6000 mm).
+  const lagerMeterForArtikel = (artikel) => {
+    const p = produktByArtikel.get(String(artikel).trim());
+    if (!p || !p.antal) return null;
+    if (p.enhet === 'm') return p.antal;
+    return p.antal * (p.dimMm || 6000) / 1000;
+  };
 
   // Lagersaldo för en artikel i en viss färg (per-färg om produkten spårar
   // färger, annars totalt saldo — gäller färg-neutrala delar som packningar).
@@ -1616,25 +1626,61 @@ function LagerforslagVy({ kunder, produkter, c }) {
       </View>
 
       {FORBRUKNING_ESTIMAT.system.map(sys => {
+        const withRack = (list) => list.map(p => {
+          const lm = lagerMeterForArtikel(p.a);
+          return { ...p, lagerM: lm, racker: (lm != null && p.m > 0) ? Math.floor(lm / p.m) : null };
+        });
+        const prof = withRack(sys.profiler);
+        const pack = withRack(sys.packningar);
+        const medRack = [...prof, ...pack].filter(x => x.racker != null);
+        const flaskhals = medRack.length ? Math.min(...medRack.map(x => x.racker)) : null;
+        const flaskhalsArt = flaskhals != null ? medRack.find(x => x.racker === flaskhals) : null;
         const sumProf = sys.profiler.reduce((s, p) => s + p.m, 0);
         const sumPack = sys.packningar.reduce((s, p) => s + p.m, 0);
         const rad = (p) => (
-          <View key={p.a} style={{ flexDirection: 'row', paddingVertical: 2 }}>
-            <Text style={{ width: 60, color: c.textMuted, fontSize: 12 }}>{p.a}</Text>
+          <View key={p.a} style={{ flexDirection: 'row', paddingVertical: 2, alignItems: 'center' }}>
+            <Text style={{ width: 54, color: c.textMuted, fontSize: 12 }}>{p.a}</Text>
             <Text style={{ flex: 1, color: c.text, fontSize: 12 }} numberOfLines={1}>{p.n}</Text>
-            <Text style={{ width: 62, color: c.text, fontSize: 12, textAlign: 'right', fontWeight: '600' }}>{fmt(p.m)} m</Text>
+            <Text style={{ width: 58, color: c.text, fontSize: 12, textAlign: 'right', fontWeight: '600' }}>{fmt(p.m)} m</Text>
+            <Text style={{ width: 66, fontSize: 12, textAlign: 'right', fontWeight: '700', color: p.racker == null ? c.textMuted : (p.racker < 3 ? '#ef4444' : '#16a34a') }}>
+              {p.racker == null ? '—' : `${p.racker} kund`}
+            </Text>
+          </View>
+        );
+        const kolHuvud = (
+          <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: c.kortBorder, paddingBottom: 3, marginBottom: 3 }}>
+            <Text style={{ width: 54, color: c.textMuted, fontSize: 10, fontWeight: '700' }}>ARTIKEL</Text>
+            <Text style={{ flex: 1, color: c.textMuted, fontSize: 10, fontWeight: '700' }}></Text>
+            <Text style={{ width: 58, color: c.textMuted, fontSize: 10, fontWeight: '700', textAlign: 'right' }}>SNITT/KUND</Text>
+            <Text style={{ width: 66, color: c.textMuted, fontSize: 10, fontWeight: '700', textAlign: 'right' }}>RÄCKER TILL</Text>
           </View>
         );
         return (
           <View key={sys.namn} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 12, padding: 14 }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
               <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>{sys.namn}</Text>
-              <Text style={{ color: c.textMuted, fontSize: 11 }}>{fmt(sumProf)} m profil · {fmt(sumPack)} m packn. · {sys.styck} st beslag</Text>
+              {flaskhals != null ? (
+                <View style={{ backgroundColor: flaskhals < 3 ? '#fee2e2' : '#dcfce7', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
+                  <Text style={{ color: flaskhals < 3 ? '#ef4444' : '#16a34a', fontWeight: '700', fontSize: 13 }}>
+                    Lagret räcker till ~{flaskhals} kund{flaskhals === 1 ? '' : 'er'}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={{ color: c.textMuted, fontSize: 11 }}>lagersaldo saknas för profilerna</Text>
+              )}
             </View>
-            <Text style={{ color: '#3b82f6', fontWeight: '700', fontSize: 12, marginBottom: 3 }}>Profiler (löpmeter) · {sys.profiler.length} st</Text>
-            {sys.profiler.map(rad)}
+            <Text style={{ color: c.textMuted, fontSize: 11, marginBottom: 8 }}>
+              Snitt {fmt(FORBRUKNING_ESTIMAT.partierPerKund)} partier/kund · {fmt(sumProf)} m profil · {fmt(sumPack)} m packning · {sys.styck} st beslag per kund
+              {flaskhalsArt ? ` · flaskhals: ${flaskhalsArt.a} ${flaskhalsArt.n}` : ''}
+            </Text>
+            {kolHuvud}
+            <Text style={{ color: '#3b82f6', fontWeight: '700', fontSize: 12, marginTop: 2, marginBottom: 3 }}>Profiler (löpmeter) · {sys.profiler.length} st</Text>
+            {prof.map(rad)}
             <Text style={{ color: '#3b82f6', fontWeight: '700', fontSize: 12, marginTop: 8, marginBottom: 3 }}>Packningar (löpmeter) · {sys.packningar.length} st</Text>
-            {sys.packningar.map(rad)}
+            {pack.map(rad)}
+            <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 8 }}>
+              "Räcker till" = lagersaldo ÷ snittförbrukning/kund (profiler: stänger × stocklängd; packningar: meter). Flaskhalsen — artikeln som tar slut först — avgör hur många kunder hela lagret räcker till. "—" = artikeln saknas i lagret.
+            </Text>
           </View>
         );
       })}
@@ -3985,7 +4031,7 @@ export default function App() {
             <LagerforslagVy kunder={kunder} produkter={produkter} c={c} />
           )}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && <>
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && !arLagerforslag && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>
