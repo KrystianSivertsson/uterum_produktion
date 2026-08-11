@@ -1812,7 +1812,7 @@ function orderNyckel(referens, rader) {
 // Ordrar — våra inköpsbeställningar av profiler & material. Att lägga in en
 // beställning fyller på lagersaldot för kända artiklar och skapar nya produkter
 // automatiskt (se laggInOrder i App). Allt klient-sida (AsyncStorage).
-function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
+function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inloggad, c }) {
   const nyRad = () => ({ artikel: '', antal: '', namn: '', kategori: '', enhet: 'st', dimension: '' });
   const [visaForm, setVisaForm] = React.useState(false);
   const [leverantor, setLeverantor] = React.useState('');
@@ -1881,12 +1881,27 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
     };
     reader.readAsDataURL(file);
   };
+  // Historik-import: en .json med en array av ordrar → logg-poster (rör ej saldot).
+  const laesHistorikJson = (file) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        const lista = Array.isArray(data) ? data : (Array.isArray(data.ordrar) ? data.ordrar : null);
+        if (!lista) { if (Platform.OS === 'web') window.alert('JSON:en ska vara en lista av ordrar.'); return; }
+        const res = onImporteraOrdrar(lista);
+        if (Platform.OS === 'web') window.alert(`Historik importerad: ${res.added} order${res.added === 1 ? '' : 'ar'} inlagda som logg${res.skipped ? `, ${res.skipped} hoppades (dubbletter)` : ''}. Lagersaldot är oförändrat.`);
+      } catch (err) { if (Platform.OS === 'web') window.alert('Kunde inte läsa JSON: ' + err.message); }
+    };
+    reader.readAsText(file);
+  };
   const hanteraFil = (file) => {
     if (!file) return;
     const namn = (file.name || '').toLowerCase();
     if ((file.type && file.type.indexOf('image/') === 0) || /\.(png|jpe?g|gif|webp|heic)$/.test(namn)) bifogaBild(file);
+    else if (/\.json$/.test(namn) || /json/.test(file.type || '')) laesHistorikJson(file);
     else if (/\.(xlsx?|csv)$/.test(namn) || /sheet|excel|csv/.test(file.type || '')) laesExcel(file);
-    else if (Platform.OS === 'web') window.alert('Släpp en Excel/CSV-fil eller en bild.');
+    else if (Platform.OS === 'web') window.alert('Släpp en Excel/CSV, en bild, eller en historik-JSON.');
   };
 
   const fmtDatum = (iso) => { try { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch { return iso; } };
@@ -1902,6 +1917,9 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
       </TouchableOpacity>
       <TouchableOpacity onPress={() => valjFil('image/*', bifogaBild)} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
         <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>🖼 Bild</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => valjFil('.json,application/json', laesHistorikJson)} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
+        <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>📥 Historik (JSON)</Text>
       </TouchableOpacity>
       <Text style={{ color: c.textMuted, fontSize: 11 }}>eller släpp filen här</Text>
     </View>
@@ -2034,7 +2052,11 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
         return (
           <View key={o.id} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 12, padding: 14 }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-              <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15 }}>{o.leverantor || 'Beställning'}{o.referens ? ` · ${o.referens}` : ''}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15 }}>{o.leverantor || 'Beställning'}{o.referens ? ` · ${o.referens}` : ''}</Text>
+                {o.projekt ? <Text style={{ color: c.textMuted, fontSize: 12 }}>{o.projekt}</Text> : null}
+                {o.endastLogg ? <View style={{ backgroundColor: '#e5e7eb', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}><Text style={{ color: '#4b5563', fontSize: 10, fontWeight: '700' }}>LOGG · rör ej saldo</Text></View> : null}
+              </View>
               <Text style={{ color: c.textMuted, fontSize: 11 }}>{fmtDatum(o.tid)}</Text>
             </View>
             {o.rader.map((r, i) => (
@@ -2042,7 +2064,7 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
                 <Text style={{ width: 64, color: c.textMuted, fontSize: 12 }}>{r.artikel}</Text>
                 <Text style={{ flex: 1, color: c.text, fontSize: 13 }} numberOfLines={1}>{r.namn}</Text>
                 <Text style={{ width: 72, color: c.text, fontSize: 13, textAlign: 'right', fontWeight: '600' }}>+{r.antal} {r.enhet}</Text>
-                <Text style={{ width: 74, textAlign: 'right', fontSize: 11, fontWeight: '700', color: r.status === 'ny' ? '#d97706' : '#16a34a' }}>{r.status === 'ny' ? 'ny' : `→ ${r.nyttSaldo}`}</Text>
+                <Text style={{ width: 74, textAlign: 'right', fontSize: 11, fontWeight: '700', color: r.status === 'logg' ? c.textMuted : (r.status === 'ny' ? '#d97706' : '#16a34a') }}>{r.status === 'logg' ? 'logg' : (r.status === 'ny' ? 'ny' : `→ ${r.nyttSaldo}`)}</Text>
               </View>
             ))}
             {o.notering ? <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 6, fontStyle: 'italic' }}>{o.notering}</Text> : null}
@@ -3235,6 +3257,39 @@ export default function App() {
     }).catch(() => {});
   };
 
+  // Importera historiska ordrar som LOGG-poster — de hamnar i Ordrar-listan
+  // men rör INTE lagersaldot (fysiska inventeringen står kvar som baseline).
+  // Dedupar mot redan inlagda ordrar via nyckel (ordernr).
+  const importeraOrdrar = (lista) => {
+    if (!Array.isArray(lista) || !lista.length) return { added: 0, skipped: 0 };
+    const befintliga = new Set(ordrar.map(o => o.nyckel).filter(Boolean));
+    const nya = [];
+    for (const o of lista) {
+      const rader = (o.rader || []).map(r => ({
+        artikel: String(r.artikel || '').trim(), namn: r.namn || '',
+        antal: parseInt(r.antal) || 0, enhet: r.enhet || 'st',
+        dimension: r.dimension || '', status: 'logg',
+      })).filter(r => r.artikel);
+      const nyckel = o.nyckel || orderNyckel(o.referens, rader);
+      if (nyckel && (befintliga.has(nyckel) || nya.some(n => n.nyckel === nyckel))) continue;
+      nya.push({
+        id: (String(o.referens || 'ord') + '_' + Math.random().toString(36).slice(2, 8)),
+        tid: o.tid || new Date().toISOString(),
+        av: o.av || (inloggad?.namn || inloggad?.username || ''),
+        leverantor: o.leverantor || 'Schüco',
+        referens: o.referens || '',
+        projekt: o.projekt || '',
+        notering: o.notering || '',
+        nyckel, rader, bilder: [], endastLogg: true,
+      });
+    }
+    if (!nya.length) return { added: 0, skipped: lista.length };
+    const combined = [...nya, ...ordrar].sort((a, b) => String(b.tid || '').localeCompare(String(a.tid || '')));
+    setOrdrar(combined);
+    sparaOrdrar(combined);
+    return { added: nya.length, skipped: lista.length - nya.length };
+  };
+
   const arRitning = ritningar.some(r => r.id === aktivFlik);
   const arAndringslogg = aktivFlik === '__andringar__';
   const arKunder = aktivFlik === '__kunder__';
@@ -4423,7 +4478,7 @@ export default function App() {
           )}
 
           {!valdProdukt && arOrdrar && (
-            <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} inloggad={inloggad} c={c} />
+            <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} onImporteraOrdrar={importeraOrdrar} inloggad={inloggad} c={c} />
           )}
 
           {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && !arLagerforslag && !arOrdrar && <>
