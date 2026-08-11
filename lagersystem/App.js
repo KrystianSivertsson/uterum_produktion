@@ -65,6 +65,118 @@ const RITNINGAR_FALLBACK = [
   { id: 'aws70hi', label: 'AWS/ADS 70 HI Ritningar', fil: 'ritningar_aws70hi.pdf' },
   { id: 'aoc50', label: 'AOC 50 Ritningar', fil: 'ritningar_aoc50.pdf' },
 ];
+const KUND_FLIKAR = ['Träfräs', 'Alufräs', 'Beslag', 'Glas'];
+
+// ─── Adressrader (URL ↔ vy) ───────────────────────────────────────────────────
+// Appen är ett enda komponentträd utan router-bibliotek, så vyn har hittills
+// bara levt i React-state: en omladdning kastade alltid tillbaka en till
+// startvyn och bakåtknappen lämnade appen helt. Här speglas vy-staten i
+// history-API:t i stället, så varje klick får en egen adress.
+//
+// Basvägen får INTE hårdkodas: i produktion monteras bygget under /UterumLager
+// (nginx strippar prefixet innan Node ser det), lokalt kan samma bygge ligga i
+// roten. Den läses därför av i runtime.
+const RUTT_ROTER = ['kunder', 'ase60', 'lager', 'ritning', 'ordrar', 'lagerforslag', 'sammanstallning', 'andringar', 'stampling'];
+
+function harledBas() {
+  if (typeof document === 'undefined' || typeof window === 'undefined' || !window.location) return '';
+  const vag = window.location.pathname;
+  // Expo bakar in bundlens absoluta väg i index.html (app.json
+  // experiments.baseUrl). Den säger var bygget är TÄNKT att ligga — stämmer den
+  // med adressen är det basen. Samma bygge serveras också från roten lokalt,
+  // och då får prefixet inte användas.
+  const src = document.querySelector('script[src*="/_expo/static/js/"]')?.getAttribute('src') || '';
+  const i = src.indexOf('/_expo/static/js/');
+  const bakad = i > 0 && src.startsWith('/') ? src.slice(0, i) : '';
+  if (bakad && (vag === bakad || vag.startsWith(`${bakad}/`))) return bakad;
+  // Ingen bakad bas (dev-servern) eller den stämmer inte: ta första segmentet,
+  // men bara om det inte redan är en av appens egna rutter — då ligger appen i
+  // roten och hela adressen är rutt.
+  const forsta = vag.split('/').filter(Boolean)[0];
+  return forsta && !RUTT_ROTER.includes(forsta) ? `/${forsta}` : '';
+}
+const BAS = harledBas();
+
+// Slug som tål svenska kundnamn. Både namnen och segmenten ur adressen körs
+// genom samma funktion, så matchningen blir okänslig för hur webbläsaren råkar
+// procent-koda tecknen.
+function slugga(text) {
+  const ren = String(text ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+  return encodeURIComponent(ren);
+}
+function sluggaSegment(segment) {
+  let text = segment;
+  try { text = decodeURIComponent(segment); } catch { /* trasig kodning — matcha rått */ }
+  return slugga(text);
+}
+
+// Vy-state → adress (utan bas). Nästlingen speglar renderingen: en vald kund
+// eller produkt ligger "inuti" sin flik.
+function vagForVy({ aktivFlik, valdKund, aktivKundFlik, valdProdukt, valdAse60Projekt }) {
+  if (aktivFlik === '__kunder__') {
+    if (!valdKund) return '/kunder/';
+    return `/kunder/${slugga(valdKund.namn)}/${slugga(aktivKundFlik || KUND_FLIKAR[0])}/`;
+  }
+  if (aktivFlik === '__ase60__') return valdAse60Projekt ? `/ase60/${slugga(valdAse60Projekt.name)}/` : '/ase60/';
+  if (aktivFlik === '__ordrar__') return '/ordrar/';
+  if (aktivFlik === '__lagerforslag__') return '/lagerforslag/';
+  if (aktivFlik === '__sammanstallning__') return '/sammanstallning/';
+  if (aktivFlik === '__andringar__') return '/andringar/';
+  if (FLIKAR.includes(aktivFlik)) {
+    const kategori = `/lager/${slugga(aktivFlik)}/`;
+    return valdProdukt ? `${kategori}${slugga(valdProdukt.artikel || valdProdukt.id)}/` : kategori;
+  }
+  if (RITNING_FIL[aktivFlik]) return `/ritning/${slugga(aktivFlik)}/`;
+  return '/'; // __stampling__ är startvyn
+}
+
+// Adress → vy. Kund/produkt/projekt lämnas som slugs: de listorna hämtas först
+// efter inloggning, så de matchas mot riktiga objekt när datan finns.
+function tolkaVag(pathname) {
+  const vag = pathname || '/';
+  const utanBas = BAS && vag.startsWith(BAS) ? vag.slice(BAS.length) : vag;
+  const [rot, andra, tredje] = utanBas.split('/').filter(Boolean).map(sluggaSegment);
+  switch (rot) {
+    case 'kunder': return { flik: '__kunder__', kundSlug: andra || null, kundFlikSlug: tredje || null };
+    case 'ase60': return { flik: '__ase60__', ase60Slug: andra || null };
+    case 'ordrar': return { flik: '__ordrar__' };
+    case 'lagerforslag': return { flik: '__lagerforslag__' };
+    case 'sammanstallning': return { flik: '__sammanstallning__' };
+    case 'andringar': return { flik: '__andringar__' };
+    case 'lager': return { flik: FLIKAR.find(f => slugga(f) === andra) || FLIKAR[0], produktSlug: tredje || null };
+    case 'ritning': return { flik: RITNING_FIL[andra] ? andra : '__stampling__' };
+    default: return { flik: '__stampling__' }; // inklusive '/' och okända vägar
+  }
+}
+
+// Adresser jämförs kanoniskt — webbläsaren kan koda samma tecken annorlunda än
+// slugga() gör, och då är det fortfarande samma vy.
+function kanoniskVag(pathname) {
+  const vag = pathname || '/';
+  const utanBas = BAS && vag.startsWith(BAS) ? vag.slice(BAS.length) : vag;
+  const segment = utanBas.split('/').filter(Boolean).map(sluggaSegment);
+  return segment.length ? `/${segment.join('/')}/` : '/';
+}
+
+const VY_TITLAR = {
+  __stampling__: 'Stämpling', __kunder__: 'Kunder', __ase60__: 'ASE60-generator',
+  __sammanstallning__: 'Sammanställning', __lagerforslag__: 'Lagerförslag',
+  __ordrar__: 'Ordrar', __andringar__: 'Ändringslogg',
+};
+function titelForVy({ aktivFlik, valdKund, valdProdukt }) {
+  const del = valdProdukt?.namn || valdKund?.namn || VY_TITLAR[aktivFlik] || aktivFlik;
+  return `${del} – Lagersystem`;
+}
+
+// Ett ASE60-projekt visas som en kund i listan. Samma objekt behövs både när
+// man klickar i listan och när en /kunder/<kund>/-adress ska matchas mot datan.
+function kundFranAse60Projekt(proj, sparad) {
+  return {
+    id: proj.id, namn: proj.name, farg: proj.color, ase60ProjectId: proj.id,
+    matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+    material: sparad?.material || {}, klart: sparad?.klart || {}, paket: sparad?.paket || proj.paket || null,
+  };
+}
 
 const TemaContext = React.createContext(null);
 
@@ -2749,9 +2861,20 @@ export default function App() {
   const [token, setToken] = useState(null);
   const [kollarSession, setKollarSession] = useState(true);
 
+  // Vyn som adressen pekade ut när sidan laddades — det är omladdnings- och
+  // djuplänksfallet. Fliken kan sättas direkt, men kund/produkt/projekt är bara
+  // slugs tills listorna hunnit hämtas (se tillampaSlugs nedan).
+  const [startVy] = useState(() => (Platform.OS === 'web' ? tolkaVag(window.location.pathname) : { flik: '__stampling__' }));
+  const vantandeVagRef = useRef(startVy.kundSlug || startVy.produktSlug || startVy.ase60Slug ? startVy : null);
+  const forraVagRef = useRef(null);
+  const utanHistorikRef = useRef(false);
+  // Vilka listor som faktiskt hunnit hämtas — behövs för att skilja "kunden i
+  // adressen finns inte" från "kundlistan är inte laddad ännu".
+  const listorLaddadeRef = useRef({ kunder: false, ase60: false });
+
   const [produkter, setProdukter] = useState([]);
   const [ordrar, setOrdrar] = useState([]);
-  const [aktivFlik, setAktivFlik] = useState('__stampling__');
+  const [aktivFlik, setAktivFlik] = useState(startVy.flik);
   const [sok, setSok] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [redigeraProdukt, setRedigeraProdukt] = useState(null);
@@ -2772,7 +2895,7 @@ export default function App() {
   const [kunder, setKunder] = useState([]);
   const [ecwRuns, setEcwRuns] = useState([]);
   const [valdKund, setValdKund] = useState(null);
-  const [aktivKundFlik, setAktivKundFlik] = useState('Träfräs');
+  const [aktivKundFlik, setAktivKundFlik] = useState(KUND_FLIKAR[0]);
   const [visaLaggTillKund, setVisaLaggTillKund] = useState(false);
   const [nyKundNamn, setNyKundNamn] = useState('');
   const [nyKundPaket, setNyKundPaket] = useState(null);
@@ -3328,28 +3451,35 @@ export default function App() {
       fetch(`${API}/api/ecw-runs`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json()).then(setEcwRuns).catch(() => {});
     }
-  }, [arKunder]);
+  }, [arKunder, token]);
 
   useEffect(() => {
     if (arAndringslogg && token && inloggad?.roll === 'admin') {
       fetch(`${API}/api/changes`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json()).then(setAndringslogg).catch(() => {});
     }
-  }, [arAndringslogg]);
+  }, [arAndringslogg, token, inloggad]);
 
   const laddaKunder = () => {
     if (!token) return;
     fetch(`${API}/api/kunder`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(setKunder).catch(() => {});
+      .then(r => r.json()).then(d => { listorLaddadeRef.current.kunder = true; setKunder(d); }).catch(() => {});
   };
 
   const laddaAse60Projekt = () => {
     if (!token) return;
     fetch(`${API}/api/ase60-projekt`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(setAse60Projekt).catch(() => {});
+      .then(r => r.json()).then(d => { listorLaddadeRef.current.ase60 = true; setAse60Projekt(d); }).catch(() => {});
   };
 
-  useEffect(() => { if (arKunder || arSammanstallning || arLagerforslag) { laddaKunder(); laddaAse60Projekt(); } }, [arKunder, arSammanstallning, arLagerforslag]);
+  // token finns med i beroendena: en djuplänk rakt in i en kundvy renderar
+  // flikarna innan sessionskollen är klar, och utan token-beroendet skulle
+  // hämtningen aldrig göras om när token väl kommer.
+  // Adressen /ase60/<projekt>/ behöver också projektlistan för att kunna matchas.
+  useEffect(() => {
+    if (arKunder || arSammanstallning || arLagerforslag) { laddaKunder(); laddaAse60Projekt(); }
+    else if (vantandeVagRef.current?.ase60Slug) laddaAse60Projekt();
+  }, [arKunder, arSammanstallning, arLagerforslag, token]);
 
   // Paket-listan (ASE 60 / ASS 32 / ...) är delad med ase60-generator och
   // Uterum-Konfigurator via GET /api/paket — ingen inloggning krävs, samma
@@ -3366,6 +3496,96 @@ export default function App() {
         if (lista.length) setRitningar(lista);
       })
       .catch(() => {});
+  }, []);
+
+  // ─── Adressraden ───
+  // Matchar slugs ur adressen mot laddad data. Returnerar false när något ännu
+  // inte gick att matcha OCH listan inte hunnit hämtas — då står försöket kvar
+  // och görs om när datan kommer. Hittas kunden aldrig (borttagen) ger vi upp
+  // tyst och kundlistan blir kvar på skärmen.
+  const tillampaSlugs = (v) => {
+    let klar = true;
+    if (v.kundSlug) {
+      const proj = ase60Projekt.find(p => slugga(p.name) === v.kundSlug);
+      const kund = proj
+        ? kundFranAse60Projekt(proj, kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id))
+        : kunder.find(k => slugga(k.namn) === v.kundSlug);
+      if (kund) {
+        setValdKund(kund);
+        setAktivKundFlik(KUND_FLIKAR.find(f => slugga(f) === v.kundFlikSlug) || KUND_FLIKAR[0]);
+        setKundMaterialSok('');
+      } else if (!listorLaddadeRef.current.kunder || !listorLaddadeRef.current.ase60) klar = false;
+    }
+    if (v.produktSlug) {
+      const p = produkter.find(x => slugga(x.artikel || x.id) === v.produktSlug);
+      if (p) setValdProdukt(p);
+      else if (!produkter.length) klar = false;
+    }
+    if (v.ase60Slug) {
+      const p = ase60Projekt.find(x => slugga(x.name) === v.ase60Slug);
+      if (p) setValdAse60Projekt(p);
+      else if (!listorLaddadeRef.current.ase60) klar = false;
+    }
+    return klar;
+  };
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !vantandeVagRef.current) return;
+    if (!tillampaSlugs(vantandeVagRef.current)) return;
+    vantandeVagRef.current = null;
+    utanHistorikRef.current = true; // vyn hann bara ikapp adressen — ingen ny historikpost
+  }, [kunder, ase60Projekt, produkter]);
+
+  const vyState = { aktivFlik, valdKund, aktivKundFlik, valdProdukt, valdAse60Projekt };
+  const vag = Platform.OS === 'web' ? vagForVy(vyState) : '';
+
+  // Skriver vyn till adressraden. pushState (inte replaceState) så bakåtknappen
+  // stegar tillbaka vy för vy; replaceState används bara när adressen ska
+  // städas utan att vyn bytts, t.ex. /UterumLager → /UterumLager/ vid start.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || kollarSession || !inloggad) return;
+    const full = `${BAS}${vag}`;
+    const forsta = forraVagRef.current === null;
+    // En ny historikpost ska bara skapas när användaren själv bytt vy. Kommer
+    // bytet från adressen (bakåt/framåt, eller en djuplänk som just matchats
+    // mot färsk data) är adressen redan rätt och ska på sin höjd städas.
+    const bytteVy = !forsta && !utanHistorikRef.current && forraVagRef.current !== vag;
+    utanHistorikRef.current = false;
+    forraVagRef.current = vag;
+    // Vyn har rört sig av egen kraft — då är det staten, inte den gamla
+    // adressen, som gäller och ett väntande djuplänksförsök ska släppas.
+    if (bytteVy) vantandeVagRef.current = null;
+    document.title = titelForVy(vyState);
+    if (vag === kanoniskVag(window.location.pathname)) return;
+    // Adressen pekar djupare än staten hunnit bli (kunden är inte matchad ännu)
+    // — skriv inte över länken, vänta in datan.
+    if (vantandeVagRef.current) return;
+    const mal = full + window.location.search;
+    if (bytteVy) window.history.pushState({ vag }, '', mal);
+    else window.history.replaceState({ vag }, '', mal);
+  }, [vag, inloggad, kollarSession]);
+
+  // Bakåt/framåt: läs adressen på nytt och sätt tillbaka vy-staten. Lyssnaren
+  // registreras en gång men går via en ref, annars skulle den se kunder/
+  // produkter som de såg ut när den registrerades.
+  const tillampaVagRef = useRef(null);
+  tillampaVagRef.current = (pathname) => {
+    const v = tolkaVag(pathname);
+    setAktivFlik(v.flik);
+    setSok('');
+    setValdProdukt(null);
+    setValdKund(null);
+    setVisaSidebar(false);
+    if (!v.ase60Slug) setValdAse60Projekt(null);
+    const behoverData = !!(v.kundSlug || v.produktSlug || v.ase60Slug);
+    vantandeVagRef.current = behoverData && !tillampaSlugs(v) ? v : null;
+    utanHistorikRef.current = true; // webbläsaren har redan flyttat historikpekaren
+  };
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const vidPopstate = () => tillampaVagRef.current?.(window.location.pathname);
+    window.addEventListener('popstate', vidPopstate);
+    return () => window.removeEventListener('popstate', vidPopstate);
   }, []);
 
   const laggTillKund = () => {
@@ -4088,7 +4308,7 @@ export default function App() {
                   )}
                   {/* Underfliken */}
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-                    {['Träfräs', 'Alufräs', 'Beslag', 'Glas'].map(flik => {
+                    {KUND_FLIKAR.map(flik => {
                       const flikKlar = !!valdKund.klart?.[flik];
                       return (
                         <TouchableOpacity
@@ -4392,12 +4612,8 @@ export default function App() {
                       <TouchableOpacity
                         key={proj.id}
                         onPress={() => {
-                          setValdKund({
-                            id: proj.id, namn: proj.name, farg: proj.color, ase60ProjectId: proj.id,
-                            matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
-                            material: sparad?.material || {}, klart: sparad?.klart || {}, paket: sparad?.paket || proj.paket || null,
-                          });
-                          setAktivKundFlik('Träfräs');
+                          setValdKund(kundFranAse60Projekt(proj, sparad));
+                          setAktivKundFlik(KUND_FLIKAR[0]);
                           setKundMaterialSok('');
                         }}
                         style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
@@ -4442,7 +4658,7 @@ export default function App() {
                     .filter(k => kundSokTraff(kundSok, k.namn, k.farg, k.paket)).map(kund => (
                     <TouchableOpacity
                       key={kund.id}
-                      onPress={() => { setValdKund(kund); setAktivKundFlik('Träfräs'); setKundMaterialSok(''); }}
+                      onPress={() => { setValdKund(kund); setAktivKundFlik(KUND_FLIKAR[0]); setKundMaterialSok(''); }}
                       style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
                       <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); vaxlaKundExport(kund.id); }}
                         style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 2, marginRight: 12, alignItems: 'center', justifyContent: 'center',
