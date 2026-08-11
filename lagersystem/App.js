@@ -106,8 +106,8 @@ const BAS = harledBas();
 // serverns /simulator-route svarar. Lokalt (BAS='') blir det origin/simulator/.
 // Simulatorns egna fetch:ar är relativa så de följer med under samma prefix.
 const SIMULERING_URL = typeof window !== 'undefined'
-  ? `${window.location.origin}${BAS}/simulator/`
-  : 'https://three.nordiska.io/UterumLager/simulator/';
+  ? `${window.location.origin}${BAS}/simulator/?embed=true&controls=1`
+  : 'https://three.nordiska.io/UterumLager/simulator/?embed=true&controls=1';
 
 // Slug som tål svenska kundnamn. Både namnen och segmenten ur adressen körs
 // genom samma funktion, så matchningen blir okänslig för hur webbläsaren råkar

@@ -18,6 +18,12 @@ body.embed-mode .sim-row { display: none; }
 body.embed-mode #simPanel { top: auto; bottom: 10px; right: 10px; left: 10px; width: auto; }
 body.embed-mode #dbStatus { display: none; }
 body.embed-mode #toolWarnings { display: none; }
+/* Embed WITH controls (?controls=1): re-show .auf-uppladdning + maskinväljaren.
+   Används av UterumLagers "Simulering"-inbäddning som INTE matas via postMessage,
+   så användaren måste kunna ladda .auf och byta maskin själv. */
+body.embed-controls .sim-row { display: flex !important; }
+body.embed-controls #toggleSettingsBtn { display: inline-block !important; }
+body.embed-controls #settingsPanel.visible { display: flex !important; }
 
 #ui {
   position: absolute; top: 10px; left: 10px;
@@ -941,6 +947,10 @@ body.embed-mode #toolWarnings { display: none; }
   // Embed mode detection: ?embed=true or inside iframe
   if (new URLSearchParams(location.search).get('embed') === 'true' || window !== window.parent) {
     document.body.classList.add('embed-mode');
+    // ?controls=1 → visa .auf-laddning + maskinväljaren ändå (UterumLager-embed)
+    if (new URLSearchParams(location.search).get('controls') === '1') {
+      document.body.classList.add('embed-controls');
+    }
   }
 </script>
 <!-- STEP loading overlay -->
