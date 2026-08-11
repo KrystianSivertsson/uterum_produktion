@@ -1741,6 +1741,71 @@ function LagerforslagVy({ kunder, produkter, c }) {
   );
 }
 
+// Läs av ett inklistrat ordermejl → rader { artikel, antal, namn }. Heuristik:
+// 6-siffrigt artikelnr per rad (ev. bokstavssuffix), antal = "N st/stk/pcs"
+// eller sista lilla heltalet som inte är en dimension (NNNN mm) eller pris.
+// Dubbletter av samma artikel summeras. Användaren verifierar/justerar sedan.
+function parseOrderMail(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const map = new Map();
+  for (const raw of lines) {
+    const line = raw.replace(/\t/g, '  ').replace(/ /g, ' ').replace(/\s+$/, '');
+    if (line.trim().length < 6) continue;
+    const artM = line.match(/\b(\d{6}[A-Za-z]?)\b/);
+    if (!artM) continue;
+    const artikel = artM[1].toUpperCase();
+    const before = line.slice(0, artM.index);
+    const after = line.slice(artM.index + artM[0].length);
+    let antal = null;
+    // 1) "N st/stk/pcs" var som helst på raden
+    const unitM = (before + '  ' + after).match(/\b(\d{1,4})\s*(?:st|stk|st\.|stück|stueck|stuck|pcs|pce|pc|ea)\b/i);
+    if (unitM) antal = parseInt(unitM[1], 10);
+    // 2) "N x/× " precis före artikelnumret
+    if (antal == null) { const xm = before.match(/(\d{1,4})\s*[x×]\s*$/i); if (xm) antal = parseInt(xm[1], 10); }
+    // 3) kolumn-tal efter artikeln (föregås av 2+ blanksteg, ej mm/decimal)
+    if (antal == null) {
+      const cols = [...after.matchAll(/\s{2,}(\d{1,3})\b(?!\s*(?:mm|cm|%|[.,]\d))/g)]
+        .map(m => parseInt(m[1], 10)).filter(n => n >= 1 && n <= 999);
+      if (cols.length) antal = cols[cols.length - 1];
+    }
+    // Benämning: texten efter artikeln, städad från antal/enhet/dimension/pris
+    let namn = after
+      .replace(/\b\d{1,4}\s*(?:st|stk|stück|stueck|stuck|pcs|pce|pc|ea)\b/gi, ' ')
+      .replace(/\b\d{2,5}\s*mm\b/gi, ' ')
+      .replace(/\b\d+[.,]\d+\b/g, ' ')
+      .replace(/\s{2,}\d{1,3}\s*$/, ' ')
+      .replace(/[|;:#*=]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    if (!namn) namn = before.replace(/^\s*(?:pos\.?\s*)?\d+[\s.)]*/i, '').replace(/\d{1,4}\s*[x×]\s*$/i, '').replace(/\s{2,}/g, ' ').trim();
+    namn = namn.replace(/^[-–\s]+/, '').slice(0, 42);
+    const ex = map.get(artikel);
+    if (ex) { if (antal != null) ex.antal = (ex.antal || 0) + antal; }
+    else map.set(artikel, { artikel, antal, namn });
+  }
+  return [...map.values()].map(x => ({ artikel: x.artikel, antal: x.antal != null ? String(x.antal) : '', namn: x.namn, kategori: '', enhet: 'st', dimension: '' }));
+}
+
+// Plocka ut ordernr + leverantör ur mejlet (best effort) för förifyllning och
+// dubblett-nyckel så samma mejl inte läses in två gånger.
+function parseOrderMeta(text) {
+  const t = String(text || '');
+  let referens = '';
+  const refM = t.match(/(?:order(?:\s*(?:nr|nummer|no|bekräftelse|confirmation))?|auftrag(?:s?(?:nr|nummer))?|best(?:ällning)?\s*(?:nr|nummer)?|ab[-\s]?nr)\.?\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/-]{3,})/i);
+  if (refM) referens = refM[1].trim();
+  let leverantor = '';
+  if (/sch[üu]co/i.test(t)) leverantor = 'Schüco';
+  return { referens, leverantor };
+}
+
+// Dubblett-nyckel för en beställning: ordernr om det finns, annars signatur av
+// artikel:antal (sorterad). Används för att blocka att samma mejl läses in igen.
+function orderNyckel(referens, rader) {
+  const r = String(referens || '').trim().toLowerCase();
+  if (r) return 'ref:' + r;
+  const sig = (rader || []).filter(x => String(x.artikel || '').trim())
+    .map(x => `${String(x.artikel).trim().toLowerCase()}:${parseInt(x.antal) || 0}`).sort().join('|');
+  return sig ? 'sig:' + sig : '';
+}
+
 // Ordrar — våra inköpsbeställningar av profiler & material. Att lägga in en
 // beställning fyller på lagersaldot för kända artiklar och skapar nya produkter
 // automatiskt (se laggInOrder i App). Allt klient-sida (AsyncStorage).
@@ -1751,6 +1816,7 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
   const [referens, setReferens] = React.useState('');
   const [notering, setNotering] = React.useState('');
   const [rader, setRader] = React.useState([nyRad()]);
+  const [mejl, setMejl] = React.useState('');
 
   const byArtikel = React.useMemo(() => {
     const m = new Map();
@@ -1763,14 +1829,24 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
   const laggRad = () => setRader(rs => [...rs, nyRad()]);
   const taBortRad = (i) => setRader(rs => rs.length > 1 ? rs.filter((_, j) => j !== i) : rs);
 
+  const fmtDatum = (iso) => { try { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch { return iso; } };
+
+  const avlasta = rader.filter(r => String(r.artikel || '').trim()).length;
+  const nyckelNu = orderNyckel(referens, rader);
+  const dubblett = nyckelNu ? ordrar.find(o => o.nyckel === nyckelNu) : null;
+
   const spara = () => {
     const giltiga = rader.filter(r => r.artikel.trim() && (parseInt(r.antal) || 0) > 0);
     if (!giltiga.length) { if (Platform.OS === 'web') window.alert('Lägg till minst en rad med artikelnr och antal.'); return; }
-    onLaggInOrder({ leverantor, referens, notering, rader: giltiga });
-    setLeverantor(''); setReferens(''); setNotering(''); setRader([nyRad()]); setVisaForm(false);
+    const nyckel = orderNyckel(referens, giltiga);
+    const dup = nyckel ? ordrar.find(o => o.nyckel === nyckel) : null;
+    if (dup && Platform.OS === 'web') {
+      const fraga = `Denna beställning verkar redan inlagd (${dup.referens || fmtDatum(dup.tid)}).\nLägg in igen ändå? Lagersaldot ökas då en gång till.`;
+      if (!window.confirm(fraga)) return;
+    }
+    onLaggInOrder({ leverantor, referens, notering, rader: giltiga, nyckel });
+    setLeverantor(''); setReferens(''); setNotering(''); setRader([nyRad()]); setMejl(''); setVisaForm(false);
   };
-
-  const fmtDatum = (iso) => { try { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch { return iso; } };
 
   return (
     <ScrollView style={{ flex: 1 }}>
@@ -1786,6 +1862,34 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
 
       {visaForm && (
         <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+          <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 13, marginBottom: 4 }}>📩 Klistra in ordermejlet</Text>
+          <TextInput
+            style={[inp, { minHeight: 84, textAlignVertical: 'top' }]}
+            placeholder="Klistra in / släpp mejlet här — artiklar och antal läses av direkt"
+            placeholderTextColor={c.textMuted}
+            multiline
+            value={mejl}
+            onChangeText={t => {
+              setMejl(t);
+              const p = parseOrderMail(t);
+              if (p.length) setRader(p);
+              const meta = parseOrderMeta(t);
+              if (meta.referens && !referens) setReferens(meta.referens);
+              if (meta.leverantor && !leverantor) setLeverantor(meta.leverantor);
+            }}
+          />
+          {mejl.trim() ? (
+            <Text style={{ color: avlasta ? '#16a34a' : '#d97706', fontSize: 12, marginTop: 4 }}>
+              {avlasta ? `✓ ${avlasta} artikel${avlasta === 1 ? '' : 'ar'} avläst${avlasta === 1 ? '' : 'a'} — kontrollera nedan` : 'Inga artiklar hittades — fyll i manuellt nedan'}
+            </Text>
+          ) : null}
+          {dubblett ? (
+            <View style={{ backgroundColor: '#fef3c7', borderRadius: 8, padding: 8, marginTop: 6 }}>
+              <Text style={{ color: '#92400e', fontSize: 12, fontWeight: '600' }}>⚠ Verkar redan inlagd {dubblett.referens ? `(${dubblett.referens})` : fmtDatum(dubblett.tid)} — spara inte igen om det är samma order.</Text>
+            </View>
+          ) : null}
+
+          <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 12, marginBottom: 4 }}>Eller fyll i manuellt / justera nedan:</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <TextInput style={[inp, { flex: 1, minWidth: 140 }]} placeholder="Leverantör (t.ex. Schüco)" placeholderTextColor={c.textMuted} value={leverantor} onChangeText={setLeverantor} />
             <TextInput style={[inp, { flex: 1, minWidth: 140 }]} placeholder="Ordernr / referens" placeholderTextColor={c.textMuted} value={referens} onChangeText={setReferens} />
@@ -2976,7 +3080,7 @@ export default function App() {
 
   // Lägg in en inköpsbeställning: kända artiklar fyller på lagersaldot, nya
   // artiklar skapas som produkter (auto-avläsning mot befintlig katalog).
-  const laggInOrder = ({ leverantor, referens, notering, rader }) => {
+  const laggInOrder = ({ leverantor, referens, notering, rader, nyckel }) => {
     const nyProdukter = [...produkter];
     const orderRader = [];
     for (const r of (rader || [])) {
@@ -3010,6 +3114,7 @@ export default function App() {
       leverantor: (leverantor || '').trim(),
       referens: (referens || '').trim(),
       notering: (notering || '').trim(),
+      nyckel: nyckel || orderNyckel(referens, rader),
       rader: orderRader,
     };
     const nyOrdrar = [order, ...ordrar];
