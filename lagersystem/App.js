@@ -1926,7 +1926,7 @@ function orderNyckel(referens, rader) {
 // Ordrar — våra inköpsbeställningar av profiler & material. Att lägga in en
 // beställning fyller på lagersaldot för kända artiklar och skapar nya produkter
 // automatiskt (se laggInOrder i App). Allt klient-sida (AsyncStorage).
-function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inloggad, token, c }) {
+function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, onTaBortOrder, onRensaLogg, inloggad, token, c }) {
   const nyRad = () => ({ artikel: '', antal: '', namn: '', kategori: '', enhet: 'st', dimension: '' });
   const [visaForm, setVisaForm] = React.useState(false);
   const [leverantor, setLeverantor] = React.useState('');
@@ -2025,7 +2025,7 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inlogga
         const lista = Array.isArray(data) ? data : (Array.isArray(data.ordrar) ? data.ordrar : null);
         if (!lista) { if (Platform.OS === 'web') window.alert('JSON:en ska vara en lista av ordrar.'); return; }
         const res = onImporteraOrdrar(lista);
-        if (Platform.OS === 'web') window.alert(`Historik importerad: ${res.added} order${res.added === 1 ? '' : 'ar'} inlagda som logg${res.skipped ? `, ${res.skipped} hoppades (dubbletter)` : ''}. Lagersaldot är oförändrat.`);
+        if (Platform.OS === 'web') window.alert(`Historik importerad: ${res.added} nya, ${res.updated} uppdaterade ordrar (logg). Lagersaldot är oförändrat.`);
       } catch (err) { if (Platform.OS === 'web') window.alert('Kunde inte läsa JSON: ' + err.message); }
     };
     reader.readAsText(file);
@@ -2078,9 +2078,19 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inlogga
     <ScrollView style={{ flex: 1 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
         <Text style={[styles.kategoriRubrik, { color: c.textRubrik }]}>🧾 Ordrar — beställningar av profiler &amp; material</Text>
-        <TouchableOpacity onPress={() => setVisaForm(v => !v)} style={{ backgroundColor: visaForm ? c.input : '#2563eb', borderWidth: visaForm ? 1 : 0, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
-          <Text style={{ color: visaForm ? c.text : '#fff', fontWeight: '700' }}>{visaForm ? '✕ Stäng' : '+ Ny beställning'}</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          {inloggad?.roll === 'admin' && ordrar.some(o => o.endastLogg) && (
+            <TouchableOpacity onPress={() => {
+              const n = ordrar.filter(o => o.endastLogg).length;
+              if (Platform.OS !== 'web' || window.confirm(`Rensa alla ${n} logg-ordrar (historik)? Rör inte lagersaldot.`)) onRensaLogg();
+            }} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 }}>
+              <Text style={{ color: '#ef4444', fontWeight: '700', fontSize: 13 }}>🗑 Rensa logg</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => setVisaForm(v => !v)} style={{ backgroundColor: visaForm ? c.input : '#2563eb', borderWidth: visaForm ? 1 : 0, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+            <Text style={{ color: visaForm ? c.text : '#fff', fontWeight: '700' }}>{visaForm ? '✕ Stäng' : '+ Ny beställning'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 14 }}>
         Lägg in en beställning — kända artiklar fyller på lagersaldot, nya artiklar läggs till i systemet automatiskt.
@@ -2193,7 +2203,17 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inlogga
                 {o.projekt ? <Text style={{ color: c.textMuted, fontSize: 12 }}>{o.projekt}</Text> : null}
                 {o.endastLogg ? <View style={{ backgroundColor: '#e5e7eb', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}><Text style={{ color: '#4b5563', fontSize: 10, fontWeight: '700' }}>LOGG · rör ej saldo</Text></View> : null}
               </View>
-              <Text style={{ color: c.textMuted, fontSize: 11 }}>{fmtDatum(o.tid)}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Text style={{ color: c.textMuted, fontSize: 11 }}>{fmtDatum(o.tid)}</Text>
+                {inloggad?.roll === 'admin' && (
+                  <TouchableOpacity onPress={() => {
+                    const fraga = `Ta bort order ${o.referens || ''}?${o.endastLogg ? '' : '\nOBS: lagersaldot återställs INTE automatiskt.'}`;
+                    if (Platform.OS !== 'web' || window.confirm(fraga)) onTaBortOrder(o.id);
+                  }} style={{ padding: 4 }}>
+                    <Text style={{ color: '#ef4444', fontSize: 15 }}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
             {o.rader.map((r, i) => (
               <View key={i} style={{ flexDirection: 'row', paddingVertical: 2, alignItems: 'center' }}>
@@ -3406,11 +3426,13 @@ export default function App() {
 
   // Importera historiska ordrar som LOGG-poster — de hamnar i Ordrar-listan
   // men rör INTE lagersaldot (fysiska inventeringen står kvar som baseline).
-  // Dedupar mot redan inlagda ordrar via nyckel (ordernr).
+  // Finns ordernr redan → UPPDATERAS (så en ny fullständig import ersätter en
+  // tidigare tom/ofullständig), annars läggs det till.
   const importeraOrdrar = (lista) => {
-    if (!Array.isArray(lista) || !lista.length) return { added: 0, skipped: 0 };
-    const befintliga = new Set(ordrar.map(o => o.nyckel).filter(Boolean));
-    const nya = [];
+    if (!Array.isArray(lista) || !lista.length) return { added: 0, updated: 0 };
+    const byNyckel = new Map(ordrar.filter(o => o.nyckel).map(o => [o.nyckel, o]));
+    let added = 0, updated = 0;
+    const inRecords = [];
     for (const o of lista) {
       const rader = (o.rader || []).map(r => ({
         artikel: String(r.artikel || '').trim(), namn: r.namn || '',
@@ -3418,23 +3440,36 @@ export default function App() {
         dimension: r.dimension || '', status: 'logg',
       })).filter(r => r.artikel);
       const nyckel = o.nyckel || orderNyckel(o.referens, rader);
-      if (nyckel && (befintliga.has(nyckel) || nya.some(n => n.nyckel === nyckel))) continue;
-      nya.push({
+      const rec = {
         id: (String(o.referens || 'ord') + '_' + Math.random().toString(36).slice(2, 8)),
         tid: o.tid || new Date().toISOString(),
         av: o.av || (inloggad?.namn || inloggad?.username || ''),
         leverantor: o.leverantor || 'Schüco',
-        referens: o.referens || '',
-        projekt: o.projekt || '',
-        notering: o.notering || '',
+        referens: o.referens || '', projekt: o.projekt || '', notering: o.notering || '',
         nyckel, rader, bilder: [], endastLogg: true,
-      });
+      };
+      if (nyckel && byNyckel.has(nyckel)) { rec.id = byNyckel.get(nyckel).id; updated++; } else added++;
+      inRecords.push(rec);
     }
-    if (!nya.length) return { added: 0, skipped: lista.length };
-    const combined = [...nya, ...ordrar].sort((a, b) => String(b.tid || '').localeCompare(String(a.tid || '')));
+    const nycklarIn = new Set(inRecords.map(r => r.nyckel).filter(Boolean));
+    const behalls = ordrar.filter(o => !(o.nyckel && nycklarIn.has(o.nyckel)));
+    const combined = [...inRecords, ...behalls].sort((a, b) => String(b.tid || '').localeCompare(String(a.tid || '')));
     setOrdrar(combined);
     sparaOrdrar(combined);
-    return { added: nya.length, skipped: lista.length - nya.length };
+    return { added, updated };
+  };
+
+  // Radera en order ur loggen (rör inte lagersaldot — logg-poster har aldrig
+  // påverkat det, och en manuell påfyllnad backas inte automatiskt).
+  const taBortOrder = (id) => {
+    const ny = ordrar.filter(o => o.id !== id);
+    setOrdrar(ny);
+    sparaOrdrar(ny);
+  };
+  const rensaLoggOrdrar = () => {
+    const ny = ordrar.filter(o => !o.endastLogg);
+    setOrdrar(ny);
+    sparaOrdrar(ny);
   };
 
   const arRitning = ritningar.some(r => r.id === aktivFlik);
@@ -4718,7 +4753,7 @@ export default function App() {
           )}
 
           {!valdProdukt && arOrdrar && (
-            <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} onImporteraOrdrar={importeraOrdrar} inloggad={inloggad} token={token} c={c} />
+            <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} onImporteraOrdrar={importeraOrdrar} onTaBortOrder={taBortOrder} onRensaLogg={rensaLoggOrdrar} inloggad={inloggad} token={token} c={c} />
           )}
 
           {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && !arLagerforslag && !arOrdrar && <>
