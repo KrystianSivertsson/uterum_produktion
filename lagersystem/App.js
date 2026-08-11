@@ -23,13 +23,9 @@ const API = typeof window !== 'undefined'
 const ASE60_URL = typeof window !== 'undefined'
   ? `${window.location.origin}/ase60/`
   : 'https://three.nordiska.io/ase60/';
-
-// SBZ151 3D-simulatorn (elumatec Alufräs) serveras av lagersystem-servern på
-// /simulator (server.js), inte en egen app. Bäddas in i en egen ruta här under
-// "Alufräs bearbetning", precis som ASE60-generatorn ovan.
-const SIMULERING_URL = typeof window !== 'undefined'
-  ? `${window.location.origin}/simulator/`
-  : 'https://three.nordiska.io/simulator/';
+// SIMULERING_URL definieras efter BAS nedan (behöver bas-prefixet /UterumLager
+// i prod, eftersom /simulator INTE är nginx-proxad — den nås via appens egen
+// proxade väg /UterumLager/simulator/).
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -103,6 +99,15 @@ function harledBas() {
   return forsta && !RUTT_ROTER.includes(forsta) ? `/${forsta}` : '';
 }
 const BAS = harledBas();
+
+// SBZ151 3D-simulatorn serveras av lagersystem-servern på {BAS}/simulator. I
+// prod är /simulator INTE nginx-proxad (fångas av en annan app), men
+// /UterumLager/* rutas till uterum-lager-servern och nginx strippar prefixet →
+// serverns /simulator-route svarar. Lokalt (BAS='') blir det origin/simulator/.
+// Simulatorns egna fetch:ar är relativa så de följer med under samma prefix.
+const SIMULERING_URL = typeof window !== 'undefined'
+  ? `${window.location.origin}${BAS}/simulator/`
+  : 'https://three.nordiska.io/UterumLager/simulator/';
 
 // Slug som tål svenska kundnamn. Både namnen och segmenten ur adressen körs
 // genom samma funktion, så matchningen blir okänslig för hur webbläsaren råkar

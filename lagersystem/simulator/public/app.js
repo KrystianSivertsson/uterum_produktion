@@ -3066,7 +3066,7 @@ async function loadDatabases() {
     let activeFiles = {};
     let activeName = null;
     try {
-      const configRes = await fetch('/api/active-files');
+      const configRes = await fetch('api/active-files');
       const config = await configRes.json();
       activeFiles = config.files || {};
       activeName = config.name;
@@ -3078,7 +3078,7 @@ async function loadDatabases() {
     //    encodeURIComponent so filenames with spaces (e.g. "SBZ151_ME _7m.ncm")
     //    resolve correctly.
     const fetchFile = (filename) =>
-      filename ? fetch('/data/' + encodeURIComponent(filename)).then(r => r.ok ? r.text() : null).catch(() => null) : Promise.resolve(null);
+      filename ? fetch('data/' + encodeURIComponent(filename)).then(r => r.ok ? r.text() : null).catch(() => null) : Promise.resolve(null);
 
     const [nctRes, efdRes, epoRes, epdRes, ahRes, ncmRes] = await Promise.all([
       fetchFile(activeFiles.nct),
