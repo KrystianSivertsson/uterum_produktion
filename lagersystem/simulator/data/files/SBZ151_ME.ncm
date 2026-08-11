@@ -1,0 +1,516 @@
+:MACHINE
+	Version           = 1.00
+	UnitScale         = 1
+	MachineID         = 15100
+	Description       = "SBZ151 ME Fenster"
+	BarProcessing     = 1
+	ProfileShiftMode  = 0
+
+	// Clamping
+	ClampDistMin      = 170
+	ClampDistMax      = 1000
+	ClampDistEnd      = 400
+	ClampWorkDistEnd  = 350
+	ClampParkOffset   = 600
+	ClampMoveMode     = 0
+	ParkClamps        = 0
+	ProfileParkOffset = 700
+
+	// Axes
+	MinAngleA       = -100.000000
+	MaxAngleA       = 100.000000
+	MinAngleC       = -185.000000
+	MaxAngleC       = 185.000000
+	XMachineMin     = -524.000000
+	YMachineMin     = -787.000000
+	ZMachineMin     = -225.000000
+	XMachineMax     = 10408.000000
+	YMachineMax     = 385.000000
+	ZMachineMax     = 410.000000
+	XMachineOffsetC = 74.862000
+	YMachineOffsetC = 0.000000
+	ZMachineOffsetC = 201.030000
+
+	// Spindle and Gear
+	SpindleDisplacementA = 201.030000
+	SpindleDisplacementC = 74.862000
+	BoxSpindle   = 80.000000 80.000000 6.000000  -40.000000 -40.000000 0.000000
+	BoxSpindle   = 120.000000 120.000000 27.000000  -60.000000 -60.000000 6.000000
+	BoxSpindle   = 155.000000 170.000000 440.000000  -75.000000 -85.000000 33.000000
+	BoxSpindle   = 24.000000 170.000000 345.000000  -99.000000 -85.000000 27.000000
+	BoxGear      = 363.000000 290.000000 180.000000  -233.000000 -145.000000 140.000000
+	BoxGear      = 194.000000 280.000000 56.000000  -233.000000 -140.000000 85.000000
+	BoxGear      = 194.000000 262.000000 85.000000  -233.000000 -131.000000 0.000000
+	BoxGear      = 194.000000 228.000000 85.000000  -233.000000 -114.000000 -85.000000
+	BoxGear      = 194.000000 146.000000 27.000000  -233.000000 -73.000000 -112.000000
+	BoxGear      = 14.500000 214.000000 214.000000  -39.000000 -107.000000 -107.000000
+
+	// Machine
+	BoxCollDisp  = 15868.000000 30.000000 30.000000  -1288.000000 -487.000000 -204.000000
+	BoxCollDisp  = 15868.000000 18.000000 17.000000  -1288.000000 -417.000000 -191.000000
+	BoxCollDisp  = 15868.000000 18.000000 17.000000  -1288.000000 -35.000000 -191.000000
+	BoxCollDisp  = 15868.000000 30.000000 135.000000  -1288.000000 -41.000000 -326.000000
+	BoxCollDisp  = 15868.000000 30.000000 115.000000  -1288.000000 -424.000000 -326.000000
+	BoxCollDisp  = 15868.000000 62.000000 20.000000  -1288.000000 -448.000000 -211.000000
+
+:STOPGEO
+	Ident       = "S-151_2"
+	Comment     = ""
+	BoxStopUp   = 20.000000 280.000000 420.000000  -20.000000 -330.000000 -191.000000
+	BoxStopDown = 20.000000 280.000000 420.000000  -20.000000 -330.000000 -611.000000
+	BoxStopDown = 360.000000 345.000000 200.000000  -382.000000 -386.000000 -391.000000
+
+:STOPGEO
+	Ident       = "S-151_3"
+	Comment     = ""
+	BoxStopDown = 20.000000 280.000000 420.000000  -20.000000 -330.000000 -611.000000
+	BoxStopDown = 360.000000 345.000000 200.000000  -382.000000 -386.000000 -391.000000
+
+:CLAMPGEO
+	Ident      = "C-151_1"
+	Comment    = ""
+	BoxStatic  = 122.000000 785.000000 50.000000  -61.000000 -785.000000 -174.000000
+	BoxStatic  = 136.000000 15.000000 160.000000  -68.000000 0.000000 -160.000000
+	BoxStatic  = 60.000000 15.000000 70.000000  -30.000000 0.000000 0.000000
+	BoxStatic  = 122.000000 15.000000 100.000000  -61.000000 15.000000 -230.000000
+	BoxStatic  = 162.000000 15.000000 17.000000  -81.000000 -17.000000 -191.000000
+	BoxStatic  = 162.000000 15.000000 17.000000  -81.000000 -50.000000 -191.000000
+	BoxStatic  = 20.000000 50.000000 25.000000  -81.000000 -51.000000 -174.000000
+	BoxStatic  = 20.000000 50.000000 25.000000  61.000000 -51.000000 -174.000000
+	BoxStatic  = 25.000000 12.000000 12.000000  -86.000000 -478.000000 -174.000000
+	BoxStatic  = 25.000000 12.000000 12.000000  61.000000 -478.000000 -174.000000
+	BoxStatic  = 122.000000 15.000000 17.000000  -61.000000 -398.000000 -191.000000
+	BoxStatic  = 122.000000 15.000000 17.000000  -61.000000 -429.000000 -191.000000
+	BoxStatic  = 5.000000 170.000000 150.000000  -68.000000 -155.000000 -174.000000
+	BoxStatic  = 5.000000 170.000000 150.000000  63.000000 -155.000000 -174.000000
+	BoxStatic  = 5.000000 10.000000 10.000000  68.000000 7.500000 -44.000000
+	BoxStatic  = 5.000000 10.000000 10.000000  68.000000 -127.500000 -159.000000
+	BoxStatic  = 5.000000 10.000000 10.000000  -73.000000 7.500000 -44.000000
+	BoxStatic  = 5.000000 10.000000 10.000000  -73.000000 -127.500000 -159.000000
+	BoxStatic  = 10.000000 10.000000 10.000000  -5.000000 15.000000 46.000000
+	BoxMovable = 64.000000 15.000000 140.000000  -32.000000 -15.000000 -71.000000
+	BoxMovable = 122.000000 15.000000 45.000000  -61.000000 -15.000000 -71.000000
+	BoxMovable = 122.000000 130.000000 124.000000  -61.000000 0.000000 -124.000000
+	BoxMovable = 122.000000 50.000000 11.000000  -61.000000 -50.000000 -124.000000
+	BoxMovable = 122.000000 40.000000 11.000000  -61.000000 -40.000000 -113.000000
+	BoxMovable = 122.000000 30.000000 11.000000  -61.000000 -30.000000 -102.000000
+	BoxMovable = 122.000000 20.000000 11.000000  -61.000000 -20.000000 -91.000000
+	BoxMovable = 122.000000 10.000000 10.000000  -61.000000 -10.000000 -81.000000
+	BoxMovable = 25.000000 55.000000 15.000000  -57.000000 -55.000000 -15.000000
+	BoxMovable = 25.000000 55.000000 15.000000  32.000000 -55.000000 -15.000000
+	BoxMovable = 5.000000 10.000000 10.000000  -66.000000 -10.000000 -44.000000
+	BoxMovable = 5.000000 10.000000 10.000000  61.000000 -10.000000 -44.000000
+	BoxMovable = 10.000000 10.000000 10.000000  -5.000000 -25.000000 46.000000
+
+:STATION
+	Name   = "Station 1"
+	Number = 1
+	Offset = 0.000000
+	//Offset = -350.000000
+	PosMax = 5011.200000
+	ClampPosInvalid		= -148 91
+        
+        FixOffsetY	= 11.4							// Offset für Feste Beilage in Y
+
+	//FixOffsetY2 = 0.00
+	
+
+        FixOffsetZ  = -0.8
+
+
+	:STOP
+	Offset   = 0.000000
+	Geometry = "S-151_2"
+
+	:CLAMP
+	PosMin   = -1071.000000
+	PosMax   = 4980.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -901.000000
+	PosMax   = 5150.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -731.000000
+	PosMax   = 5320.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -561.000000
+	PosMax   = 5490.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -391.000000
+	PosMax   = 5660.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -221.000000
+	PosMax   = 5830.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -51.000000
+	//PosMax   = 5000.000000
+	PosMax   = 6000.000000
+	Geometry = "C-151_1"
+
+:STATION
+	Name   = "Station 2"
+	Number = 2
+	Offset = 5011.200000
+	//Offset = 5600.000000
+	//PosMax = 10409.000000
+	PosMax = 11460.000000
+	ClampPosInvalid		= 4863.2 5102.2
+
+        FixOffsetY	= 11.4  						// Offset für Feste Beilage in Y
+
+	//FixOffsetY2 = 0.00
+	
+
+        FixOffsetZ  = -0.8
+
+	:STOP
+	Offset   = 0.000000
+	Geometry = "S-151_2"
+
+	:CLAMP
+	PosMin   = 119.000000
+	PosMax   = 9500.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 289.000000
+	PosMax   = 9670.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 459.000000
+	PosMax   = 9840.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 629.000000
+	PosMax   = 10010.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 799.000000
+	PosMax   = 10180.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 969.000000
+	PosMax   = 10350.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 1139.000000
+	PosMax   = 10520.000000
+	Geometry = "C-151_1"
+
+:STATION
+	Name   = "Station 1+2"
+	Number = 3
+	Offset = 0.000000
+	//Offset = -350.000000
+	//PosMax = 10409.000000
+	PosMax = 11460.000000
+	ClampPosInvalid		= -148 91
+
+        FixOffsetY	= 11.4							// Offset für Feste Beilage in Y
+
+	//FixOffsetY2 = 0.00
+	
+
+        FixOffsetZ  = -0.8
+
+
+	:STOP
+	Offset   = 0.000000
+	Geometry = "S-151_2"
+
+	:STOP
+	Offset   = 5011.200000
+	//Offset   = 5950.000000
+	Geometry = "S-151_3"
+
+	:CLAMP
+	PosMin   = -1071.000000
+	PosMax   = 8310.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -901.000000
+	PosMax   = 8480.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -731.000000
+	PosMax   = 8650.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -561.000000
+	PosMax   = 8820.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -391.000000
+	PosMax   = 8990.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -221.000000
+	PosMax   = 9160.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -51.000000
+	PosMax   = 9330.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 119.000000
+	PosMax   = 9500.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 289.000000
+	PosMax   = 9670.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 459.000000
+	PosMax   = 9840.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 629.000000
+	PosMax   = 10010.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 799.000000
+	PosMax   = 10180.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 969.000000
+	PosMax   = 10350.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 1139.000000
+	PosMax   = 10520.000000
+	Geometry = "C-151_1"
+
+:STATION
+	Name   = "Station 4"
+	Number = 4
+	//Offset = 0.000000
+	Offset = -600.000000
+	PosMax = 5600.200000
+	ClampPosInvalid		= -148 91
+
+        FixOffsetY	= 11.4							// Offset für Feste Beilage in Y
+
+	//FixOffsetY2 = 0.00
+	
+
+        FixOffsetZ  = -0.8
+
+
+	:STOP
+	Offset   = 0.000000
+	Geometry = "S-151_2"
+
+	:CLAMP
+	PosMin   = -1071.000000
+	PosMax   = 5580.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -901.000000
+	PosMax   = 5750.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -731.000000
+	PosMax   = 5920.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -561.000000
+	PosMax   = 6390.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -391.000000
+	PosMax   = 6260.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -221.000000
+	PosMax   = 6430.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -51.000000
+	//PosMax   = 5000.000000
+	PosMax   = 7030.000000
+	Geometry = "C-151_1"
+
+:STATION
+	Name   = "Station 5"
+	Number = 5
+	//Offset = 5011.200000
+	Offset = 5600.000000
+	//PosMax = 10409.000000
+	PosMax = 11460.000000
+	ClampPosInvalid		= 4863.2 5102.2
+
+        FixOffsetY	= 11.4           					        	// Offset für Feste Beilage in Y
+
+	//FixOffsetY2 = 0.00
+	
+
+        FixOffsetZ  = -0.8
+
+	:STOP
+	Offset   = 0.000000
+	Geometry = "S-151_2"
+
+	:CLAMP
+	PosMin   = 119.000000
+	PosMax   = 9500.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 289.000000
+	PosMax   = 9670.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 459.000000
+	PosMax   = 9840.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 629.000000
+	PosMax   = 10010.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 799.000000
+	PosMax   = 10180.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 969.000000
+	PosMax   = 10350.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 1139.000000
+	PosMax   = 10520.000000
+	Geometry = "C-151_1"
+
+:STATION
+	Name   = "Station 4+5"
+	Number = 6
+	//Offset = 0.000000
+	Offset = -600.000000
+	PosMax = 5600.200000
+	ClampPosInvalid		= -148 91
+
+        FixOffsetY	= 11.4							// Offset für Feste Beilage in Y
+
+	//FixOffsetY2 = 0.00
+
+	
+
+        FixOffsetZ  = -0.8
+
+	:STOP
+	Offset   = 0.000000
+	Geometry = "S-151_2"
+
+	:STOP
+	Offset   = 5600.000000
+	//Offset   = 5950.000000
+	Geometry = "S-151_3"
+
+	:CLAMP
+	PosMin   = -1071.000000
+	PosMax   = 8310.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -901.000000
+	PosMax   = 8480.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -731.000000
+	PosMax   = 8650.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -561.000000
+	PosMax   = 8820.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -391.000000
+	PosMax   = 8990.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -221.000000
+	PosMax   = 9160.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = -51.000000
+	PosMax   = 9330.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 119.000000
+	PosMax   = 9500.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 289.000000
+	PosMax   = 9670.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 459.000000
+	PosMax   = 9840.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 629.000000
+	PosMax   = 10010.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 799.000000
+	PosMax   = 10180.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 969.000000
+	PosMax   = 10350.000000
+	Geometry = "C-151_1"
+
+	:CLAMP
+	PosMin   = 1139.000000
+	PosMax   = 10520.000000
+	Geometry = "C-151_1"

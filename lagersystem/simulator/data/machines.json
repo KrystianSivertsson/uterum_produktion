@@ -1,0 +1,23 @@
+{
+  "active": "7m",
+  "machines": {
+    "7m": {
+      "efd": "Axium.efd",
+      "epo": "SBZ151-2008-7m.epo",
+      "ncc": "SBZ151-2008-7m.ncc",
+      "ncm": "SBZ151_ME _7m.ncm",
+      "nct": "SBZ151-2008-7m.nct",
+      "epd": "Profiles.epd",
+      "anglehead": "AngleHead.ini"
+    },
+    "Axium": {
+      "efd": "Axium.efd",
+      "epo": "Axium.epo",
+      "ncc": "Axium.ncc",
+      "ncm": "SBZ151_ME.ncm",
+      "nct": "SBZ151.nct",
+      "epd": "Profiles.epd",
+      "anglehead": "AngleHead.ini"
+    }
+  }
+}

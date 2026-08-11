@@ -1,0 +1,286 @@
+:MACHINE
+	Version           = 1.00
+	UnitScale         = 1
+	MachineID         = 15100
+	Description       = "SBZ151 with independent clamp positioning and Reckerth spindle"
+	BarProcessing     = 1
+	ProfileShiftMode  = 0
+	CheckMachineMinMax= 1
+
+	// Clamping
+	ClampDistMinGeo      = 5
+	//ClampDistMin      = 115
+	ClampDistMeasure  = 20
+	ClampDistMax      = 800
+	ClampDistEnd      = 300	
+	ClampWorkDistEnd  = 0
+	ClampParkOffset   = 600
+	ClampMoveMode     = 1
+	ParkClamps        = 0
+	ProfileParkOffset = 700
+	
+
+	// Axes
+	SawMaxAngle 		= 100 402
+	SawMaxAngle 		= 90  599
+	MinAngleA       = -100.000000
+	MaxAngleA       = 100.000000
+	MinAngleC       = -182.000000
+	MaxAngleC       = 182.000000
+	XMachineMin     = -541.000000
+	YMachineMin     = -791.000000
+	ZMachineMin     = -222.000000
+	XMachineMax     = 9090.00000
+	YMachineMax     = 383.000000
+	ZMachineMax     = 494.000000
+	XMachineOffsetC = 75.0000000
+	YMachineOffsetC = 0.000000
+	ZMachineOffsetC = -201.1000
+
+	// Spindle and Gear
+	SpindleDisplacementA = 201.100000
+	SpindleDisplacementC = 75.000000
+	BoxSpindle   = 73.000000 73.000000 9.000000  -36.500000 -36.500000 0.000000
+	BoxSpindle   = 115.000000 115.000000 49.000000  -57.500000 -57.500000 9.000000
+	BoxSpindle   = 152.000000 152.000000 26.000000  -76.000000 -76.000000 58.000000
+	BoxSpindle   = 154.000000 154.000000 305.000000  -77.000000 -77.000000 84.000000
+	BoxSpindle   = 26.000000 150.000000 300.000000  -103.000000 -75.000000 40.000000
+	BoxGear      = 363.000000 290.000000 180.000000  -233.000000 -145.000000 140.000000
+	BoxGear      = 194.000000 280.000000 56.000000  -233.000000 -140.000000 85.000000
+	BoxGear      = 194.000000 262.000000 85.000000  -233.000000 -131.000000 0.000000
+	BoxGear      = 194.000000 228.000000 85.000000  -233.000000 -114.000000 -85.000000
+	BoxGear      = 194.000000 146.000000 27.000000  -233.000000 -73.000000 -112.000000
+	BoxGear      = 11.100000 214.000000 182.000000  -39.000000 -107.000000 -75.000000
+	BoxGear      = 11.100000 146.000000 32.000000  -39.000000 -73.000000 -107.000000
+
+
+
+	// Machine
+	BoxCollDisp  = 11000.000000 30.000000 30.000000  -1200.000000 -475.000000 -225.000000  	//Spannerschupp
+	BoxCollDisp  = 11000.000000 18.000000 17.000000  -1200.000000 -400.000000 -212.000000 	//Vordere Schiene
+	BoxCollDisp  = 11000.000000 18.000000 17.000000  -1200.000000 -24.000000 -212.000000		//Hintere Schiene
+	BoxCollDisp  = 11000.000000 30.000000 135.000000  -1200.000000 -30.000000 -347.000000 	//Hinteres Bett
+	BoxCollDisp  = 11000.000000 30.000000 135.000000  -1200.000000 -405.000000 -347.000000 	//Vorderes Bett
+	BoxCollDisp  = 11000.000  345.000    1.000  -1200.000  -375.000   -245.000000 					// "Blechdeckel" zwischen den Fuehrungsschienen
+	BoxCollDisp  = 11000.000000 34.000000 80.000000  -1200.000000 0.000000 -292.000000			//Messsystem
+
+	// ClampOffsets
+	
+	
+:STOPGEO
+	Ident       = "S_151_2"
+	Comment     = ""
+	BoxStopUp   = 20.000000 280.000000 420.000000  -20.000000 -340.000000 -212.000000
+	BoxStopDown = 20.000000 280.000000 420.000000  -20.000000 -340.000000 -632.000000
+	BoxStopDown = 360.000000 345.000000 200.000000  -382.000000 -375.000000 -412.000000
+
+:STOPGEO
+	Ident       = "S_151_3"		//Anschlag 2 in Station 3
+	Comment     = ""
+	BoxStopDown = 20.000000 280.000000 420.000000  -20.000000 -340.000000 -632.000000
+	BoxStopDown = 360.000000 345.000000 200.000000  -382.000000 -375.000000 -412.000000
+
+:CONFIG
+
+	Takten = 0	
+	DistClamp2to3 = 235.00
+	PosClamp2ForMode4 = 600.00
+	DistForMoveMode4 = 1000.00
+
+	
+:CLAMPGEO
+	Ident      		= "C_151_Mes_D"
+	Comment    		= "neue Standardspanner UNTEN mit Messeinrichtung"
+	BoxFixStatic  = 70.000000 11.16500 80.000000  -35.000000 0.000000 -1.000000
+	BoxStatic  		= 70.000000 30.000000 85.000000  -35.000000 -30.00000 0.000000
+	BoxStatic  		= 165.000000 785.000000 55.000000  -82.500000 -750.000000 -195.000000
+	BoxStatic  		= 165.000000 205.000000 140.000000  -82.500000 -185.000000 -140.000000
+	BoxStatic  		= 120.000000 60.000000 130.000000  -60.000000 35.000000 -280.000000
+	BoxFixMovable = 26.000000 150.000000 4.500000  -68.000000 -43.000000 -4.50000		//Linke Gr�ne Plastikplatten
+	BoxFixMovable = 26.000000 150.000000 4.500000  43.000000 -43.000000 -4.50000		//Rechte in Z Achse
+	BoxMovable 		= 70.000000 25.000000 85.000000  -35.000000 -25.000000 0.000000
+	BoxMovable 		= 145.000000 200.000000 82.000000  -72.500000 -25.000000 -82.000000
+	BoxMovable 		= 140.000000 235.000000 58.000000  -70.000000 -60.000000 -140.000000
+	
+:CLAMPGEO
+	Ident      		= "C_151_Mes_U"
+	Comment    		= "neue Standardspanner OBEN mit Messeinrichtung"
+	BoxFixStatic  = 70.000000 11.16500 80.000000  -35.000000 0.000000 -1.000000
+	BoxStatic  		= 70.000000 30.000000 136.000000  -35.000000 -30.00000 0.000000
+	BoxStatic  		= 165.000000 785.000000 55.000000  -82.500000 -750.000000 -195.000000
+	BoxStatic  		= 165.000000 205.000000 140.000000  -82.500000 -185.000000 -140.000000
+	BoxStatic  		= 120.000000 60.000000 130.000000  -60.000000 35.000000 -280.000000
+	BoxFixMovable = 26.000000 150.000000 4.500000  -68.000000 -43.000000 -4.50000		//Linke Gr�ne Plastikplatten
+	BoxFixMovable = 26.000000 150.000000 4.500000  43.000000 -43.000000 -4.50000		//Rechte in Z Achse
+	BoxMovable 		= 70.000000 25.000000 85.000000  -35.000000 -25.000000 0.000000
+	BoxMovable 		= 145.000000 200.000000 82.000000  -72.500000 -25.000000 -82.000000
+	BoxMovable 		= 140.000000 235.000000 58.000000  -70.000000 -60.000000 -140.000000
+
+	
+
+:STATION
+	Number = 1
+	Offset = 0.000000
+	PosMax = 5008.725000
+	ClampPosInvalid = -166 95
+	FixOffsetY	= 41.2							// Offset f�r Feste Beilage in Y
+	FixOffsetY2 = 0.00
+	FixOffsetZ  = 4.30 
+	
+	:STOP
+	Offset   = 0.000000
+	Geometry = "S_151_2"
+
+	:CLAMP		// 1
+	PosMin   = -1073.000000
+	PosMax   = 7606.000000
+	Geometry = "C_151_Mes_U"
+
+	:CLAMP		// 2
+	PosMin   = -905.000000
+	PosMax   = 7776.000000
+	Geometry = "C_151_Mes_U"
+	
+//	:CLAMP		// 3
+//	PosMin   = -736.000000
+//	PosMax   = 7945.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	:CLAMP		// 4
+//	PosMin   = -567.000000
+//	PosMax   = 8117.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	:CLAMP		// 5
+//	PosMin   = -397.000000
+//	PosMax   = 8286.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	:CLAMP		// 6
+//	PosMin   = -226.000000
+//	PosMax   = 8458.000000
+//	Geometry = "C_151_Mes_U"
+//
+//
+//:STATION
+//	Number = 2
+//	Offset = 5008.725
+//	PosMax = 9090.000000
+//	ClampPosInvalid = 4844 5104
+//	FixOffsetY	= 41.2
+//	FixOffsetY2 = 0.00
+//	FixOffsetZ  = 4.30
+//	
+//	
+//	:STOP
+//	Offset   = 0.000000
+//	Geometry = "S_151_2"
+//
+//	:CLAMP		// 7
+//	PosMin   = -57.000000
+//	PosMax   = 8627.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	:CLAMP		// 8
+//	PosMin   = 112.000000
+//	PosMax   = 8800.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	:CLAMP		// 9
+//	PosMin   = 280.000000
+//	PosMax   = 8974.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	:CLAMP		// 10
+//	PosMin   = 449.000000
+//	PosMax   = 9149.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	:CLAMP		// 11
+//	PosMin   = 618.000000
+//	PosMax   = 9324.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	:CLAMP		// 12
+//	PosMin   = 787.000000
+//	PosMax   = 9499.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	
+//:STATION
+//	Number = 3
+//	Offset = 0.000000
+//	PosMax = 9090.000000
+//	ClampPosInvalid = -166 95
+//	FixOffsetY	= 41.2							// Offset f�r Feste Beilage in Y
+//	FixOffsetY2 = 0.00
+//	FixOffsetZ  = 4.30 
+//	
+//	:STOP
+//	Offset   = 0.000000
+//	Geometry = "S_151_2"
+//	
+//	:STOP
+//	Offset   = 5008.725
+//	Geometry = "S_151_3"
+//
+//	:CLAMP		// 1
+//	PosMin   = -1073.000000
+//	PosMax   = 7606.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	:CLAMP		// 2
+//	PosMin   = -905.000000
+//	PosMax   = 7776.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	:CLAMP		// 3
+//	PosMin   = -736.000000
+//	PosMax   = 7945.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	:CLAMP		// 4
+//	PosMin   = -567.000000
+//	PosMax   = 8117.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	:CLAMP		// 5
+//	PosMin   = -397.000000
+//	PosMax   = 8286.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	:CLAMP		// 6
+//	PosMin   = -226.000000
+//	PosMax   = 8458.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	
+//	:CLAMP		// 7
+//	PosMin   = -57.000000
+//	PosMax   = 8627.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	:CLAMP		// 8
+//	PosMin   = 112.000000
+//	PosMax   = 8800.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	:CLAMP		// 9
+//	PosMin   = 280.000000
+//	PosMax   = 8974.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	:CLAMP		// 10
+//	PosMin   = 449.000000
+//	PosMax   = 9149.000000
+//	Geometry = "C_151_Mes_U"
+//
+//	:CLAMP		// 11
+//	PosMin   = 618.000000
+//	PosMax   = 9324.000000
+//	Geometry = "C_151_Mes_U"
+//	
+//	:CLAMP		// 12
+//	PosMin   = 787.000000
+//	PosMax   = 9499.000000
+//	Geometry = "C_151_Mes_U"

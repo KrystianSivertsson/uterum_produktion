@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<title>elumatec SBZ 151 - 3D Simulator</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+canvas { display: block; }
+
+/* Embed mode: ?embed=true hides left panel, settings, file upload — shows only 3D + transport */
+body.embed-mode #ui { display: none; }
+body.embed-mode #info { display: none; }
+body.embed-mode #settingsPanel { display: none !important; }
+body.embed-mode #gcodePanel { display: none !important; }
+body.embed-mode #toggleSettingsBtn { display: none; }
+body.embed-mode .sim-row { display: none; }
+body.embed-mode #simPanel { top: auto; bottom: 10px; right: 10px; left: 10px; width: auto; }
+body.embed-mode #dbStatus { display: none; }
+body.embed-mode #toolWarnings { display: none; }
+
+#ui {
+  position: absolute; top: 10px; left: 10px;
+  background: rgba(10,10,30,0.92); color: #e0e0e0;
+  padding: 16px; border-radius: 8px; width: 320px;
+  border: 1px solid #333; max-height: calc(100vh - 20px); overflow-y: auto;
+}
+#ui::-webkit-scrollbar { width: 6px; }
+#ui::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+#ui h1 { font-size: 16px; color: #ff6b35; margin-bottom: 4px; }
+#ui h2 { font-size: 11px; color: #888; margin-bottom: 12px; font-weight: normal; }
+.group { margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+.group-title { font-size: 12px; color: #ff6b35; margin-bottom: 6px; font-weight: 600; }
+.control { display: flex; align-items: center; margin-bottom: 4px; }
+.control label { font-size: 11px; width: 100px; flex-shrink: 0; }
+.control input[type=range] { flex: 1; margin: 0 8px; accent-color: #ff6b35; }
+.control .val { font-size: 11px; width: 55px; text-align: right; color: #aaa; font-family: monospace; }
+.toggle { display: flex; align-items: center; margin-bottom: 3px; }
+.toggle input { margin-right: 6px; accent-color: #ff6b35; }
+.toggle label { font-size: 11px; cursor: pointer; }
+
+#info {
+  position: absolute; bottom: 10px; left: 10px;
+  background: rgba(10,10,30,0.8); color: #888;
+  padding: 8px 12px; border-radius: 6px; font-size: 11px;
+  z-index: 5;
+}
+
+/* ---- Right-side panels: simPanel on top, gcodePanel below ---- */
+#simPanel {
+  position: absolute; top: 10px; right: 10px;
+  background: rgba(10,10,30,0.92); color: #e0e0e0;
+  padding: 16px; border-radius: 8px; width: 370px;
+  border: 1px solid #333;
+}
+#simPanel .group-title { font-size: 12px; color: #ff6b35; margin-bottom: 8px; font-weight: 600; }
+.sim-row { display: flex; align-items: center; margin-bottom: 8px; }
+.sim-upload-btn {
+  background: #ff6b35; color: #000; padding: 5px 14px;
+  border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;
+  display: inline-block;
+}
+.sim-upload-btn:hover { background: #ff8855; }
+.sim-filename { font-size: 10px; color: #888; margin-left: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
+.step-btn { padding: 1px 5px; font-size: 9px; background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; cursor: pointer; min-width: 28px; }
+.step-btn:hover { background: #444; border-color: #2a6b9c; }
+.step-val { font-size: 10px; color: #aaa; min-width: 28px; text-align: center; }
+.sim-transport { display: flex; gap: 4px; margin: 8px 0; justify-content: center; }
+.sim-transport button {
+  background: #333; color: #ff6b35; border: 1px solid #555;
+  border-radius: 4px; padding: 6px 14px; cursor: pointer;
+  font-size: 14px; font-weight: bold; min-width: 40px;
+}
+.sim-transport button:hover { background: #555; }
+.sim-transport button.active { background: #ff6b35; color: #000; }
+#simInfo { font-size: 10px; color: #aaa; margin-top: 8px; line-height: 1.7; }
+#simStatus { color: #ff6b35; font-weight: 600; font-size: 11px; }
+#simCurrentOp { color: #88ccff; }
+#simCoords { font-family: monospace; color: #999; }
+.sim-action-btn {
+  background: #333; color: #ff6b35; border: 1px solid #555;
+  border-radius: 4px; padding: 5px 10px; cursor: pointer;
+  font-size: 11px; font-weight: 600; flex: 1;
+}
+.sim-action-btn:hover { background: #555; }
+.sim-action-btn.dim { color: #888; }
+
+/* G-Code panel — positioned dynamically below sim panel via JS */
+#gcodePanel {
+  position: absolute; right: 10px;
+  background: rgba(10,10,30,0.95); color: #e0e0e0;
+  border-radius: 8px; width: 370px;
+  border: 1px solid #333;
+  display: none;
+  flex-direction: column;
+  /* top and max-height set by JS _positionGcodePanel() */
+}
+#gcodePanel.visible { display: flex; }
+#gcodePanel .gcode-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid #333; flex-shrink: 0;
+}
+#gcodePanel .gcode-header .gcode-title {
+  font-size: 12px; color: #ff6b35; font-weight: 600;
+}
+#gcodePanel .gcode-header .gcode-line-info {
+  font-size: 10px; color: #888; font-family: monospace;
+}
+#gcodePanel .gcode-search {
+  padding: 6px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
+}
+#gcodePanel .gcode-search input {
+  width: 100%; background: #111; border: 1px solid #333;
+  border-radius: 4px; padding: 5px 8px; color: #e0e0e0;
+  font-size: 11px; font-family: monospace; outline: none;
+}
+#gcodePanel .gcode-search input:focus { border-color: #ff6b35; }
+#gcodeBody {
+  flex: 1; overflow-y: auto; font-family: 'Consolas', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px; line-height: 1.65; padding: 0;
+  min-height: 100px;
+}
+#gcodeBody::-webkit-scrollbar { width: 8px; }
+#gcodeBody::-webkit-scrollbar-track { background: rgba(10,10,30,0.5); }
+#gcodeBody::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+#gcodeBody::-webkit-scrollbar-thumb:hover { background: #666; }
+.gcode-line {
+  display: flex; padding: 1px 10px; cursor: pointer;
+  border-left: 3px solid transparent; transition: background 0.1s;
+}
+.gcode-line:hover { background: rgba(255,255,255,0.04); }
+.gcode-line.active {
+  background: rgba(255,107,53,0.15); border-left-color: #ff6b35;
+}
+.gcode-line.highlight {
+  background: rgba(136,204,255,0.08); border-left-color: #88ccff;
+}
+.gcode-linenum {
+  color: #555; width: 48px; text-align: right; margin-right: 12px;
+  flex-shrink: 0; user-select: none;
+}
+.gcode-linenum.has-segment { color: #ff6b35; }
+.gcode-text { color: #bbb; white-space: pre; }
+.gcode-text .gcode-comment { color: #555; }
+.gcode-text .gcode-gm { color: #88ccff; }
+.gcode-text .gcode-axis { color: #c5e478; }
+.gcode-text .gcode-register { color: #d4a0ff; }
+
+/* ---- Settings panel (overlay on right side) ---- */
+#settingsPanel {
+  position: absolute; top: 10px; right: 10px;
+  background: rgba(10,10,30,0.96); color: #e0e0e0;
+  border-radius: 8px; width: 370px;
+  border: 1px solid #ff6b35;
+  display: none; flex-direction: column;
+  max-height: calc(100vh - 20px);
+  z-index: 50;
+}
+#settingsPanel.visible { display: flex; }
+.sp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid #333; flex-shrink: 0;
+}
+.sp-title { font-size: 13px; color: #ff6b35; font-weight: 600; }
+.sp-close {
+  background: none; border: none; color: #888; font-size: 20px;
+  cursor: pointer; line-height: 1; padding: 0 4px;
+}
+.sp-close:hover { color: #ff6b35; }
+.sp-body {
+  flex: 1; overflow-y: auto; padding: 10px 14px;
+}
+.sp-body::-webkit-scrollbar { width: 6px; }
+.sp-body::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+.sp-card {
+  background: rgba(20,20,40,0.8);
+  border: 1px solid #333; border-radius: 6px;
+  padding: 10px 12px; margin-bottom: 8px;
+}
+.sp-card.loaded { border-color: #2a5; }
+.sp-card .sp-card-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.sp-card .sp-card-name { font-size: 12px; font-weight: 600; color: #ff6b35; }
+.sp-card .sp-card-ext {
+  font-size: 10px; color: #666; background: #1a1a2e; padding: 1px 6px;
+  border-radius: 8px; font-family: monospace;
+}
+.sp-card .sp-card-desc { font-size: 10px; color: #777; margin-bottom: 6px; line-height: 1.4; }
+.sp-card .sp-card-status {
+  font-size: 10px; margin-bottom: 6px; padding: 2px 6px;
+  border-radius: 3px; display: inline-block;
+}
+.sp-card .sp-card-status.ok { background: rgba(40,160,80,0.15); color: #4c8; }
+.sp-card .sp-card-status.none { background: rgba(100,100,100,0.15); color: #888; }
+.sp-card .sp-card-actions { display: flex; gap: 6px; align-items: center; }
+.sp-card .sp-btn {
+  background: #333; color: #ff6b35; border: 1px solid #555;
+  border-radius: 3px; padding: 4px 10px; cursor: pointer;
+  font-size: 10px; font-weight: 600;
+}
+.sp-card .sp-btn:hover { background: #555; }
+.sp-card .sp-btn.primary { background: #ff6b35; color: #000; border-color: #ff6b35; }
+.sp-card .sp-btn.primary:hover { background: #ff8855; }
+.sp-card .sp-btn.danger { color: #e55; border-color: #833; }
+.sp-card .sp-btn.danger:hover { background: #522; }
+.sp-card .sp-card-meta { font-size: 9px; color: #555; margin-top: 4px; }
+
+/* Machine selector section */
+.sp-machine-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 14px; border-bottom: 1px solid #333; flex-shrink: 0;
+}
+.sp-machine-bar select {
+  flex: 1; background: #222; color: #e0e0e0; border: 1px solid #555;
+  border-radius: 4px; padding: 5px 8px; font-size: 11px;
+  font-family: 'Segoe UI', sans-serif; cursor: pointer; outline: none;
+}
+.sp-machine-bar select:focus { border-color: #ff6b35; }
+.sp-machine-bar .sp-mbtn {
+  background: #333; color: #ff6b35; border: 1px solid #555;
+  border-radius: 4px; padding: 4px 8px; cursor: pointer;
+  font-size: 10px; font-weight: 600; white-space: nowrap;
+}
+.sp-machine-bar .sp-mbtn:hover { background: #555; }
+.sp-machine-bar .sp-mbtn.danger { color: #e55; border-color: #833; }
+.sp-machine-bar .sp-mbtn.danger:hover { background: #522; }
+.sp-active-label {
+  font-size: 9px; color: #4c8; padding: 0 14px 6px;
+}
+
+.sp-toast {
+  position: fixed; bottom: 20px; right: 20px;
+  background: #2a5; color: #fff; padding: 8px 16px;
+  border-radius: 6px; font-size: 12px;
+  opacity: 0; transition: opacity 0.3s;
+  pointer-events: none; z-index: 200;
+}
+.sp-toast.show { opacity: 1; }
+.sp-toast.error { background: #a33; }
+
+/* ---- Bottom timeline bar — full width ---- */
+#timelineBar {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: rgba(10,10,30,0.95);
+  border-top: 1px solid #333;
+  padding: 8px 20px 10px;
+  z-index: 10;
+  display: none;
+}
+#timelineBar.visible { display: block; }
+
+#timelineBar .tl-top {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+}
+#timelineBar .tl-transport {
+  display: flex; gap: 3px;
+}
+#timelineBar .tl-transport button {
+  background: none; border: none; color: #ff6b35;
+  font-size: 15px; cursor: pointer; padding: 2px 6px;
+  font-weight: bold; line-height: 1;
+}
+#timelineBar .tl-transport button:hover { color: #fff; }
+#timelineBar .tl-transport button.active { color: #fff; }
+
+#timelineBar .tl-time {
+  font-size: 11px; color: #ff6b35; font-family: monospace; min-width: 130px;
+}
+#timelineBar .tl-info {
+  font-size: 10px; color: #888; font-family: monospace; flex: 1; text-align: center;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+#timelineBar .tl-speed {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+#timelineBar .tl-speed label {
+  font-size: 10px; color: #666;
+}
+#timelineBar .tl-speed input[type=range] {
+  width: 90px; accent-color: #ff6b35; height: 3px;
+}
+#timelineBar .tl-speed .tl-speed-val {
+  font-size: 10px; color: #ff6b35; font-family: monospace; min-width: 32px; text-align: right;
+}
+#timelineBar .tl-coords {
+  font-size: 10px; color: #666; font-family: monospace; flex-shrink: 0;
+}
+
+/* Custom video-style range slider for the timeline */
+#simProgress {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 6px; background: #222;
+  border-radius: 3px; outline: none; cursor: pointer;
+  margin: 0;
+}
+#simProgress::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #ff6b35; cursor: pointer;
+  border: 2px solid #fff; box-shadow: 0 0 6px rgba(0,0,0,0.6);
+  margin-top: -5px;
+}
+#simProgress::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #ff6b35; cursor: pointer;
+  border: 2px solid #fff; box-shadow: 0 0 6px rgba(0,0,0,0.6);
+}
+#simProgress::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px;
+}
+#simProgress::-moz-range-track {
+  height: 6px; border-radius: 3px; background: #222;
+}
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>elumatec SBZ 151</h1>
+  <h2>Reckerth Spindle &mdash; 3D Machine Simulator</h2>
+
+  <div class="group">
+    <div class="group-title">SPINDEL AXLAR</div>
+    <div class="control">
+      <label>A-axel (tilt)</label>
+      <input type="range" id="axisA" min="-100" max="100" value="0" step="0.5">
+      <span class="val" id="axisA_val">0.0&deg;</span>
+    </div>
+    <div class="control">
+      <label>C-axel (rot)</label>
+      <input type="range" id="axisC" min="-182" max="182" value="0" step="0.5">
+      <span class="val" id="axisC_val">0.0&deg;</span>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">SPINDEL POSITION</div>
+    <div class="control">
+      <label>X-position</label>
+      <input type="range" id="posX" min="-541" max="9090" value="2000" step="1">
+      <span class="val" id="posX_val">2000 mm</span>
+    </div>
+    <div class="control">
+      <label>Y-position</label>
+      <input type="range" id="posY" min="-791" max="383" value="0" step="1">
+      <span class="val" id="posY_val">0 mm</span>
+    </div>
+    <div class="control">
+      <label>Z-position</label>
+      <input type="range" id="posZ" min="-222" max="494" value="300" step="1">
+      <span class="val" id="posZ_val">300 mm</span>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">KL&Auml;MMOR</div>
+    <div class="control">
+      <label>Kl&auml;mtyp</label>
+      <select id="clampType">
+        <option value="C_151_Mes_U">C_151_Mes_U (Oben)</option>
+        <option value="C_151_Mes_D">C_151_Mes_D (Unten)</option>
+      </select>
+    </div>
+  </div>
+  <div class="group">
+    <div class="group-title">KL&Auml;MMOR (X-position)</div>
+    <div class="control">
+      <label>Kl&auml;mma 1</label>
+      <input type="range" id="clamp1" min="-1073" max="7606" value="400" step="1">
+      <span class="val" id="clamp1_val">400 mm</span>
+    </div>
+    <div class="control">
+      <label>Kl&auml;mma 2</label>
+      <input type="range" id="clamp2" min="-905" max="7776" value="1300" step="1">
+      <span class="val" id="clamp2_val">1300 mm</span>
+    </div>
+    <div class="control">
+      <label>Kl&auml;mma 3</label>
+      <input type="range" id="clamp3" min="-736" max="7945" value="2200" step="1">
+      <span class="val" id="clamp3_val">2200 mm</span>
+    </div>
+    <div class="control">
+      <label>Kl&auml;mma 4</label>
+      <input type="range" id="clamp4" min="-567" max="8117" value="3100" step="1">
+      <span class="val" id="clamp4_val">3100 mm</span>
+    </div>
+    <div class="control">
+      <label>Kl&auml;mma 5</label>
+      <input type="range" id="clamp5" min="-397" max="8286" value="4000" step="1">
+      <span class="val" id="clamp5_val">4000 mm</span>
+    </div>
+    <div class="control">
+      <label>Kl&auml;mma 6</label>
+      <input type="range" id="clamp6" min="-226" max="8458" value="4900" step="1">
+      <span class="val" id="clamp6_val">4900 mm</span>
+    </div>
+    <div class="control">
+      <label>Kl&auml;mma 7</label>
+      <input type="range" id="clamp7" min="-226" max="8458" value="5800" step="1">
+      <span class="val" id="clamp7_val">5800 mm</span>
+    </div>
+    <div class="control">
+      <label>Kl&auml;mma 8</label>
+      <input type="range" id="clamp8" min="-226" max="8458" value="6700" step="1">
+      <span class="val" id="clamp8_val">6700 mm</span>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">KL&Auml;MBAKKE</div>
+    <div class="control">
+      <label>K&auml;ft &ouml;ppning</label>
+      <input type="range" id="jawOpen" min="0" max="400" value="250" step="1">
+      <span class="val" id="jawOpen_val">250 mm</span>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">ANSLAG</div>
+    <div class="toggle">
+      <input type="checkbox" id="stopUp" checked>
+      <label for="stopUp">Anslag uppf&auml;llt</label>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">PROFIL</div>
+
+    <!-- STEP profile transform controls (hidden until a STEP file is loaded) -->
+    <div id="stepTransformControls" style="display:none; border-top:1px solid #333; margin-top:8px; padding-top:8px;">
+      <div style="font-size:10px; color:#2a6b9c; font-weight:600; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">STEP Transform</div>
+
+      <!-- Rotation (90° steps) -->
+      <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+        <label style="width:20px; font-size:10px; color:#aaa;">Rot</label>
+        <span style="font-size:9px; color:#888; width:10px;">X</span>
+        <button id="stepRotXm" class="step-btn">&minus;90</button>
+        <span id="stepRotX_val" class="step-val">0&deg;</span>
+        <button id="stepRotXp" class="step-btn">+90</button>
+
+        <span style="font-size:9px; color:#888; width:10px; margin-left:4px;">Y</span>
+        <button id="stepRotYm" class="step-btn">&minus;90</button>
+        <span id="stepRotY_val" class="step-val">0&deg;</span>
+        <button id="stepRotYp" class="step-btn">+90</button>
+
+        <span style="font-size:9px; color:#888; width:10px; margin-left:4px;">Z</span>
+        <button id="stepRotZm" class="step-btn">&minus;90</button>
+        <span id="stepRotZ_val" class="step-val">0&deg;</span>
+        <button id="stepRotZp" class="step-btn">+90</button>
+      </div>
+
+      <!-- Mirror -->
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+        <label style="width:20px; font-size:10px; color:#aaa;">Flip</label>
+        <div class="toggle" style="margin:0;"><input type="checkbox" id="stepMirX"><label for="stepMirX" style="font-size:10px;">X</label></div>
+        <div class="toggle" style="margin:0;"><input type="checkbox" id="stepMirY"><label for="stepMirY" style="font-size:10px;">Y</label></div>
+        <div class="toggle" style="margin:0;"><input type="checkbox" id="stepMirZ"><label for="stepMirZ" style="font-size:10px;">Z</label></div>
+      </div>
+
+      <!-- Position offset X -->
+      <div class="control">
+        <label>Pos X</label>
+        <input type="range" id="stepOffX" min="-3000" max="3000" value="0" step="10">
+        <span class="val" id="stepOffX_val">0 mm</span>
+      </div>
+      <!-- Position offset Y -->
+      <div class="control">
+        <label>Pos Y</label>
+        <input type="range" id="stepOffY" min="-500" max="500" value="0" step="5">
+        <span class="val" id="stepOffY_val">0 mm</span>
+      </div>
+      <!-- Position offset Z -->
+      <div class="control">
+        <label>Pos Z</label>
+        <input type="range" id="stepOffZ" min="-500" max="500" value="0" step="5">
+        <span class="val" id="stepOffZ_val">0 mm</span>
+      </div>
+
+      <button id="stepResetTransform" style="width:100%; margin-top:4px; padding:4px 0; font-size:10px; background:#333; color:#ccc; border:1px solid #555; border-radius:3px; cursor:pointer;">&Aring;terst&auml;ll transform</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">VISNING &mdash; MASKIN</div>
+    <div class="toggle"><input type="checkbox" id="showBed" checked><label for="showBed">Maskinb&auml;dd</label></div>
+    <div class="toggle"><input type="checkbox" id="showPortal" checked><label for="showPortal">Portalbjälke</label></div>
+    <div class="toggle"><input type="checkbox" id="showSpindle" checked><label for="showSpindle">Spindel</label></div>
+    <div class="toggle"><input type="checkbox" id="showGearbox" checked><label for="showGearbox">V&auml;xellåda</label></div>
+    <div class="toggle"><input type="checkbox" id="showTool" checked><label for="showTool">Verktyg</label></div>
+    <div class="toggle"><input type="checkbox" id="showAngleHead"><label for="showAngleHead">Vinkelhuvud (WFK)</label></div>
+    <div class="toggle"><input type="checkbox" id="showCollision"><label for="showCollision">Kollisionsboxar (portal)</label></div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">VISNING &mdash; KL&Auml;MMOR</div>
+    <div class="toggle"><input type="checkbox" id="showClamps" checked><label for="showClamps">Alla kl&auml;mmor</label></div>
+    <div class="toggle"><input type="checkbox" id="showClampStatic" checked><label for="showClampStatic">Kl&auml;mma statisk del</label></div>
+    <div class="toggle"><input type="checkbox" id="showClampMovable" checked><label for="showClampMovable">Kl&auml;mma r&ouml;rlig del (backe)</label></div>
+    <div class="toggle"><input type="checkbox" id="showClampFixStatic" checked><label for="showClampFixStatic">Plastplatta fast (gr&ouml;n)</label></div>
+    <div class="toggle"><input type="checkbox" id="showClampFixMovable" checked><label for="showClampFixMovable">Plastplatta r&ouml;rlig (gr&ouml;n)</label></div>
+    <div class="toggle"><input type="checkbox" id="showClampBase" checked><label for="showClampBase">Quertr&auml;ger (botten)</label></div>
+    <div style="margin-top:6px; padding-top:4px; border-top:1px solid #222;">
+      <div style="font-size:10px; color:#666; margin-bottom:3px;">STATISK DETALJ (debug)</div>
+      <div class="toggle"><input type="checkbox" id="showS2" checked><label for="showS2">S2 R&uuml;cken (70&times;30&times;136)</label></div>
+      <div class="toggle"><input type="checkbox" id="showS4" checked><label for="showS4">S4 Inner (165&times;205&times;140)</label></div>
+      <div class="toggle"><input type="checkbox" id="showS5" checked><label for="showS5">S5 Bracket (120&times;60&times;130)</label></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">VISNING &mdash; &Ouml;VRIGT</div>
+    <div class="toggle"><input type="checkbox" id="showFixtures" checked><label for="showFixtures">Fixturer</label></div>
+    <div class="toggle"><input type="checkbox" id="showStop" checked><label for="showStop">Anslag</label></div>
+    <div class="toggle"><input type="checkbox" id="showAxes" checked><label for="showAxes">Axelkors</label></div>
+    <div class="toggle"><input type="checkbox" id="showWireframe"><label for="showWireframe">Wireframe</label></div>
+    <div class="toggle"><input type="checkbox" id="showSpindleCam" checked><label for="showSpindleCam">Spindelkamera (PIP)</label></div>
+  </div>
+</div>
+
+<!-- Sim panel: top right -->
+<div id="simPanel">
+  <div class="group-title">CNC SIMULERING</div>
+
+  <div class="sim-row">
+    <label class="sim-upload-btn" for="aufFile">Ladda .auf fil</label>
+    <input type="file" id="aufFile" accept=".auf" style="display:none">
+    <span id="aufFileName" class="sim-filename">Ingen fil</span>
+  </div>
+
+  <div class="sim-row">
+    <label class="sim-upload-btn" for="stepFile" style="background:#2a6b9c;">Ladda STEP profil</label>
+    <input type="file" id="stepFile" accept=".step,.stp,.STEP,.STP" style="display:none">
+    <span id="stepFileName" class="sim-filename">Ingen profil</span>
+  </div>
+
+  <div id="jobSelectorRow" style="display:none; align-items:center; margin:6px 0; gap:6px;">
+    <label style="font-size:11px; color:#aaa; flex-shrink:0;">Position:</label>
+    <select id="jobSelector" style="flex:1; background:#222; color:#e0e0e0; border:1px solid #555; border-radius:4px; padding:4px 6px; font-size:11px; font-family:'Segoe UI',sans-serif; cursor:pointer; outline:none;"></select>
+    <span id="jobCount" style="font-size:10px; color:#666; flex-shrink:0;"></span>
+  </div>
+
+  <div style="display:flex; gap:6px; margin-top:8px; border-top:1px solid #333; padding-top:8px;">
+    <button id="jogZero" class="sim-action-btn">Jog till 0</button>
+    <button id="setZero" class="sim-action-btn">S&auml;tt 0-punkt</button>
+    <button id="clearZero" class="sim-action-btn dim">Rensa 0-punkt</button>
+  </div>
+
+  <div style="display:flex; gap:6px; margin-top:8px; border-top:1px solid #333; padding-top:8px;">
+    <div class="toggle" style="flex:1"><input type="checkbox" id="simShowSpindleCam" checked><label for="simShowSpindleCam">Spindelkamera</label></div>
+    <div class="toggle" style="flex:1"><input type="checkbox" id="simShowSideView" checked><label for="simShowSideView">&Auml;ndvy profil</label></div>
+  </div>
+  <div style="margin-top:6px; font-size:10px; color:#999;">
+    <div style="display:flex; align-items:center; gap:4px;">
+      <label style="min-width:90px;">Fixturtyp</label>
+      <select id="simClampType" style="flex:1; background:#222; color:#e0e0e0; border:1px solid #555; border-radius:4px; padding:2px 4px; font-size:10px; font-family:'Segoe UI',sans-serif; cursor:pointer; outline:none;">
+        <option value="C_151_Mes_U">C_151_Mes_U (Oben)</option>
+        <option value="C_151_Mes_D">C_151_Mes_D (Unten)</option>
+      </select>
+    </div>
+    <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
+      <label style="min-width:90px;">Fixtur opacity</label>
+      <input type="range" id="evFixtureOpacity" min="0" max="100" value="25" step="5" style="flex:1; height:14px;">
+      <span id="evFixtureOpacity_val" style="min-width:30px; text-align:right;">25%</span>
+    </div>
+  </div>
+
+  <div id="simInfo">
+    <div id="simStatus">Ingen fil laddad</div>
+    <div id="simCurrentOp"></div>
+    <div id="simCoords"></div>
+    <div id="simZeroOffset" style="color:#666;"></div>
+    <div id="toolWarnings" style="font-size:10px; margin-top:4px; line-height:1.5;"></div>
+    <div id="dbStatus" style="color:#555; font-size:9px; margin-top:4px;"></div>
+    <div style="margin-top:6px;">
+      <button id="toggleSettingsBtn" style="background:none; border:1px solid #444; color:#ff6b35; font-size:10px; padding:3px 10px; border-radius:4px; cursor:pointer;">&#9881; Maskinprofiler &amp; Databasfiler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings panel: slides in from right, overlays simPanel area -->
+<div id="settingsPanel">
+  <div class="sp-header">
+    <span class="sp-title">&#9881; Maskinprofiler</span>
+    <button id="closeSettingsBtn" class="sp-close">&times;</button>
+  </div>
+  <div class="sp-machine-bar">
+    <select id="spMachineSelect"></select>
+    <button id="spMachineNew" class="sp-mbtn">+ Ny</button>
+    <button id="spMachineDelete" class="sp-mbtn danger">Ta bort</button>
+  </div>
+  <div id="spActiveLabel" class="sp-active-label"></div>
+  <div class="sp-body" id="settingsBody"></div>
+</div>
+
+<!-- G-code panel: below sim panel on the right -->
+<div id="gcodePanel">
+  <div class="gcode-header">
+    <span class="gcode-title" id="gcodePanelTitle">G-KOD</span>
+    <span class="gcode-line-info" id="gcodeLineInfo">---</span>
+  </div>
+  <div class="gcode-search">
+    <input type="text" id="gcodeSearch" placeholder="S&ouml;k i G-kod (t.ex. G151, M6, E60001...)">
+  </div>
+  <div id="gcodeBody"></div>
+</div>
+
+<!-- Bottom timeline bar — full width video scrubber -->
+<div id="timelineBar">
+  <input type="range" id="simProgress" min="0" max="10000" value="0" step="1">
+  <div class="tl-top">
+    <div class="tl-transport">
+      <button id="simReset" title="Reset">&laquo;</button>
+      <button id="simStepBack" title="Steg bak&aring;t">&lsaquo;</button>
+      <button id="simPlay" title="Play / Pause">&#9654;</button>
+      <button id="simStepFwd" title="Steg fram&aring;t">&rsaquo;</button>
+      <button id="simEnd" title="G&aring; till slut">&raquo;</button>
+    </div>
+    <div class="tl-time" id="simTimeLabel">0:00.0 / 0:00.0</div>
+    <div class="tl-info">
+      <span id="simSegLabel">Steg 0 / 0</span>
+      &nbsp;&bull;&nbsp;
+      <span id="simProgressVal">N---</span>
+    </div>
+    <div class="tl-coords" id="simCoordsTl"></div>
+    <div class="tl-speed">
+      <label>Hastighet</label>
+      <input type="range" id="simSpeed" min="0" max="10" value="2" step="0.01">
+      <span class="tl-speed-val" id="simSpeed_val">2.0x</span>
+    </div>
+  </div>
+</div>
+
+<div id="info">
+  Scroll: Zoom &bull; V&auml;nster mus: Rotera vy &bull; H&ouml;ger mus: Panorera &bull; Data: SBZ151.ncm + Collision_Box151.ncs
+</div>
+
+<div id="spToast" class="sp-toast"></div>
+
+<script>
+// ---- Settings panel logic (non-module, runs immediately) ----
+(function() {
+  // File type definitions
+  const FILE_TYPES = [
+    { id:'nct',  title:'Verktygsdatabas',        ext:'.nct',
+      desc:'NCT-fil med verktygsmagasin och vinkelhuvud. Fr\u00e5n user/database/.' },
+    { id:'ncm',  title:'Maskinkonfiguration',     ext:'.ncm',
+      desc:'NCM-fil med maskingeometri: SpindleDisplacement, BoxSpindle, BoxGear, CLAMPGEO.' },
+    { id:'ncc',  title:'Kollisionsgeometri',      ext:'.ncc',
+      desc:'NCC-fil med kollisionsboxar f\u00f6r portal. Fr\u00e5n postprocessor/.' },
+    { id:'anglehead', title:'Vinkelhuvud (AngleHead)', ext:'.ini',
+      desc:'INI-fil med vinkelhuvudets geometri. Reserv \u2014 NCT :ANGLEHEAD anv\u00e4nds om det finns.' },
+    { id:'efd',  title:'Fixturgeometri',          ext:'.efd',
+      desc:'EFD-fil med fixturpolygoner f\u00f6r kl\u00e4mmor. Fr\u00e5n user/database/.' },
+    { id:'epo',  title:'Profiloffsets',            ext:'.epo',
+      desc:'EPO-fil med profiloffsets (PY, PZ). Fr\u00e5n user/database/.' },
+    { id:'epd',  title:'Profiltv\u00e4rsnitt',     ext:'.epd',
+      desc:'EPD-fil med profiltv\u00e4rsnittets polygoner. Fr\u00e5n user/database/.' }
+  ];
+
+  let _machinesConfig = { active: null, machines: {} };
+  let _allFiles = []; // list from /api/data-list
+  let _selectedMachine = null; // which machine is shown in UI (may differ from active)
+
+  function spToast(msg, isError) {
+    var el = document.getElementById('spToast');
+    el.textContent = msg;
+    el.className = 'sp-toast show' + (isError ? ' error' : '');
+    clearTimeout(el._t);
+    el._t = setTimeout(function() { el.className = 'sp-toast'; }, 3000);
+  }
+
+  // Fetch machines config + file list, then render
+  async function refreshSettings() {
+    try {
+      var res = await fetch('/api/machines');
+      _machinesConfig = await res.json();
+    } catch(e) {
+      _machinesConfig = { active: null, machines: {} };
+    }
+    try {
+      var res2 = await fetch('/api/data-list');
+      _allFiles = await res2.json();
+    } catch(e) {
+      _allFiles = [];
+    }
+
+    // If no selected machine, use active
+    if (!_selectedMachine || !_machinesConfig.machines[_selectedMachine]) {
+      _selectedMachine = _machinesConfig.active;
+    }
+
+    renderMachineSelector();
+    renderFileCards();
+  }
+
+  function renderMachineSelector() {
+    var sel = document.getElementById('spMachineSelect');
+    if (!sel) return;
+    sel.innerHTML = '';
+    var names = Object.keys(_machinesConfig.machines);
+    if (names.length === 0) {
+      var opt = document.createElement('option');
+      opt.textContent = '(inga maskiner)';
+      opt.disabled = true;
+      sel.appendChild(opt);
+    } else {
+      for (var i = 0; i < names.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = names[i];
+        opt.textContent = names[i] + (names[i] === _machinesConfig.active ? ' \u2713' : '');
+        if (names[i] === _selectedMachine) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+
+    var label = document.getElementById('spActiveLabel');
+    if (label) {
+      if (_selectedMachine && _selectedMachine === _machinesConfig.active) {
+        label.textContent = '\u2713 Aktiv maskin';
+        label.style.color = '#4c8';
+      } else if (_selectedMachine) {
+        label.innerHTML = '<button id="spActivateBtn" style="background:none;border:1px solid #555;color:#ff6b35;font-size:10px;padding:2px 8px;border-radius:3px;cursor:pointer;">Aktivera denna maskin</button>';
+        var activateBtn = document.getElementById('spActivateBtn');
+        if (activateBtn) {
+          activateBtn.addEventListener('click', async function() {
+            try {
+              await fetch('/api/machines/active', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: _selectedMachine })
+              });
+              spToast('Aktiv maskin: ' + _selectedMachine);
+              await refreshSettings();
+              if (window._reloadDatabases) window._reloadDatabases();
+            } catch(err) {
+              spToast('Kunde ej aktivera', true);
+            }
+          });
+        }
+      } else {
+        label.textContent = '';
+      }
+    }
+  }
+
+  function renderFileCards() {
+    var body = document.getElementById('settingsBody');
+    if (!body) return;
+    body.innerHTML = '';
+
+    if (!_selectedMachine || !_machinesConfig.machines[_selectedMachine]) {
+      body.innerHTML = '<div style="color:#666;font-size:11px;padding:20px 0;text-align:center;">Skapa en maskin f\u00f6r att b\u00f6rja</div>';
+      return;
+    }
+
+    var profile = _machinesConfig.machines[_selectedMachine];
+    var fileMap = {};
+    for (var i = 0; i < _allFiles.length; i++) {
+      fileMap[_allFiles[i].name.toLowerCase()] = _allFiles[i];
+    }
+
+    for (var j = 0; j < FILE_TYPES.length; j++) {
+      var def = FILE_TYPES[j];
+      var mappedFilename = profile[def.id] || null;
+      var info = mappedFilename ? fileMap[mappedFilename.toLowerCase()] : null;
+      var loaded = !!info;
+      var sizeStr = info ? (info.size > 1024 ? (info.size/1024).toFixed(1)+' KB' : info.size+' B') : '';
+      var dateStr = info ? new Date(info.modified).toLocaleString('sv-SE') : '';
+
+      var card = document.createElement('div');
+      card.className = 'sp-card' + (loaded ? ' loaded' : '');
+      card.innerHTML =
+        '<div class="sp-card-top">' +
+          '<span class="sp-card-name">' + def.title + '</span>' +
+          '<span class="sp-card-ext">' + def.ext + '</span>' +
+        '</div>' +
+        '<div class="sp-card-desc">' + def.desc + '</div>' +
+        '<div>' +
+          '<span class="sp-card-status ' + (loaded ? 'ok' : 'none') + '">' +
+            (loaded ? '\u2713 ' + mappedFilename + ' (' + sizeStr + ')' : 'Ej kopplad') +
+          '</span>' +
+        '</div>' +
+        (loaded ? '<div class="sp-card-meta">' + dateStr + '</div>' : '') +
+        '<div class="sp-card-actions">' +
+          '<label class="sp-btn primary" for="sp_file_' + def.id + '">' +
+            (loaded ? 'Byt fil' : 'V\u00e4lj fil') +
+          '</label>' +
+          '<input type="file" id="sp_file_' + def.id + '" accept="' + def.ext + ',*/*" style="display:none" data-type="' + def.id + '">' +
+          (loaded ? '<button class="sp-btn danger" data-sp-unlink="' + def.id + '">Koppla bort</button>' : '') +
+        '</div>';
+      body.appendChild(card);
+    }
+
+    // Bind file inputs — upload file + link to machine profile
+    for (var k = 0; k < FILE_TYPES.length; k++) {
+      (function(def) {
+        var input = document.getElementById('sp_file_' + def.id);
+        if (!input) return;
+        input.addEventListener('change', async function(e) {
+          var file = e.target.files[0];
+          if (!file) return;
+          var filename = file.name;
+          try {
+            // 1. Upload file to server (original filename)
+            var text = await file.text();
+            var res = await fetch('/api/data/' + filename, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'text/plain' },
+              body: text
+            });
+            var data = await res.json();
+            if (!data.ok) {
+              spToast('Fel: ' + (data.error || 'Ok\u00e4nt'), true);
+              return;
+            }
+            // 2. Link file to machine profile
+            await fetch('/api/machines/' + encodeURIComponent(_selectedMachine) + '/file', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: def.id, filename: filename })
+            });
+            spToast(def.title + ': ' + filename);
+            await refreshSettings();
+            // Reload databases if this is the active machine
+            if (_selectedMachine === _machinesConfig.active && window._reloadDatabases) {
+              window._reloadDatabases();
+            }
+          } catch(err) {
+            spToast('Uppladdning misslyckades: ' + err.message, true);
+          }
+        });
+      })(FILE_TYPES[k]);
+    }
+
+    // Bind unlink buttons — remove file mapping from profile (file stays on disk)
+    document.querySelectorAll('[data-sp-unlink]').forEach(function(btn) {
+      btn.addEventListener('click', async function() {
+        var typeId = btn.getAttribute('data-sp-unlink');
+        var typeDef = FILE_TYPES.find(function(d) { return d.id === typeId; });
+        var label = typeDef ? typeDef.title : typeId;
+        if (!confirm('Koppla bort ' + label + ' fr\u00e5n ' + _selectedMachine + '?')) return;
+        try {
+          await fetch('/api/machines/' + encodeURIComponent(_selectedMachine) + '/file', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: typeId, filename: null })
+          });
+          spToast(label + ' bortkopplad');
+          await refreshSettings();
+          if (_selectedMachine === _machinesConfig.active && window._reloadDatabases) {
+            window._reloadDatabases();
+          }
+        } catch(err) {
+          spToast('Misslyckades', true);
+        }
+      });
+    });
+  }
+
+  // Toggle button + machine selector events
+  document.addEventListener('DOMContentLoaded', function() {
+    var toggleBtn = document.getElementById('toggleSettingsBtn');
+    var panel = document.getElementById('settingsPanel');
+    var closeBtn = document.getElementById('closeSettingsBtn');
+    var machineSelect = document.getElementById('spMachineSelect');
+    var newBtn = document.getElementById('spMachineNew');
+    var deleteBtn = document.getElementById('spMachineDelete');
+
+    if (toggleBtn) toggleBtn.addEventListener('click', function() {
+      panel.classList.toggle('visible');
+      if (panel.classList.contains('visible')) refreshSettings();
+    });
+    if (closeBtn) closeBtn.addEventListener('click', function() {
+      panel.classList.remove('visible');
+    });
+
+    // Machine selector change
+    if (machineSelect) machineSelect.addEventListener('change', function() {
+      _selectedMachine = machineSelect.value;
+      renderMachineSelector();
+      renderFileCards();
+    });
+
+    // New machine button
+    if (newBtn) newBtn.addEventListener('click', async function() {
+      var name = prompt('Namn p\u00e5 ny maskin:');
+      if (!name || !name.trim()) return;
+      name = name.trim();
+      try {
+        var res = await fetch('/api/machines/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name })
+        });
+        var data = await res.json();
+        if (data.ok) {
+          _selectedMachine = name;
+          spToast('Maskin skapad: ' + name);
+          await refreshSettings();
+        } else {
+          spToast('Fel: ' + (data.error || 'Ok\u00e4nt'), true);
+        }
+      } catch(err) {
+        spToast('Kunde ej skapa maskin', true);
+      }
+    });
+
+    // Delete machine button
+    if (deleteBtn) deleteBtn.addEventListener('click', async function() {
+      if (!_selectedMachine) return;
+      if (!confirm('Ta bort maskinprofil "' + _selectedMachine + '"?\n\nFilerna p\u00e5 servern tas INTE bort.')) return;
+      try {
+        var res = await fetch('/api/machines/' + encodeURIComponent(_selectedMachine), {
+          method: 'DELETE'
+        });
+        var data = await res.json();
+        spToast('Maskin borttagen: ' + _selectedMachine);
+        _selectedMachine = data.active || null;
+        await refreshSettings();
+        if (window._reloadDatabases) window._reloadDatabases();
+      } catch(err) {
+        spToast('Kunde ej ta bort', true);
+      }
+    });
+  });
+})();
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+  }
+}
+</script>
+<script>
+  // Embed mode detection: ?embed=true or inside iframe
+  if (new URLSearchParams(location.search).get('embed') === 'true' || window !== window.parent) {
+    document.body.classList.add('embed-mode');
+  }
+</script>
+<!-- STEP loading overlay -->
+<div id="stepLoadingOverlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:rgba(10,10,30,0.95); padding:20px 30px; border-radius:8px;
+    border:1px solid #2a6b9c; color:#e0e0e0; font-size:14px; font-family:'Segoe UI',sans-serif;">
+    <span id="stepLoadingText">Laddar STEP...</span>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

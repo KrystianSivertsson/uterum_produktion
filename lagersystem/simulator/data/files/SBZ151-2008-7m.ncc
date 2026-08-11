@@ -1,0 +1,144 @@
+:CONFIG
+LNG_ENCODING = 1
+DXFPathNCS = ""
+SPSVers = 1962
+AutomatikOnline = 0
+ASCIICheck = 0
+NoM374AfterG111 = 0
+Bohren = 0
+MeasureZPossible = 1
+AutoOnDialog = 0
+HeightMPlate = 190.0       		// Unterkante Platte bis Unterkante des Y-Schlittens der Messplatte 
+WidthYAxisMPlateL = 39.0   		// max. X-Wert des Schlittens LINKS
+WidthYAxisMPlateR = 0.0    		// max. X-Wert des Schlittens RECHTS (sollte "0"sein)
+AlwaysLoadPos = 1    			// Fahrt auf Beladeposition erzwingen
+Deactivate_SawCutRetraction = 0	// Schnittspaltöffnung erlauben
+Spindle_SpeedMax = 22000        // Maximaldrehzahl der Spindel
+AH_SpeedMax = 6000              // Maximaldrehzahl der Spindel fuer WK
+ClampAsStopName = ""            // Ident der STOPGEOMETRY der Spanner als :STOP
+ClampAsStopMoveBack = 0         // „Haltespanner“ 1 und 2 am Ende des Takten3-Programms wieder auf die NCM-Werte zurückschieben?
+AddSafety = 20
+SAW2Is22   = 1
+EztXPI2EciList = 2
+CustomizedBarCode           = 1
+CBarCodeFrom                = "R"
+BarCodeLengthJob = 8
+BarCodeLengthCut = 5
+UP9051=1
+
+
+
+:INIT
+PPMillingCenter    = 15100 
+
+
+
+
+
+
+
+
+
+
+
+InitVarName00  = "FindOrigin" 
+InitVarValue00 = 1
+
+InitVarName01  = "DXFPath" 
+InitVarValue01 = 67
+
+InitVarName02  = "AHDepth" 
+InitVarValue02 = 0
+
+InitVarName03  = "MeasurePlate" 
+InitVarValue03 = 1
+
+InitVarName04  = "PrintStat" 
+InitVarValue04 = 0
+
+InitVarName05  = "NCXAngles" 
+InitVarValue05 = 1
+
+InitVarName06  = "PrintLabel" 
+InitVarValue06 = 1
+
+InitVarName07  = "EachDxfLg0" 
+InitVarValue07 = 1
+
+InitVarName08  = "CheckColMach" 
+InitVarValue08 = 1
+
+InitVarName09  = "New9006" 
+InitVarValue09 = 1
+
+InitVarName10  = "LoadPosShuttle" 
+InitVarValue10 = 0
+
+InitVarName11  = "LoadAClMove" 
+InitVarValue11 = 0
+
+InitVarName12  = "Dia2Lock" 
+InitVarValue12 = 15
+
+InitVarName13  = "Length2Lock" 
+InitVarValue13 = 200
+
+InitVarName14  = "Vakuum" 
+InitVarValue14 = 0
+
+InitVarName15  = "AllClampsUsedNeccessary" 
+InitVarValue15 = 0
+
+InitVarName16  = "PrintPieces" 
+InitVarValue16 = 0
+
+InitVarName17  = "ClampForClocking" 
+InitVarValue17 = 3
+
+InitVarName18  = "RealStations" 
+InitVarValue18 = 2
+
+InitVarName19  = "NewDrawRot" 
+InitVarValue19 = 1
+
+InitVarName20  = "FLimit4G09" 
+InitVarValue20 = 1000
+
+InitVarName21  = "MaxDiameterForBreakControl" 
+InitVarValue21 = 0
+
+InitVarName22  = "AlwaysLabel" 
+InitVarValue22 = 0
+
+InitVarName23  = "M0AfterSTBSawCuts" 
+InitVarValue23 = 0
+
+InitVarName24  = "M0BeforeSTBSawCuts" 
+InitVarValue24 = 0
+
+InitVarName25  = "RotUnderline" 
+InitVarValue25 = 0
+
+InitVarName26  = "BarcodeOnlyJIdentNo" 
+InitVarValue26 = 0
+
+InitVarName27  = "ToolBack" 
+InitVarValue27 = 0
+
+
+:OPTIONS
+OClampOptSawAxes = 1
+OToolUseMaxCut = 1
+OSTBMoveBack = 1
+OClampOptAxes = 1
+OSawGenExtr = (4.0/OScale)
+OSawDist = (10/OScale)
+OSTBSawSortOpt = 1
+OSTBCleanShiftSits = 0
+OSawDist = (10/OScale)
+OSawRetractOpenDist = (6/OScale)
+OAllowOneClamp = 1
+OAllowVerticalCutting = 2
+OSTBRotationSortOpt = 1
+OSTBSawUseLossShift = -1
+

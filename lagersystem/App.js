@@ -24,6 +24,13 @@ const ASE60_URL = typeof window !== 'undefined'
   ? `${window.location.origin}/ase60/`
   : 'https://three.nordiska.io/ase60/';
 
+// SBZ151 3D-simulatorn (elumatec Alufräs) serveras av lagersystem-servern på
+// /simulator (server.js), inte en egen app. Bäddas in i en egen ruta här under
+// "Alufräs bearbetning", precis som ASE60-generatorn ovan.
+const SIMULERING_URL = typeof window !== 'undefined'
+  ? `${window.location.origin}/simulator/`
+  : 'https://three.nordiska.io/simulator/';
+
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -76,7 +83,7 @@ const KUND_FLIKAR = ['Träfräs', 'Alufräs', 'Beslag', 'Glas'];
 // Basvägen får INTE hårdkodas: i produktion monteras bygget under /UterumLager
 // (nginx strippar prefixet innan Node ser det), lokalt kan samma bygge ligga i
 // roten. Den läses därför av i runtime.
-const RUTT_ROTER = ['kunder', 'ase60', 'lager', 'ritning', 'ordrar', 'lagerforslag', 'sammanstallning', 'andringar', 'stampling'];
+const RUTT_ROTER = ['kunder', 'ase60', 'simulering', 'lager', 'ritning', 'ordrar', 'lagerforslag', 'sammanstallning', 'andringar', 'stampling'];
 
 function harledBas() {
   if (typeof document === 'undefined' || typeof window === 'undefined' || !window.location) return '';
@@ -118,6 +125,7 @@ function vagForVy({ aktivFlik, valdKund, aktivKundFlik, valdProdukt, valdAse60Pr
     return `/kunder/${slugga(valdKund.namn)}/${slugga(aktivKundFlik || KUND_FLIKAR[0])}/`;
   }
   if (aktivFlik === '__ase60__') return valdAse60Projekt ? `/ase60/${slugga(valdAse60Projekt.name)}/` : '/ase60/';
+  if (aktivFlik === '__simulering__') return '/simulering/';
   if (aktivFlik === '__ordrar__') return '/ordrar/';
   if (aktivFlik === '__lagerforslag__') return '/lagerforslag/';
   if (aktivFlik === '__sammanstallning__') return '/sammanstallning/';
@@ -139,6 +147,7 @@ function tolkaVag(pathname) {
   switch (rot) {
     case 'kunder': return { flik: '__kunder__', kundSlug: andra || null, kundFlikSlug: tredje || null };
     case 'ase60': return { flik: '__ase60__', ase60Slug: andra || null };
+    case 'simulering': return { flik: '__simulering__' };
     case 'ordrar': return { flik: '__ordrar__' };
     case 'lagerforslag': return { flik: '__lagerforslag__' };
     case 'sammanstallning': return { flik: '__sammanstallning__' };
@@ -159,7 +168,7 @@ function kanoniskVag(pathname) {
 }
 
 const VY_TITLAR = {
-  __stampling__: 'Stämpling', __kunder__: 'Kunder', __ase60__: 'ASE60-generator',
+  __stampling__: 'Stämpling', __kunder__: 'Kunder', __ase60__: 'ASE60-generator', __simulering__: 'Simulering',
   __sammanstallning__: 'Sammanställning', __lagerforslag__: 'Lagerförslag',
   __ordrar__: 'Ordrar', __andringar__: 'Ändringslogg',
 };
@@ -3477,6 +3486,7 @@ export default function App() {
   const arKunder = aktivFlik === '__kunder__';
   const arStampling = aktivFlik === '__stampling__';
   const arAse60 = aktivFlik === '__ase60__';
+  const arSimulering = aktivFlik === '__simulering__';
   const arSammanstallning = aktivFlik === '__sammanstallning__';
   const arLagerforslag = aktivFlik === '__lagerforslag__';
   const arOrdrar = aktivFlik === '__ordrar__';
@@ -3851,7 +3861,7 @@ export default function App() {
   const oppnaLaggTill = () => {
     setRedigeraProdukt(null);
     setFormNamn(''); setFormArtikel(''); setFormAntal('');
-    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSammanstallning || arLagerforslag ? '' : aktivFlik);
+    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSimulering || arSammanstallning || arLagerforslag ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
     setFormBild(null); setFormFarger([]); setFormLangder([]);
     setModalVisible(true);
@@ -4032,7 +4042,7 @@ export default function App() {
     }
   };
 
-  const filtreradeLista = (arRitning || arAse60 || arSammanstallning || arLagerforslag) ? [] : (() => {
+  const filtreradeLista = (arRitning || arAse60 || arSimulering || arSammanstallning || arLagerforslag) ? [] : (() => {
     const filtered = produkter.filter(p => {
       const matcherFlik = aktivFlik === 'Alla produkter' || p.kategori === aktivFlik;
       const matcherSok =
@@ -4167,12 +4177,19 @@ export default function App() {
           </TouchableOpacity>
 
           <View style={styles.sidebarDivider} />
-          <Text style={styles.sidebarTitel}>ASE 60</Text>
+          <Text style={styles.sidebarTitel}>Alufräs bearbetning</Text>
           <TouchableOpacity
             style={[styles.sidebarFlik, arAse60 && styles.sidebarFlikAktiv]}
             onPress={() => { setAktivFlik('__ase60__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
             <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arAse60 && styles.sidebarFlikTextAktiv]}>
-              🪟 ASE60-generator
+              🪟 Generator
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arSimulering && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__simulering__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arSimulering && styles.sidebarFlikTextAktiv]}>
+              🎬 Simulering
             </Text>
           </TouchableOpacity>
 
@@ -4744,6 +4761,13 @@ export default function App() {
             title: 'ASE60-generator',
           })}
 
+          {!valdProdukt && arSimulering && Platform.OS === 'web' && React.createElement('iframe', {
+            key: 'simulering',
+            src: SIMULERING_URL,
+            style: { width: '100%', height: '100%', border: 'none', borderRadius: 8 },
+            title: 'Alufräs simulering',
+          })}
+
           {!valdProdukt && arSammanstallning && (
             <SammanstallningVy kunder={kunder} ase60Projekt={ase60Projekt} c={c} />
           )}
@@ -4756,7 +4780,7 @@ export default function App() {
             <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} onImporteraOrdrar={importeraOrdrar} onTaBortOrder={taBortOrder} onRensaLogg={rensaLoggOrdrar} inloggad={inloggad} token={token} c={c} />
           )}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && !arLagerforslag && !arOrdrar && <>
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSimulering && !arSammanstallning && !arLagerforslag && !arOrdrar && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>
