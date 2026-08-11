@@ -31,6 +31,7 @@ function urlBase64ToUint8Array(base64String) {
   return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
 }
 const STORAGE_KEY = 'lagersystem_produkter';
+const ORDRAR_KEY = 'lagersystem_ordrar';
 const TOKEN_KEY = 'lagersystem_token';
 const TEMA_KEY = 'lagersystem_tema';
 const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Trä balkar', 'Osorterat'];
@@ -1740,6 +1741,122 @@ function LagerforslagVy({ kunder, produkter, c }) {
   );
 }
 
+// Ordrar — våra inköpsbeställningar av profiler & material. Att lägga in en
+// beställning fyller på lagersaldot för kända artiklar och skapar nya produkter
+// automatiskt (se laggInOrder i App). Allt klient-sida (AsyncStorage).
+function OrdrarVy({ ordrar, produkter, onLaggInOrder, inloggad, c }) {
+  const nyRad = () => ({ artikel: '', antal: '', namn: '', kategori: '', enhet: 'st', dimension: '' });
+  const [visaForm, setVisaForm] = React.useState(false);
+  const [leverantor, setLeverantor] = React.useState('');
+  const [referens, setReferens] = React.useState('');
+  const [notering, setNotering] = React.useState('');
+  const [rader, setRader] = React.useState([nyRad()]);
+
+  const byArtikel = React.useMemo(() => {
+    const m = new Map();
+    for (const p of (produkter || [])) { const a = String(p.artikel || '').trim().toLowerCase(); if (a) m.set(a, p); }
+    return m;
+  }, [produkter]);
+
+  const inp = { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 };
+  const patchRad = (i, patch) => setRader(rs => rs.map((r, j) => j === i ? { ...r, ...patch } : r));
+  const laggRad = () => setRader(rs => [...rs, nyRad()]);
+  const taBortRad = (i) => setRader(rs => rs.length > 1 ? rs.filter((_, j) => j !== i) : rs);
+
+  const spara = () => {
+    const giltiga = rader.filter(r => r.artikel.trim() && (parseInt(r.antal) || 0) > 0);
+    if (!giltiga.length) { if (Platform.OS === 'web') window.alert('Lägg till minst en rad med artikelnr och antal.'); return; }
+    onLaggInOrder({ leverantor, referens, notering, rader: giltiga });
+    setLeverantor(''); setReferens(''); setNotering(''); setRader([nyRad()]); setVisaForm(false);
+  };
+
+  const fmtDatum = (iso) => { try { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch { return iso; } };
+
+  return (
+    <ScrollView style={{ flex: 1 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+        <Text style={[styles.kategoriRubrik, { color: c.textRubrik }]}>🧾 Ordrar — beställningar av profiler &amp; material</Text>
+        <TouchableOpacity onPress={() => setVisaForm(v => !v)} style={{ backgroundColor: visaForm ? c.input : '#2563eb', borderWidth: visaForm ? 1 : 0, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+          <Text style={{ color: visaForm ? c.text : '#fff', fontWeight: '700' }}>{visaForm ? '✕ Stäng' : '+ Ny beställning'}</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 14 }}>
+        Lägg in en beställning — kända artiklar fyller på lagersaldot, nya artiklar läggs till i systemet automatiskt.
+      </Text>
+
+      {visaForm && (
+        <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+            <TextInput style={[inp, { flex: 1, minWidth: 140 }]} placeholder="Leverantör (t.ex. Schüco)" placeholderTextColor={c.textMuted} value={leverantor} onChangeText={setLeverantor} />
+            <TextInput style={[inp, { flex: 1, minWidth: 140 }]} placeholder="Ordernr / referens" placeholderTextColor={c.textMuted} value={referens} onChangeText={setReferens} />
+          </View>
+
+          {rader.map((r, i) => {
+            const match = byArtikel.get(r.artikel.trim().toLowerCase());
+            return (
+              <View key={i} style={{ borderTopWidth: 1, borderTopColor: c.kortBorder, paddingTop: 8, marginTop: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <TextInput style={[inp, { flex: 2 }]} placeholder="Artikelnr" placeholderTextColor={c.textMuted} value={r.artikel} onChangeText={t => patchRad(i, { artikel: t })} />
+                  <TextInput style={[inp, { width: 84 }]} placeholder="Antal" placeholderTextColor={c.textMuted} keyboardType="numeric" value={r.antal} onChangeText={t => patchRad(i, { antal: t.replace(/[^0-9]/g, '') })} />
+                  {rader.length > 1 && (
+                    <TouchableOpacity onPress={() => taBortRad(i)} style={{ padding: 6 }}><Text style={{ color: '#ef4444', fontSize: 16 }}>✕</Text></TouchableOpacity>
+                  )}
+                </View>
+                {r.artikel.trim() ? (
+                  match ? (
+                    <Text style={{ color: '#16a34a', fontSize: 12, marginTop: 4 }}>✓ {match.namn} — finns ({match.antal}{match.enhet || 'st'}{match.kategori ? ` · ${match.kategori}` : ''}), fylls på</Text>
+                  ) : (
+                    <View style={{ marginTop: 6 }}>
+                      <Text style={{ color: '#d97706', fontSize: 12, marginBottom: 4 }}>✳ Ny artikel — fyll i uppgifter så läggs den till i systemet</Text>
+                      <TextInput style={[inp, { marginBottom: 6 }]} placeholder="Benämning" placeholderTextColor={c.textMuted} value={r.namn} onChangeText={t => patchRad(i, { namn: t })} />
+                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                        <TextInput style={[inp, { flex: 2, minWidth: 120 }]} placeholder="Kategori" placeholderTextColor={c.textMuted} value={r.kategori} onChangeText={t => patchRad(i, { kategori: t })} />
+                        <TextInput style={[inp, { width: 80 }]} placeholder="Enhet" placeholderTextColor={c.textMuted} value={r.enhet} onChangeText={t => patchRad(i, { enhet: t })} />
+                        <TextInput style={[inp, { flex: 1, minWidth: 110 }]} placeholder="Dimension" placeholderTextColor={c.textMuted} value={r.dimension} onChangeText={t => patchRad(i, { dimension: t })} />
+                      </View>
+                    </View>
+                  )
+                ) : null}
+              </View>
+            );
+          })}
+
+          <TouchableOpacity onPress={laggRad} style={{ marginTop: 10 }}><Text style={{ color: '#2563eb', fontWeight: '700', fontSize: 13 }}>+ Lägg till rad</Text></TouchableOpacity>
+          <TextInput style={[inp, { marginTop: 10 }]} placeholder="Notering (valfritt)" placeholderTextColor={c.textMuted} value={notering} onChangeText={setNotering} />
+          <TouchableOpacity onPress={spara} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 11, marginTop: 12, alignItems: 'center' }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Spara beställning</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {ordrar.length === 0 ? (
+        <Text style={{ color: c.textMuted, fontSize: 13 }}>Inga beställningar inlagda ännu.</Text>
+      ) : ordrar.map(o => {
+        const antalRader = o.rader.length;
+        const nya = o.rader.filter(r => r.status === 'ny').length;
+        return (
+          <View key={o.id} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 12, padding: 14 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+              <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15 }}>{o.leverantor || 'Beställning'}{o.referens ? ` · ${o.referens}` : ''}</Text>
+              <Text style={{ color: c.textMuted, fontSize: 11 }}>{fmtDatum(o.tid)}</Text>
+            </View>
+            {o.rader.map((r, i) => (
+              <View key={i} style={{ flexDirection: 'row', paddingVertical: 2, alignItems: 'center' }}>
+                <Text style={{ width: 64, color: c.textMuted, fontSize: 12 }}>{r.artikel}</Text>
+                <Text style={{ flex: 1, color: c.text, fontSize: 13 }} numberOfLines={1}>{r.namn}</Text>
+                <Text style={{ width: 72, color: c.text, fontSize: 13, textAlign: 'right', fontWeight: '600' }}>+{r.antal} {r.enhet}</Text>
+                <Text style={{ width: 74, textAlign: 'right', fontSize: 11, fontWeight: '700', color: r.status === 'ny' ? '#d97706' : '#16a34a' }}>{r.status === 'ny' ? 'ny' : `→ ${r.nyttSaldo}`}</Text>
+              </View>
+            ))}
+            {o.notering ? <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 6, fontStyle: 'italic' }}>{o.notering}</Text> : null}
+            <Text style={{ color: c.textMuted, fontSize: 10, marginTop: 6 }}>{antalRader} artikl{antalRader === 1 ? 'a' : 'ar'}{nya ? ` · ${nya} ny` : ''}{o.av ? ` · inlagd av ${o.av}` : ''}</Text>
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
 // ─── Profile modal ───────────────────────────────────────────────────────────
 const AVATARER = ['😀','😎','🧑‍💻','👷','🧰','🔧','📦','🏗️','🪟','🏠','⭐','🦊','🐺','🦁','🐻','🐼','🤖','👾'];
 
@@ -2383,6 +2500,7 @@ export default function App() {
   const [kollarSession, setKollarSession] = useState(true);
 
   const [produkter, setProdukter] = useState([]);
+  const [ordrar, setOrdrar] = useState([]);
   const [aktivFlik, setAktivFlik] = useState('__stampling__');
   const [sok, setSok] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
@@ -2845,11 +2963,70 @@ export default function App() {
         console.log(`Inventering ${INVENTERING_DATUM}: ${resultat.uppdaterade} uppdaterade, ${resultat.skapade.length} nya, ${resultat.nollade.length} dubbletter nollade`);
       }
       setProdukter(lista);
+      try { const od = await AsyncStorage.getItem(ORDRAR_KEY); setOrdrar(od ? JSON.parse(od) : []); } catch {}
     } catch {}
   };
 
   const sparaProdukter = async (lista) => {
     try { await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista)); } catch {}
+  };
+  const sparaOrdrar = async (lista) => {
+    try { await AsyncStorage.setItem(ORDRAR_KEY, JSON.stringify(lista)); } catch {}
+  };
+
+  // Lägg in en inköpsbeställning: kända artiklar fyller på lagersaldot, nya
+  // artiklar skapas som produkter (auto-avläsning mot befintlig katalog).
+  const laggInOrder = ({ leverantor, referens, notering, rader }) => {
+    const nyProdukter = [...produkter];
+    const orderRader = [];
+    for (const r of (rader || [])) {
+      const art = String(r.artikel || '').trim();
+      const antal = parseInt(r.antal) || 0;
+      if (!art || antal <= 0) continue;
+      const idx = nyProdukter.findIndex(p => String(p.artikel || '').trim().toLowerCase() === art.toLowerCase());
+      if (idx >= 0) {
+        const p = nyProdukter[idx];
+        const nyttSaldo = (parseInt(p.antal) || 0) + antal;
+        nyProdukter[idx] = { ...p, antal: nyttSaldo };
+        orderRader.push({ artikel: art, namn: p.namn, antal, enhet: p.enhet || 'st', status: 'påfylld', nyttSaldo });
+      } else {
+        const ny = {
+          id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+          namn: (r.namn || art).trim(), artikel: art, antal,
+          minAntal: 5, kategori: (r.kategori || 'Osorterat').trim(),
+          enhet: r.enhet || 'st', dimension: r.dimension || '',
+        };
+        nyProdukter.push(ny);
+        orderRader.push({ artikel: art, namn: ny.namn, antal, enhet: ny.enhet, status: 'ny', nyttSaldo: antal });
+      }
+    }
+    if (orderRader.length === 0) return;
+    setProdukter(nyProdukter);
+    sparaProdukter(nyProdukter);
+    const order = {
+      id: Date.now().toString(),
+      tid: new Date().toISOString(),
+      av: inloggad?.namn || inloggad?.username || '',
+      leverantor: (leverantor || '').trim(),
+      referens: (referens || '').trim(),
+      notering: (notering || '').trim(),
+      rader: orderRader,
+    };
+    const nyOrdrar = [order, ...ordrar];
+    setOrdrar(nyOrdrar);
+    sparaOrdrar(nyOrdrar);
+    // Logga i ändringsloggen (best effort)
+    const nya = orderRader.filter(r => r.status === 'ny').length;
+    const pa = orderRader.filter(r => r.status === 'påfylld').length;
+    fetch(`${API}/api/changes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        typ: 'order',
+        text: `Beställning inlagd${order.leverantor ? ` (${order.leverantor})` : ''}: ${pa} påfylld${pa === 1 ? '' : 'a'}, ${nya} ny${nya === 1 ? '' : 'a'} artiklar`,
+        av: order.av,
+      }),
+    }).catch(() => {});
   };
 
   const arRitning = ritningar.some(r => r.id === aktivFlik);
@@ -2859,6 +3036,7 @@ export default function App() {
   const arAse60 = aktivFlik === '__ase60__';
   const arSammanstallning = aktivFlik === '__sammanstallning__';
   const arLagerforslag = aktivFlik === '__lagerforslag__';
+  const arOrdrar = aktivFlik === '__ordrar__';
 
   useEffect(() => {
     if (arKunder && token) {
@@ -3473,6 +3651,13 @@ export default function App() {
               📦 Lagerförslag
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arOrdrar && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__ordrar__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arOrdrar && styles.sidebarFlikTextAktiv]}>
+              🧾 Ordrar
+            </Text>
+          </TouchableOpacity>
 
           {inloggad.roll === 'admin' && <>
             <View style={styles.sidebarDivider} />
@@ -4031,7 +4216,11 @@ export default function App() {
             <LagerforslagVy kunder={kunder} produkter={produkter} c={c} />
           )}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && !arLagerforslag && <>
+          {!valdProdukt && arOrdrar && (
+            <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} inloggad={inloggad} c={c} />
+          )}
+
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && !arLagerforslag && !arOrdrar && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>
