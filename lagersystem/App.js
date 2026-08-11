@@ -83,7 +83,7 @@ const KUND_FLIKAR = ['Träfräs', 'Alufräs', 'Beslag', 'Glas'];
 // Basvägen får INTE hårdkodas: i produktion monteras bygget under /UterumLager
 // (nginx strippar prefixet innan Node ser det), lokalt kan samma bygge ligga i
 // roten. Den läses därför av i runtime.
-const RUTT_ROTER = ['kunder', 'ase60', 'simulering', 'lager', 'ritning', 'ordrar', 'lagerforslag', 'sammanstallning', 'andringar', 'stampling'];
+const RUTT_ROTER = ['kunder', 'ase60', 'simulering', 'lager', 'ritning', 'ordrar', 'lagerforslag', 'sammanstallning', 'andringar', 'stampling', 'planering'];
 
 function harledBas() {
   if (typeof document === 'undefined' || typeof window === 'undefined' || !window.location) return '';
@@ -129,6 +129,7 @@ function vagForVy({ aktivFlik, valdKund, aktivKundFlik, valdProdukt, valdAse60Pr
   if (aktivFlik === '__ordrar__') return '/ordrar/';
   if (aktivFlik === '__lagerforslag__') return '/lagerforslag/';
   if (aktivFlik === '__sammanstallning__') return '/sammanstallning/';
+  if (aktivFlik === '__planering__') return '/planering/';
   if (aktivFlik === '__andringar__') return '/andringar/';
   if (FLIKAR.includes(aktivFlik)) {
     const kategori = `/lager/${slugga(aktivFlik)}/`;
@@ -151,6 +152,7 @@ function tolkaVag(pathname) {
     case 'ordrar': return { flik: '__ordrar__' };
     case 'lagerforslag': return { flik: '__lagerforslag__' };
     case 'sammanstallning': return { flik: '__sammanstallning__' };
+    case 'planering': return { flik: '__planering__' };
     case 'andringar': return { flik: '__andringar__' };
     case 'lager': return { flik: FLIKAR.find(f => slugga(f) === andra) || FLIKAR[0], produktSlug: tredje || null };
     case 'ritning': return { flik: RITNING_FIL[andra] ? andra : '__stampling__' };
@@ -170,7 +172,7 @@ function kanoniskVag(pathname) {
 const VY_TITLAR = {
   __stampling__: 'Stämpling', __kunder__: 'Kunder', __ase60__: 'ASE60-generator', __simulering__: 'Simulering',
   __sammanstallning__: 'Sammanställning', __lagerforslag__: 'Lagerförslag',
-  __ordrar__: 'Ordrar', __andringar__: 'Ändringslogg',
+  __ordrar__: 'Ordrar', __andringar__: 'Ändringslogg', __planering__: 'Planering',
 };
 function titelForVy({ aktivFlik, valdKund, valdProdukt }) {
   const del = valdProdukt?.namn || valdKund?.namn || VY_TITLAR[aktivFlik] || aktivFlik;
@@ -1564,6 +1566,301 @@ function SammanstallningVy({ kunder, ase60Projekt, c }) {
           </View>
         );
       })}
+    </ScrollView>
+  );
+}
+
+// ─── Planering ────────────────────────────────────────────────────────────────
+// Produktionstavla: en rad per kund med leverans-/start-/klart-datum och en ruta
+// per moment (samma moment som kundkortets flikar). Tabell och inte kanban för
+// att hela veckan ska rymmas på en skärm i verkstaden.
+const PLANERING_VARNING_DAGAR = 7; // gult när klart-datumet är inom en vecka
+
+// Dagens datum som ÅÅÅÅ-MM-DD i LOKAL tid. toISOString() hade gett UTC och
+// därmed fel dygn under svensk sommartid tidiga morgnar — och då hade
+// "försenad"-markeringen slagit om ett dygn för tidigt.
+function idagISO() {
+  return new Date().toLocaleDateString('sv-SE');
+}
+// Heldagar kvar till ett datum. Räknas på UTC-midnatt för båda datumen så att
+// sommartidsskiftet inte ger 23/25-timmarsdygn och avrundningsfel.
+function dagarKvar(datum) {
+  if (!datum) return null;
+  const [a, m, d] = String(datum).split('-').map(Number);
+  const [ia, im, idag] = idagISO().split('-').map(Number);
+  if (!a || !m || !d) return null;
+  return Math.round((Date.UTC(a, m - 1, d) - Date.UTC(ia, im - 1, idag)) / 86400000);
+}
+const dagarText = (n) => `${n} dag${Math.abs(n) === 1 ? '' : 'ar'}`;
+
+// Radens färg styrs av klart-datumet OCH hur många moment som är avbockade: en
+// kund som hunnit klart är grön även om datumet passerat.
+function planeringStatus(klartDatum, klara, totalt) {
+  if (totalt > 0 && klara >= totalt) return { niva: 'klar', text: '✓ Klar', farg: '#16a34a', ton: 'rgba(22,163,74,0.10)' };
+  const dagar = dagarKvar(klartDatum);
+  if (dagar === null) return { niva: 'oplanerad', text: 'Inget datum', farg: '#94a3b8', ton: null };
+  if (dagar < 0) return { niva: 'sen', text: `${dagarText(-dagar)} sen`, farg: '#ef4444', ton: 'rgba(239,68,68,0.13)' };
+  if (dagar === 0) return { niva: 'snart', text: 'Ska va klart idag', farg: '#f59e0b', ton: 'rgba(245,158,11,0.15)' };
+  if (dagar <= PLANERING_VARNING_DAGAR) return { niva: 'snart', text: `${dagarText(dagar)} kvar`, farg: '#f59e0b', ton: 'rgba(245,158,11,0.15)' };
+  return { niva: 'normal', text: `${dagarText(dagar)} kvar`, farg: '#64748b', ton: null };
+}
+
+const kortDatum = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : `${d.getDate()}/${d.getMonth() + 1}`; };
+const fornamn = (namn) => String(namn || '').trim().split(/\s+/)[0] || '';
+
+// Datumfält. react-native-webs TextInput kan inte bli type="date" (den sätter
+// alltid type själv), och verkstadens surfplatta ska ha en riktig datumväljare
+// i stället för fritext — därför ett äkta input-element på webben och TextInput
+// som reserv på native.
+function DatumFalt({ varde, onValt, c, tema }) {
+  const [lokal, setLokal] = React.useState(varde || '');
+  // Servern är facit: när svaret kommit (eller någon annan ändrat) synkas fältet.
+  React.useEffect(() => { setLokal(varde || ''); }, [varde]);
+  if (Platform.OS === 'web') {
+    return React.createElement('input', {
+      type: 'date',
+      value: lokal,
+      onChange: (e) => { setLokal(e.target.value); onValt(e.target.value); },
+      style: {
+        backgroundColor: c.input, color: c.inputText, border: `1px solid ${c.inputBorder}`,
+        borderRadius: 6, padding: '6px 6px', fontSize: 13, width: '100%', boxSizing: 'border-box',
+        fontFamily: 'inherit', colorScheme: tema === 'mörkt' ? 'dark' : 'light',
+      },
+    });
+  }
+  return (
+    <TextInput
+      style={[styles.input, { marginBottom: 0, fontSize: 13, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+      placeholder="ÅÅÅÅ-MM-DD" placeholderTextColor={c.textMuted}
+      value={lokal} onChangeText={setLokal} onBlur={() => onValt(lokal)} />
+  );
+}
+
+function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
+  const { tema } = React.useContext(TemaContext) || {};
+  const [sok, setSok] = React.useState('');
+  const [fel, setFel] = React.useState('');
+  const [sparar, setSparar] = React.useState(null); // kundId:falt som just skickas
+
+  // Samma sammanslagning som Sammanställningen: ASE60-projekten visas som kunder
+  // även innan de finns i kunder.json. Är kunden redan sparad används DEN radens
+  // id, annars skulle en andra rad skapas för samma projekt.
+  const rader = React.useMemo(() => {
+    const lista = [];
+    for (const proj of ase60Projekt) {
+      const sparad = kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id);
+      lista.push({
+        id: sparad?.id || proj.id, namn: proj.name, farg: sparad?.farg || proj.color || '',
+        ase60ProjectId: proj.id, planering: sparad?.planering || {}, klart: sparad?.klart || {},
+      });
+    }
+    for (const k of kunder.filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id))) {
+      lista.push({
+        id: k.id, namn: k.namn, farg: k.farg || '', ase60ProjectId: k.ase60ProjectId || null,
+        planering: k.planering || {}, klart: k.klart || {},
+      });
+    }
+    const q = sok.trim().toLowerCase();
+    return lista
+      .filter(k => !q || (k.namn || '').toLowerCase().includes(q))
+      // Närmast deadline först; kunder utan klart-datum sist i namnordning.
+      .sort((a, b) => {
+        const da = a.planering?.klartDatum || '', db = b.planering?.klartDatum || '';
+        if (da && db && da !== db) return da < db ? -1 : 1;
+        if (da !== db) return da ? -1 : 1;
+        return (a.namn || '').localeCompare(b.namn || '', 'sv');
+      });
+  }, [kunder, ase60Projekt, sok]);
+
+  // Ett moment räknas som avrapporterat även när det bockats av på kundkortet
+  // (där dras materialet från lagret) — annars hade planeringen visat 0/4 för en
+  // kund som verkstaden redan kört färdigt.
+  const momentStatus = (rad, moment) => {
+    const p = rad.planering?.moment?.[moment];
+    if (p?.klar) return { klar: true, av: p.av, tid: p.tid, kalla: 'planering' };
+    const k = rad.klart?.[moment];
+    if (k) return { klar: true, av: k.av, tid: k.tid, kalla: 'kundkort' };
+    return { klar: false };
+  };
+  const antalKlara = (rad) => KUND_FLIKAR.filter(f => momentStatus(rad, f).klar).length;
+
+  const skicka = (rad, url, metod, body, nyckel) => {
+    if (!token) return;
+    setSparar(nyckel);
+    setFel('');
+    fetch(url, {
+      method: metod,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      // namn/ase60ProjectId följer med så att servern kan skapa raden för ett
+      // ASE60-projekt som ännu inte finns i kunder.json.
+      body: JSON.stringify({ ...body, namn: rad.namn, ase60ProjectId: rad.ase60ProjectId }),
+    })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('spara'))))
+      .then(kund => { onKundSparad(kund); setSparar(null); })
+      .catch(() => { setSparar(null); setFel('Kunde inte spara — kontrollera nätverket och försök igen.'); });
+  };
+
+  const sattDatum = (rad, falt, varde) =>
+    skicka(rad, `${API}/api/kunder/${rad.id}/planering`, 'PUT', { [falt]: varde }, `${rad.id}:${falt}`);
+
+  const vaxlaMoment = (rad, moment) => {
+    const status = momentStatus(rad, moment);
+    if (status.klar && status.kalla === 'kundkort') {
+      setFel(`${moment} är avrapporterat från kundkortet (materialet är utbokat) — ångra det där.`);
+      return;
+    }
+    if (status.klar) {
+      const fraga = `Ångra avbockning av ${moment} för ${rad.namn}?`;
+      if (Platform.OS === 'web' && !window.confirm(fraga)) return;
+    }
+    skicka(rad, `${API}/api/kunder/${rad.id}/planering/moment`, 'POST',
+      { moment, klar: !status.klar }, `${rad.id}:${moment}`);
+  };
+
+  const KOL = { kund: 200, datum: 132, moment: 108, framsteg: 104, status: 140 };
+  const tabellBredd = KOL.kund + KOL.datum * 3 + KOL.moment * KUND_FLIKAR.length + KOL.framsteg + KOL.status;
+  const summering = {
+    sena: rader.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'sen').length,
+    snart: rader.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'snart').length,
+    klara: rader.filter(r => antalKlara(r) >= KUND_FLIKAR.length).length,
+  };
+
+  const Rubrik = ({ text, bredd, center }) => (
+    <View style={{ width: bredd, paddingHorizontal: 8, paddingVertical: 10 }}>
+      <Text style={{ color: c.tabellHuvudText, fontSize: 11, fontWeight: '700', letterSpacing: 0.4, textAlign: center ? 'center' : 'left' }}>{text}</Text>
+    </View>
+  );
+
+  return (
+    <ScrollView style={{ flex: 1 }}>
+      <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 4 }]}>📅 Planering</Text>
+      <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 12 }}>
+        Leverans, produktionsstart och när det ska vara klart — bocka av momenten allt eftersom.
+      </Text>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+        <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, paddingVertical: 8, paddingHorizontal: 12 }]}>
+          <Text style={{ color: c.textMuted, fontSize: 11 }}>Kunder</Text>
+          <Text style={{ color: c.textRubrik, fontSize: 18, fontWeight: '700' }}>{rader.length}</Text>
+        </View>
+        <View style={[styles.kort, { backgroundColor: c.kort, borderColor: '#ef4444', paddingVertical: 8, paddingHorizontal: 12 }]}>
+          <Text style={{ color: c.textMuted, fontSize: 11 }}>Försenade</Text>
+          <Text style={{ color: '#ef4444', fontSize: 18, fontWeight: '700' }}>{summering.sena}</Text>
+        </View>
+        <View style={[styles.kort, { backgroundColor: c.kort, borderColor: '#f59e0b', paddingVertical: 8, paddingHorizontal: 12 }]}>
+          <Text style={{ color: c.textMuted, fontSize: 11 }}>Inom {PLANERING_VARNING_DAGAR} dagar</Text>
+          <Text style={{ color: '#f59e0b', fontSize: 18, fontWeight: '700' }}>{summering.snart}</Text>
+        </View>
+        <View style={[styles.kort, { backgroundColor: c.kort, borderColor: '#16a34a', paddingVertical: 8, paddingHorizontal: 12 }]}>
+          <Text style={{ color: c.textMuted, fontSize: 11 }}>Klara</Text>
+          <Text style={{ color: '#16a34a', fontSize: 18, fontWeight: '700' }}>{summering.klara}</Text>
+        </View>
+        <TextInput
+          style={[styles.sokInput, { backgroundColor: c.sokInput, borderColor: c.inputBorder, color: c.text, width: mobil ? 130 : 200 }]}
+          placeholder="Sök kund..." placeholderTextColor={c.textMuted}
+          value={sok} onChangeText={setSok} />
+      </View>
+
+      {!!fel && (
+        <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder, marginBottom: 12 }]}>
+          <Text style={[styles.varningText, { color: c.varningText }]}>{fel}</Text>
+        </View>
+      )}
+
+      {rader.length === 0 && (
+        <Text style={{ color: c.textMuted, textAlign: 'center', marginTop: 40 }}>
+          {sok.trim() ? 'Ingen kund matchar sökningen.' : 'Inga kunder att planera ännu.'}
+        </Text>
+      )}
+
+      {/* Tabellen får scrolla i sidled i stället för att tryckas ihop — på
+          surfplattan är kolumnerna annars för smala för att träffa med fingret. */}
+      {rader.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={true} style={{ marginBottom: 20 }}>
+          <View style={{ width: tabellBredd }}>
+            <View style={{ flexDirection: 'row', backgroundColor: c.tabellHuvud, borderRadius: 8, marginBottom: 4 }}>
+              <Rubrik text="KUND" bredd={KOL.kund} />
+              <Rubrik text="LEVERANS" bredd={KOL.datum} />
+              <Rubrik text="PROD. START" bredd={KOL.datum} />
+              <Rubrik text="KLART SENAST" bredd={KOL.datum} />
+              {KUND_FLIKAR.map(f => <Rubrik key={f} text={f.toUpperCase()} bredd={KOL.moment} center />)}
+              <Rubrik text="KLART" bredd={KOL.framsteg} center />
+              <Rubrik text="STATUS" bredd={KOL.status} />
+            </View>
+
+            {rader.map((rad, i) => {
+              const klara = antalKlara(rad);
+              const status = planeringStatus(rad.planering?.klartDatum, klara, KUND_FLIKAR.length);
+              return (
+                <View key={rad.id} style={{
+                  flexDirection: 'row', alignItems: 'center', borderRadius: 8, marginBottom: 3,
+                  borderLeftWidth: 4, borderLeftColor: status.ton ? status.farg : 'transparent',
+                  // Genomskinlig ton i stället för fast pastellfärg: samma
+                  // markering fungerar i både ljust och mörkt tema.
+                  backgroundColor: status.ton || (i % 2 ? c.radJamn : c.rad),
+                }}>
+                  <View style={{ width: KOL.kund - 4, paddingHorizontal: 8, paddingVertical: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      {!!rad.farg && <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(rad.farg), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />}
+                      <Text numberOfLines={2} style={{ color: c.text, fontWeight: '600', fontSize: 14, flex: 1 }}>{rad.namn}</Text>
+                    </View>
+                  </View>
+                  {['leveransDatum', 'produktionStart', 'klartDatum'].map(falt => (
+                    <View key={falt} style={{ width: KOL.datum, paddingHorizontal: 6, opacity: sparar === `${rad.id}:${falt}` ? 0.5 : 1 }}>
+                      <DatumFalt varde={rad.planering?.[falt] || ''} c={c} tema={tema}
+                        onValt={v => sattDatum(rad, falt, v)} />
+                    </View>
+                  ))}
+                  {KUND_FLIKAR.map(moment => {
+                    const m = momentStatus(rad, moment);
+                    return (
+                      <View key={moment} style={{ width: KOL.moment, paddingHorizontal: 4, paddingVertical: 4 }}>
+                        <TouchableOpacity
+                          onPress={() => vaxlaMoment(rad, moment)}
+                          disabled={sparar === `${rad.id}:${moment}`}
+                          style={{
+                            borderRadius: 6, borderWidth: 1, paddingVertical: 5, paddingHorizontal: 4, alignItems: 'center',
+                            backgroundColor: m.klar ? '#dcfce7' : c.input,
+                            borderColor: m.klar ? '#16a34a' : c.inputBorder,
+                            borderStyle: m.kalla === 'kundkort' ? 'dashed' : 'solid',
+                            opacity: sparar === `${rad.id}:${moment}` ? 0.5 : 1,
+                          }}>
+                          <Text style={{ color: m.klar ? '#15803d' : c.textMuted, fontSize: 12, fontWeight: '600' }}>
+                            {m.klar ? '✓' : '○'} {moment}
+                          </Text>
+                          {m.klar && (
+                            <Text numberOfLines={1} style={{ color: '#166534', fontSize: 9, marginTop: 1 }}>
+                              {fornamn(m.av) || '—'} {kortDatum(m.tid)}
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                  <View style={{ width: KOL.framsteg, paddingHorizontal: 8, alignItems: 'center' }}>
+                    <Text style={{ color: klara === KUND_FLIKAR.length ? '#16a34a' : c.text, fontWeight: '700', fontSize: 14 }}>
+                      {klara}/{KUND_FLIKAR.length}
+                    </Text>
+                    <View style={{ height: 4, borderRadius: 2, backgroundColor: c.inputBorder, width: '100%', marginTop: 3 }}>
+                      <View style={{ height: 4, borderRadius: 2, backgroundColor: klara === KUND_FLIKAR.length ? '#16a34a' : '#2563eb', width: `${(klara / KUND_FLIKAR.length) * 100}%` }} />
+                    </View>
+                  </View>
+                  <View style={{ width: KOL.status, paddingHorizontal: 8 }}>
+                    <Text style={{ color: status.farg, fontSize: 12, fontWeight: '700' }}>{status.text}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      )}
+
+      {rader.length > 0 && (
+        <Text style={{ color: c.textMuted, fontSize: 11, marginBottom: 20 }}>
+          Röd rad = klart-datumet har passerat, gul = inom {PLANERING_VARNING_DAGAR} dagar, grön = alla moment avbockade.
+          Streckad ruta = avbockad på kundkortet (materialet utbokat) och ångras där.
+        </Text>
+      )}
     </ScrollView>
   );
 }
@@ -3490,6 +3787,7 @@ export default function App() {
   const arSammanstallning = aktivFlik === '__sammanstallning__';
   const arLagerforslag = aktivFlik === '__lagerforslag__';
   const arOrdrar = aktivFlik === '__ordrar__';
+  const arPlanering = aktivFlik === '__planering__';
 
   useEffect(() => {
     if (arKunder && token) {
@@ -3522,9 +3820,9 @@ export default function App() {
   // hämtningen aldrig göras om när token väl kommer.
   // Adressen /ase60/<projekt>/ behöver också projektlistan för att kunna matchas.
   useEffect(() => {
-    if (arKunder || arSammanstallning || arLagerforslag) { laddaKunder(); laddaAse60Projekt(); }
+    if (arKunder || arSammanstallning || arLagerforslag || arPlanering) { laddaKunder(); laddaAse60Projekt(); }
     else if (vantandeVagRef.current?.ase60Slug) laddaAse60Projekt();
-  }, [arKunder, arSammanstallning, arLagerforslag, token]);
+  }, [arKunder, arSammanstallning, arLagerforslag, arPlanering, token]);
 
   // Paket-listan (ASE 60 / ASS 32 / ...) är delad med ase60-generator och
   // Uterum-Konfigurator via GET /api/paket — ingen inloggning krävs, samma
@@ -3684,6 +3982,16 @@ export default function App() {
         paket: uppdaterad.paket ?? null,
       }),
     }).catch(() => {});
+  };
+
+  // Planeringsvyn skickar bara sina egna fält och får hela kundraden tillbaka ur
+  // kunder.json — den ersätter (eller lägger till) raden i listan, så inget som
+  // kundkortet skrivit går förlorat.
+  const kundFranServer = (kund) => {
+    if (!kund?.id) return;
+    setKunder(prev => prev.some(k => k.id === kund.id) ? prev.map(k => k.id === kund.id ? kund : k) : [...prev, kund]);
+    setValdKund(v => (v && (v.id === kund.id || (kund.ase60ProjectId && v.ase60ProjectId === kund.ase60ProjectId))
+      ? { ...v, planering: kund.planering } : v));
   };
 
   const laggTillKundMaterial = (produkt) => {
@@ -3861,7 +4169,7 @@ export default function App() {
   const oppnaLaggTill = () => {
     setRedigeraProdukt(null);
     setFormNamn(''); setFormArtikel(''); setFormAntal('');
-    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSimulering || arSammanstallning || arLagerforslag ? '' : aktivFlik);
+    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSimulering || arSammanstallning || arLagerforslag || arPlanering ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
     setFormBild(null); setFormFarger([]); setFormLangder([]);
     setModalVisible(true);
@@ -4042,7 +4350,7 @@ export default function App() {
     }
   };
 
-  const filtreradeLista = (arRitning || arAse60 || arSimulering || arSammanstallning || arLagerforslag) ? [] : (() => {
+  const filtreradeLista = (arRitning || arAse60 || arSimulering || arSammanstallning || arLagerforslag || arPlanering) ? [] : (() => {
     const filtered = produkter.filter(p => {
       const matcherFlik = aktivFlik === 'Alla produkter' || p.kategori === aktivFlik;
       const matcherSok =
@@ -4194,6 +4502,13 @@ export default function App() {
           </TouchableOpacity>
 
           <View style={styles.sidebarDivider} />
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arPlanering && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__planering__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arPlanering && styles.sidebarFlikTextAktiv]}>
+              📅 Planering
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.sidebarFlik, arSammanstallning && styles.sidebarFlikAktiv]}
             onPress={() => { setAktivFlik('__sammanstallning__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
@@ -4768,6 +5083,10 @@ export default function App() {
             title: 'Alufräs simulering',
           })}
 
+          {!valdProdukt && arPlanering && (
+            <PlaneringVy kunder={kunder} ase60Projekt={ase60Projekt} token={token} c={c} mobil={mobil} onKundSparad={kundFranServer} />
+          )}
+
           {!valdProdukt && arSammanstallning && (
             <SammanstallningVy kunder={kunder} ase60Projekt={ase60Projekt} c={c} />
           )}
@@ -4780,7 +5099,7 @@ export default function App() {
             <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} onImporteraOrdrar={importeraOrdrar} onTaBortOrder={taBortOrder} onRensaLogg={rensaLoggOrdrar} inloggad={inloggad} token={token} c={c} />
           )}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSimulering && !arSammanstallning && !arLagerforslag && !arOrdrar && <>
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSimulering && !arSammanstallning && !arLagerforslag && !arOrdrar && !arPlanering && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>

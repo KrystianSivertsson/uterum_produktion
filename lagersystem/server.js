@@ -578,6 +578,66 @@ app.put('/api/kunder/:id', authMiddleware, (req, res) => {
   res.json(kunder[idx]);
 });
 
+// --- PLANERING ---
+// Egna endpoints i stället för fler fält i PUT /api/kunder/:id: planeringen
+// redigeras från planeringsvyn medan någon annan kan stå i kundkortet på samma
+// kund. Här läses filen om och bara planeringsfältet skrivs, så
+// material/klart/logg aldrig skrivs över av en gammal klientkopia.
+const DATUM_FALT = ['leveransDatum', 'produktionStart', 'klartDatum'];
+const arDatum = (v) => v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+// ASE60-projekt visas som kunder utan att ligga i kunder.json — samma upsert som
+// PUT ovan, annars går det inte att planera för dem förrän någon sparat material.
+function kundIndexUpsert(kunder, id, body, user) {
+  const idx = kunder.findIndex(k => k.id === id);
+  if (idx !== -1) return idx;
+  kunder.push({
+    id,
+    namn: (body?.namn || '').trim() || id,
+    skapad: new Date().toISOString(),
+    skapadAv: user?.namn || '',
+    farg: body?.farg || '',
+    ase60ProjectId: body?.ase60ProjectId || null,
+    matt: Array.isArray(body?.matt) ? body.matt : [],
+    paket: body?.paket || null,
+  });
+  return kunder.length - 1;
+}
+
+app.put('/api/kunder/:id/planering', authMiddleware, (req, res) => {
+  const angivna = DATUM_FALT.filter(f => req.body?.[f] !== undefined);
+  const ogiltigt = angivna.find(f => !arDatum(String(req.body[f] ?? '')));
+  if (ogiltigt) return res.status(400).json({ error: `Ogiltigt datum för ${ogiltigt} (ÅÅÅÅ-MM-DD)` });
+  const kunder = readJSON(KUNDER_FILE, []);
+  const idx = kundIndexUpsert(kunder, req.params.id, req.body, req.user);
+  const planering = { ...(kunder[idx].planering || {}) };
+  // Tomt värde = datumet rensas, inte "sätt till tom sträng".
+  for (const f of angivna) {
+    const v = String(req.body[f] ?? '');
+    if (v) planering[f] = v; else delete planering[f];
+  }
+  kunder[idx].planering = planering;
+  writeJSON(KUNDER_FILE, kunder);
+  res.json(kunder[idx]);
+});
+
+app.post('/api/kunder/:id/planering/moment', authMiddleware, (req, res) => {
+  const moment = String(req.body?.moment || '').trim().slice(0, 60);
+  if (!moment) return res.status(400).json({ error: 'Moment krävs' });
+  const kunder = readJSON(KUNDER_FILE, []);
+  const idx = kundIndexUpsert(kunder, req.params.id, req.body, req.user);
+  const planering = { ...(kunder[idx].planering || {}) };
+  const alla = { ...(planering.moment || {}) };
+  // Vem och när stämplas på servern — klienten ska inte kunna skriva någon
+  // annans namn eller en påhittad tidpunkt i avrapporteringen.
+  if (req.body?.klar === false) delete alla[moment];
+  else alla[moment] = { klar: true, av: req.user.namn || req.user.username || '', tid: new Date().toISOString() };
+  planering.moment = alla;
+  kunder[idx].planering = planering;
+  writeJSON(KUNDER_FILE, kunder);
+  res.json(kunder[idx]);
+});
+
 // ASE60-generatorns API: 3017 på servern, 3000 lokalt (dev). Provar i ordning.
 const ASE60_BASES = [process.env.ASE60_URL || 'http://localhost:3017', 'http://localhost:3000'];
 async function ase60Fetch(apiPath, opts) {
