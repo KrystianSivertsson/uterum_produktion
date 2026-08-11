@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const webpush = require('web-push');
+const pdfParse = require('pdf-parse/lib/pdf-parse.js'); // PDF → text (Schüco-ordrar)
 
 const app = express();
 app.set('trust proxy', 1);
@@ -884,8 +885,52 @@ app.post('/api/convert-step', authMiddleware, (req, res) => {
   }
 });
 
+// PDF → text: klienten droppar en order-PDF (t.ex. Schüco-orderbekräftelse),
+// servern extraherar texten så klienten kan köra parseOrderMail på den.
+app.post('/api/pdf-text', authMiddleware, async (req, res) => {
+  const { pdfBase64 } = req.body || {};
+  if (!pdfBase64 || typeof pdfBase64 !== 'string') {
+    return res.status(400).json({ error: 'pdfBase64 krävs' });
+  }
+  try {
+    const buf = Buffer.from(pdfBase64.replace(/^data:[^,]*,/, ''), 'base64');
+    const data = await pdfParse(buf);
+    res.json({ text: data.text || '', pages: data.numpages || 0 });
+  } catch (err) {
+    console.error('pdf-text error:', err.message);
+    res.status(500).json({ error: 'Kunde inte läsa PDF', details: err.message });
+  }
+});
+
 // --- Artikel-bilder ---
 app.use('/artikel-bilder', express.static(path.join(__dirname, 'artikel-bilder')));
+
+// --- SBZ151 3D-simulator (Daniels simulator, hostad här under /simulator) ---
+// Bäddas in i CNC-sidan (Uterum-konfiguratorn) via iframe. Bara läs-routes
+// behövs för att visa/simulera: aktiva maskinfiler + datafiler. Klienten
+// anropar /simulator/api/active-files och /simulator/data/<fil>.
+const SIM_DIR = path.join(__dirname, 'simulator');
+const SIM_FILES_DIR = path.join(SIM_DIR, 'data', 'files');
+const SIM_MACHINES_FILE = path.join(SIM_DIR, 'data', 'machines.json');
+function readSimMachines() {
+  try {
+    if (fs.existsSync(SIM_MACHINES_FILE)) return JSON.parse(fs.readFileSync(SIM_MACHINES_FILE, 'utf-8'));
+  } catch (e) { /* faller igenom */ }
+  return { active: null, machines: {} };
+}
+app.get('/simulator/api/active-files', (req, res) => {
+  const config = readSimMachines();
+  if (!config.active || !config.machines[config.active]) return res.json({ name: null, files: {} });
+  res.json({ name: config.active, files: config.machines[config.active] });
+});
+app.get('/simulator/api/machines', (req, res) => res.json(readSimMachines()));
+app.get('/simulator/data/:filename', (req, res) => {
+  const filePath = path.join(SIM_FILES_DIR, path.basename(req.params.filename));
+  if (!fs.existsSync(filePath)) return res.status(404).send('Not found');
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.sendFile(filePath);
+});
+app.use('/simulator', express.static(path.join(SIM_DIR, 'public')));
 
 // --- Hem-meny (portal mellan systemen på three.nordiska.io) ---
 // nginx proxar /start hit; /partiberedning och /produktion är egna

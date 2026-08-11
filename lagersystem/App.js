@@ -1792,8 +1792,10 @@ function parseOrderMail(text) {
 function parseOrderMeta(text) {
   const t = String(text || '');
   let referens = '';
-  const refM = t.match(/(?:order(?:\s*(?:nr|nummer|no|bekräftelse|confirmation))?|auftrag(?:s?(?:nr|nummer))?|best(?:ällning)?\s*(?:nr|nummer)?|ab[-\s]?nr)\.?\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/-]{3,})/i);
-  if (refM) referens = refM[1].trim();
+  // Schüco: "Order No. / Date  137046598 / ..." → 9-siffrigt ordernr först.
+  let m = t.match(/order\s*no\.?\s*(?:\/\s*date)?\s*[:#]?\s*(\d{6,10})/i);
+  if (!m) m = t.match(/(?:ordernr|order\s*nummer|auftrag(?:s?(?:nr|nummer))?|best(?:ällning)?\s*(?:nr|nummer)|ab[-\s]?nr)\.?\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/-]{3,})/i);
+  if (m) referens = m[1].trim();
   let leverantor = '';
   if (/sch[üu]co/i.test(t)) leverantor = 'Schüco';
   return { referens, leverantor };
@@ -1812,7 +1814,7 @@ function orderNyckel(referens, rader) {
 // Ordrar — våra inköpsbeställningar av profiler & material. Att lägga in en
 // beställning fyller på lagersaldot för kända artiklar och skapar nya produkter
 // automatiskt (se laggInOrder i App). Allt klient-sida (AsyncStorage).
-function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inloggad, c }) {
+function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inloggad, token, c }) {
   const nyRad = () => ({ artikel: '', antal: '', namn: '', kategori: '', enhet: 'st', dimension: '' });
   const [visaForm, setVisaForm] = React.useState(false);
   const [leverantor, setLeverantor] = React.useState('');
@@ -1860,6 +1862,27 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inlogga
     };
     reader.readAsArrayBuffer(file);
   };
+  const laesPdf = (file) => {
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const res = await fetch(`${API}/api/pdf-text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ pdfBase64: ev.target.result }),
+        });
+        if (!res.ok) throw new Error('Server ' + res.status);
+        const { text } = await res.json();
+        const p = parseOrderMail(text);
+        if (p.length) setRader(p);
+        else if (Platform.OS === 'web') window.alert('Hittade inga artiklar (6-siffrigt artikelnr + antal) i PDF:en.');
+        const meta = parseOrderMeta(text);
+        if (meta.referens) setReferens(r => r || meta.referens);
+        if (meta.leverantor) setLeverantor(l => l || meta.leverantor);
+      } catch (err) { if (Platform.OS === 'web') window.alert('Kunde inte läsa PDF: ' + err.message); }
+    };
+    reader.readAsDataURL(file);
+  };
   const bifogaBild = (file) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -1898,10 +1921,11 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inlogga
   const hanteraFil = (file) => {
     if (!file) return;
     const namn = (file.name || '').toLowerCase();
-    if ((file.type && file.type.indexOf('image/') === 0) || /\.(png|jpe?g|gif|webp|heic)$/.test(namn)) bifogaBild(file);
+    if (/\.pdf$/.test(namn) || file.type === 'application/pdf') laesPdf(file);
     else if (/\.json$/.test(namn) || /json/.test(file.type || '')) laesHistorikJson(file);
+    else if ((file.type && file.type.indexOf('image/') === 0) || /\.(png|jpe?g|gif|webp|heic)$/.test(namn)) bifogaBild(file);
     else if (/\.(xlsx?|csv)$/.test(namn) || /sheet|excel|csv/.test(file.type || '')) laesExcel(file);
-    else if (Platform.OS === 'web') window.alert('Släpp en Excel/CSV, en bild, eller en historik-JSON.');
+    else if (Platform.OS === 'web') window.alert('Släpp en PDF, Excel/CSV, bild, eller historik-JSON.');
   };
 
   const fmtDatum = (iso) => { try { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch { return iso; } };
@@ -1912,8 +1936,8 @@ function OrdrarVy({ ordrar, produkter, onLaggInOrder, onImporteraOrdrar, inlogga
 
   const importRad = (
     <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-      <TouchableOpacity onPress={() => valjFil('.xlsx,.xls,.csv', laesExcel)} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
-        <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>📎 Excel / CSV</Text>
+      <TouchableOpacity onPress={() => valjFil('.pdf,.xlsx,.xls,.csv', hanteraFil)} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
+        <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>📎 PDF / Excel</Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={() => valjFil('image/*', bifogaBild)} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
         <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>🖼 Bild</Text>
@@ -4478,7 +4502,7 @@ export default function App() {
           )}
 
           {!valdProdukt && arOrdrar && (
-            <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} onImporteraOrdrar={importeraOrdrar} inloggad={inloggad} c={c} />
+            <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} onImporteraOrdrar={importeraOrdrar} inloggad={inloggad} token={token} c={c} />
           )}
 
           {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSammanstallning && !arLagerforslag && !arOrdrar && <>

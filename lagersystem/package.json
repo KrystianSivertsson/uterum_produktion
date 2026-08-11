@@ -11,6 +11,7 @@
     "expo-sharing": "^56.0.18",
     "expo-status-bar": "~56.0.4",
     "express": "^5.2.1",
+    "pdf-parse": "^1.1.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-native": "0.85.3",
