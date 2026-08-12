@@ -79,7 +79,7 @@ const KUND_FLIKAR = ['Träfräs', 'Alufräs', 'Beslag', 'Glas'];
 // Basvägen får INTE hårdkodas: i produktion monteras bygget under /UterumLager
 // (nginx strippar prefixet innan Node ser det), lokalt kan samma bygge ligga i
 // roten. Den läses därför av i runtime.
-const RUTT_ROTER = ['kunder', 'ase60', 'simulering', 'lager', 'ritning', 'ordrar', 'lagerforslag', 'sammanstallning', 'andringar', 'stampling', 'planering'];
+const RUTT_ROTER = ['kunder', 'ase60', 'simulering', 'lager', 'ritning', 'ordrar', 'lagerforslag', 'sammanstallning', 'andringar', 'stampling', 'planering', 'beredning'];
 
 function harledBas() {
   if (typeof document === 'undefined' || typeof window === 'undefined' || !window.location) return '';
@@ -135,6 +135,7 @@ function vagForVy({ aktivFlik, valdKund, aktivKundFlik, valdProdukt, valdAse60Pr
   if (aktivFlik === '__lagerforslag__') return '/lagerforslag/';
   if (aktivFlik === '__sammanstallning__') return '/sammanstallning/';
   if (aktivFlik === '__planering__') return '/planering/';
+  if (aktivFlik === '__beredning__') return '/beredning/';
   if (aktivFlik === '__andringar__') return '/andringar/';
   if (FLIKAR.includes(aktivFlik)) {
     const kategori = `/lager/${slugga(aktivFlik)}/`;
@@ -158,6 +159,7 @@ function tolkaVag(pathname) {
     case 'lagerforslag': return { flik: '__lagerforslag__' };
     case 'sammanstallning': return { flik: '__sammanstallning__' };
     case 'planering': return { flik: '__planering__' };
+    case 'beredning': return { flik: '__beredning__' };
     case 'andringar': return { flik: '__andringar__' };
     case 'lager': return { flik: FLIKAR.find(f => slugga(f) === andra) || FLIKAR[0], produktSlug: tredje || null };
     case 'ritning': return { flik: RITNING_FIL[andra] ? andra : '__stampling__' };
@@ -178,6 +180,7 @@ const VY_TITLAR = {
   __stampling__: 'Stämpling', __kunder__: 'Kunder', __ase60__: 'ASE60-generator', __simulering__: 'Simulering',
   __sammanstallning__: 'Sammanställning', __lagerforslag__: 'Lagerförslag',
   __ordrar__: 'Ordrar', __andringar__: 'Ändringslogg', __planering__: 'Planering',
+  __beredning__: 'Beredning',
 };
 function titelForVy({ aktivFlik, valdKund, valdProdukt }) {
   const del = valdProdukt?.namn || valdKund?.namn || VY_TITLAR[aktivFlik] || aktivFlik;
@@ -3081,6 +3084,304 @@ const st = StyleSheet.create({
   text: { color: '#fff', fontSize: 14 },
 });
 
+// ─── Beredning: flera kunder på en gång ──────────────────────────────────────
+// Kryssa i kunder + vad som ska med, och få ut allt i en körning — utskrift
+// eller ett zip-arkiv med en mapp per kund.
+//
+// Dokumenten byggs INTE här. De ägs av ase60-generatorn (CAD-ritning, kaplista,
+// materiallista, glasmått) och hämtas via vår egen server
+// (/api/beredning/dokument), som i sin tur pratar med generatorn server-till-
+// server. Därför blir innehållet exakt detsamma som när en kund skrivs ut
+// enskild i generatorn, och webbläsaren slipper CORS mot en annan tjänst.
+
+const BEREDNING_SEKTIONER = [
+  { nyckel: 'cad', etikett: 'CAD-ritning' },
+  { nyckel: 'optimering', etikett: 'Kaplista + optimering' },
+  { nyckel: 'beredning', etikett: 'Beredning (materiallista)' },
+  { nyckel: 'glasmatt', etikett: 'Glasmått' },
+];
+
+/** Filnamnssäkert kundnamn — blir mappnamnet i zip-arkivet. */
+function beredningMappNamn(namn) {
+  return (String(namn || 'kund').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim()) || 'kund';
+}
+
+function BeredningVy({ kunder, ase60Projekt, token, c, mobil }) {
+  const [valda, setValda] = useState(() => new Set());
+  const [sok, setSok] = useState('');
+  const [sektioner, setSektioner] = useState({ cad: true, optimering: true, beredning: true, glasmatt: true });
+  const [projektInfo, setProjektInfo] = useState({});
+  const [infoLaddad, setInfoLaddad] = useState(false);
+  const [generatorNere, setGeneratorNere] = useState(false);
+  const [status, setStatus] = useState('');
+  const [fel, setFel] = useState([]);
+  const [arbetar, setArbetar] = useState(false);
+
+  // Vilka projekt generatorn faktiskt kan bereda (och hur många partier de har).
+  // Ett anrop för hela listan i stället för ett per kund.
+  useEffect(() => {
+    if (!token) return;
+    let avbruten = false;
+    fetch(`${API}/api/beredning/projekt`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json().then(d => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (avbruten) return;
+        setProjektInfo(d?.projekt || {});
+        setGeneratorNere(!ok);
+        setInfoLaddad(true);
+      })
+      .catch(() => { if (!avbruten) { setGeneratorNere(true); setInfoLaddad(true); } });
+    return () => { avbruten = true; };
+  }, [token]);
+
+  // Samma kundunion som Kunder-vyn: ASE60-projekten visas som kunder, plus de
+  // kunder som bara finns i lagersystemet (manuella/Konfigurator-synkade).
+  const lista = React.useMemo(() => {
+    const franProjekt = ase60Projekt.map(p => {
+      const sparad = kunder.find(k => k.id === p.id || k.ase60ProjectId === p.id);
+      return { id: p.id, namn: p.name || p.id, farg: sparad?.farg || p.color || '', projectId: p.id };
+    });
+    const manuella = kunder
+      .filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id))
+      .map(k => ({ id: k.id, namn: k.namn || k.id, farg: k.farg || '', projectId: k.ase60ProjectId || null }));
+    return [...franProjekt, ...manuella].sort((a, b) => a.namn.localeCompare(b.namn, 'sv'));
+  }, [kunder, ase60Projekt]);
+
+  /** Kan kunden beredas, och om inte — varför? Styr utgråningen. */
+  const bedom = (rad) => {
+    if (!rad.projectId) return { ok: false, skal: 'Inget ASE60-projekt kopplat' };
+    const info = projektInfo[rad.projectId];
+    if (!info) {
+      return generatorNere
+        ? { ok: false, skal: 'ASE60-generatorn kunde inte nås' }
+        : { ok: false, skal: 'Projektet finns inte i ASE60-generatorn' };
+    }
+    if (!info.antalPartier) return { ok: false, skal: 'Projektet har inga partier' };
+    return { ok: true, info };
+  };
+
+  const synliga = lista.filter(r => !sok.trim() || r.namn.toLowerCase().includes(sok.trim().toLowerCase()));
+
+  const vaxla = (id) => setValda(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  // "Markera alla" gäller det man ser (sökfiltret) och bara det som går att bereda.
+  const markeraAlla = () => setValda(new Set(synliga.filter(r => bedom(r).ok).map(r => r.id)));
+  const rensaVal = () => setValda(new Set());
+
+  const antalValda = lista.filter(r => valda.has(r.id) && bedom(r).ok).length;
+  const nagonSektion = Object.values(sektioner).some(Boolean);
+
+  /**
+   * Hämtar dokumenten en kund i taget så statusraden kan räkna upp och EN
+   * trasig kund inte river hela körningen — den hamnar i fel-listan i stället.
+   */
+  async function byggAlla() {
+    const koa = lista.filter(r => valda.has(r.id) && bedom(r).ok);
+    setFel([]);
+    if (!koa.length) { setStatus('Välj minst en kund.'); return null; }
+    if (!nagonSektion) { setStatus('Kryssa i minst en del att få ut.'); return null; }
+    setArbetar(true);
+    const klara = [];
+    const misslyckade = [];
+    for (let i = 0; i < koa.length; i++) {
+      const rad = koa[i];
+      setStatus(`Bygger ${i + 1}/${koa.length} — ${rad.namn}…`);
+      try {
+        const res = await fetch(`${API}/api/beredning/dokument`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ projectId: rad.projectId, sections: sektioner }),
+        });
+        if (!res.ok) {
+          let meddelande = `Servern svarade ${res.status}`;
+          try { const j = await res.json(); if (j?.error) meddelande = j.error; } catch { /* icke-JSON */ }
+          throw new Error(meddelande);
+        }
+        klara.push({ rad, html: await res.text() });
+      } catch (e) {
+        misslyckade.push({ namn: rad.namn, meddelande: e?.message || 'Okänt fel' });
+      }
+    }
+    setArbetar(false);
+    setFel(misslyckade);
+    if (!klara.length) { setStatus('Inget dokument kunde byggas.'); return null; }
+    return klara;
+  }
+
+  async function skrivUt() {
+    const docs = await byggAlla();
+    if (!docs) return;
+    // Ett fönster per kund — samma vy som en enskild utskrift, så
+    // utskriftsdialogen får rätt sidstorlek per dokument.
+    let blockerade = 0;
+    for (const d of docs) {
+      const w = Platform.OS === 'web' ? window.open('', '_blank') : null;
+      if (!w) { blockerade++; continue; }
+      w.document.open();
+      w.document.write(d.html);
+      w.document.close();
+    }
+    setStatus(blockerade
+      ? `${docs.length - blockerade} öppnade. ${blockerade} blockerades av webbläsarens popup-spärr — tillåt popup-fönster för sidan.`
+      : `${docs.length} kund${docs.length === 1 ? '' : 'er'} öppnade för utskrift.`);
+  }
+
+  async function laddaNerZip() {
+    const docs = await byggAlla();
+    if (!docs) return;
+    setArbetar(true);
+    setStatus('Paketerar zip…');
+    try {
+      const datum = new Date().toISOString().slice(0, 10);
+      const res = await fetch(`${API}/api/beredning/zip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: `beredning-${datum}`,
+          files: docs.map(d => ({ path: `${beredningMappNamn(d.rad.namn)}/beredning.html`, content: d.html })),
+        }),
+      });
+      if (!res.ok) throw new Error(`Zip misslyckades (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `beredning-${datum}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus(`Zip med ${docs.length} kundmapp${docs.length === 1 ? '' : 'ar'} nedladdad.`);
+    } catch (e) {
+      setStatus(e?.message || 'Zip misslyckades.');
+    }
+    setArbetar(false);
+  }
+
+  const knapp = (etikett, onPress, primar) => (
+    <TouchableOpacity onPress={onPress} disabled={arbetar}
+      style={{ backgroundColor: arbetar ? c.input : (primar ? '#2563eb' : c.input), borderWidth: primar ? 0 : 1, borderColor: c.inputBorder,
+        borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10, opacity: arbetar ? 0.6 : 1 }}>
+      <Text style={{ color: primar && !arbetar ? '#fff' : c.text, fontWeight: '600', fontSize: 14 }}>{etikett}</Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+      <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 6 }]}>📝 Beredning</Text>
+      <Text style={{ color: c.textMuted, fontSize: 13, marginBottom: 16 }}>
+        Välj kunder och vad som ska med — skriv ut allt på en gång eller ladda ner ett zip-arkiv med en mapp per kund.
+      </Text>
+
+      {generatorNere && infoLaddad && (
+        <View style={{ backgroundColor: c.varning, borderColor: c.varningBorder, borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 16 }}>
+          <Text style={{ color: c.varningText, fontSize: 13 }}>
+            ASE60-generatorn svarar inte. Beredning kan inte hämtas förrän den är igång igen.
+          </Text>
+        </View>
+      )}
+
+      {/* Vad som ska med */}
+      <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16 }]}>
+        <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14, marginBottom: 10 }}>Ta med</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+          {BEREDNING_SEKTIONER.map(s => (
+            <TouchableOpacity key={s.nyckel}
+              onPress={() => setSektioner(p => ({ ...p, [s.nyckel]: !p[s.nyckel] }))}
+              style={{ flexDirection: 'row', alignItems: 'center', minWidth: mobil ? '100%' : 220, paddingVertical: 4 }}>
+              <View style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 2, marginRight: 10, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: sektioner[s.nyckel] ? '#16a34a' : 'transparent', borderColor: sektioner[s.nyckel] ? '#16a34a' : c.inputBorder }}>
+                {sektioner[s.nyckel] && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</Text>}
+              </View>
+              <Text style={{ color: c.text, fontSize: 14 }}>{s.etikett}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {!nagonSektion && <Text style={{ color: c.varningText, fontSize: 12, marginTop: 8 }}>Kryssa i minst en del.</Text>}
+      </View>
+
+      {/* Kundval */}
+      <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14, flex: 1, minWidth: 120 }}>
+            Kunder{antalValda > 0 ? ` · ${antalValda} vald${antalValda === 1 ? '' : 'a'}` : ''}
+          </Text>
+          <TouchableOpacity onPress={markeraAlla} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
+            <Text style={{ color: c.text, fontSize: 13 }}>Markera alla</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={rensaVal} style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
+            <Text style={{ color: c.text, fontSize: 13 }}>Rensa</Text>
+          </TouchableOpacity>
+        </View>
+        <TextInput
+          value={sok}
+          onChangeText={setSok}
+          placeholder="Sök kund…"
+          placeholderTextColor={c.textMuted}
+          style={[styles.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText, marginBottom: 10 }]} />
+
+        {/* Egen scroll: i verkstaden (surfplatta) blir listan lång */}
+        <ScrollView style={{ maxHeight: mobil ? 320 : 420 }} nestedScrollEnabled>
+          {synliga.length === 0 && (
+            <Text style={{ color: c.textMuted, fontSize: 13, padding: 8 }}>
+              {infoLaddad ? 'Inga kunder matchar sökningen.' : 'Laddar kunder…'}
+            </Text>
+          )}
+          {synliga.map(rad => {
+            const dom = bedom(rad);
+            const ikryssad = valda.has(rad.id);
+            return (
+              <TouchableOpacity key={rad.id}
+                onPress={() => dom.ok && vaxla(rad.id)}
+                disabled={!dom.ok}
+                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 6, borderRadius: 8,
+                  opacity: dom.ok ? 1 : 0.45, backgroundColor: ikryssad ? (c.radJamn) : 'transparent' }}>
+                <View style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 2, marginRight: 12, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: ikryssad && dom.ok ? '#16a34a' : 'transparent', borderColor: ikryssad && dom.ok ? '#16a34a' : c.inputBorder }}>
+                  {ikryssad && dom.ok && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</Text>}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: c.textRubrik, fontWeight: '600', fontSize: 15 }}>👤 {rad.namn}</Text>
+                  <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+                    {dom.ok
+                      ? `${dom.info.antalPartier} parti${dom.info.antalPartier === 1 ? '' : 'er'} · ${dom.info.system === 'ass32' ? 'ASS 32' : 'ASE 60'}`
+                      : dom.skal}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* Utgångar */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+        {knapp('🖨️ Skriv ut valda', skrivUt, true)}
+        {knapp('⬇️ Ladda ner ZIP', laddaNerZip, false)}
+      </View>
+
+      {!!status && (
+        <Text style={{ color: arbetar ? c.text : '#15803d', fontSize: 13, marginTop: 14 }}>{status}</Text>
+      )}
+
+      {/* Fel per kund — resten av körningen gick igenom ändå */}
+      {fel.length > 0 && (
+        <View style={{ backgroundColor: c.varning, borderColor: c.varningBorder, borderWidth: 1, borderRadius: 8, padding: 12, marginTop: 12 }}>
+          <Text style={{ color: c.varningText, fontWeight: '700', fontSize: 13, marginBottom: 6 }}>
+            {fel.length} kund{fel.length === 1 ? '' : 'er'} kunde inte hämtas:
+          </Text>
+          {fel.map((f, i) => (
+            <Text key={i} style={{ color: c.varningText, fontSize: 12, marginTop: 2 }}>• {f.namn}: {f.meddelande}</Text>
+          ))}
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
 // ─── Produkt detaljsida ───────────────────────────────────────────────────────
 function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
   const { c } = React.useContext(TemaContext);
@@ -3793,6 +4094,7 @@ export default function App() {
   const arLagerforslag = aktivFlik === '__lagerforslag__';
   const arOrdrar = aktivFlik === '__ordrar__';
   const arPlanering = aktivFlik === '__planering__';
+  const arBeredning = aktivFlik === '__beredning__';
 
   useEffect(() => {
     if (arKunder && token) {
@@ -3825,9 +4127,9 @@ export default function App() {
   // hämtningen aldrig göras om när token väl kommer.
   // Adressen /ase60/<projekt>/ behöver också projektlistan för att kunna matchas.
   useEffect(() => {
-    if (arKunder || arSammanstallning || arLagerforslag || arPlanering) { laddaKunder(); laddaAse60Projekt(); }
+    if (arKunder || arSammanstallning || arLagerforslag || arPlanering || arBeredning) { laddaKunder(); laddaAse60Projekt(); }
     else if (vantandeVagRef.current?.ase60Slug) laddaAse60Projekt();
-  }, [arKunder, arSammanstallning, arLagerforslag, arPlanering, token]);
+  }, [arKunder, arSammanstallning, arLagerforslag, arPlanering, arBeredning, token]);
 
   // Paket-listan (ASE 60 / ASS 32 / ...) är delad med ase60-generator och
   // Uterum-Konfigurator via GET /api/paket — ingen inloggning krävs, samma
@@ -4174,7 +4476,7 @@ export default function App() {
   const oppnaLaggTill = () => {
     setRedigeraProdukt(null);
     setFormNamn(''); setFormArtikel(''); setFormAntal('');
-    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSimulering || arSammanstallning || arLagerforslag || arPlanering ? '' : aktivFlik);
+    setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSimulering || arSammanstallning || arLagerforslag || arPlanering || arBeredning ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
     setFormBild(null); setFormFarger([]); setFormLangder([]);
     setModalVisible(true);
@@ -4478,6 +4780,13 @@ export default function App() {
                 <Text style={[styles.sidebarBadgeText, { color: c.sidebarBadgeText }, arKunder && styles.sidebarBadgeTextAktiv]}>{kunder.length}</Text>
               </View>
             )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sidebarFlik, arBeredning && styles.sidebarFlikAktiv]}
+            onPress={() => { setAktivFlik('__beredning__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); setValdKund(null); }}>
+            <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arBeredning && styles.sidebarFlikTextAktiv]}>
+              📝 Beredning
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.sidebarDivider} />
@@ -5092,6 +5401,10 @@ export default function App() {
             <PlaneringVy kunder={kunder} ase60Projekt={ase60Projekt} token={token} c={c} mobil={mobil} onKundSparad={kundFranServer} />
           )}
 
+          {!valdProdukt && arBeredning && (
+            <BeredningVy kunder={kunder} ase60Projekt={ase60Projekt} token={token} c={c} mobil={mobil} />
+          )}
+
           {!valdProdukt && arSammanstallning && (
             <SammanstallningVy kunder={kunder} ase60Projekt={ase60Projekt} c={c} />
           )}
@@ -5104,7 +5417,7 @@ export default function App() {
             <OrdrarVy ordrar={ordrar} produkter={produkter} onLaggInOrder={laggInOrder} onImporteraOrdrar={importeraOrdrar} onTaBortOrder={taBortOrder} onRensaLogg={rensaLoggOrdrar} inloggad={inloggad} token={token} c={c} />
           )}
 
-          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSimulering && !arSammanstallning && !arLagerforslag && !arOrdrar && !arPlanering && <>
+          {!valdProdukt && !arRitning && !arAndringslogg && !arKunder && !arStampling && !arAse60 && !arSimulering && !arSammanstallning && !arLagerforslag && !arOrdrar && !arPlanering && !arBeredning && <>
             {lagLager > 0 && (
               <View style={[styles.varning, { backgroundColor: c.varning, borderColor: c.varningBorder }]}>
                 <Text style={[styles.varningText, { color: c.varningText }]}>⚠️ {lagLager} produkt{lagLager > 1 ? 'er' : ''} har lågt lager</Text>

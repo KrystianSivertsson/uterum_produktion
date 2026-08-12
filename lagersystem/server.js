@@ -10,7 +10,10 @@ const pdfParse = require('pdf-parse/lib/pdf-parse.js'); // PDF → text (Schüco
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '40mb' })); // 40mb: base64-kodade PDF-dokument från ASE60
+// 200mb: base64-kodade PDF-dokument från ASE60, samt batch-beredningen som
+// skickar upp flera färdiga kunddokument (~4mb styck med inbäddade CAD-bilder)
+// i ETT anrop till /api/beredning/zip.
+app.use(express.json({ limit: '200mb' }));
 
 // Intern endpoint BEFORE redirect middleware — anropas av ASE60 server-till-server via localhost
 // Placeras här så att HTTP-anrop från localhost inte omdirigeras till HTTPS
@@ -710,6 +713,82 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
     }));
     const serier = [...new Set(proj.units.map(u => u && u.series).filter(Boolean))];
     res.json({ projekt: proj.name || '', serier, profiler, bomWarnings: bomResult.warnings || [] });
+  } catch {
+    res.status(502).json({ error: 'Kunde inte nå ASE60-generatorn' });
+  }
+});
+
+// --- BEREDNING (flera kunder på en gång) ---
+// Dokumenten ÄGS av ase60-generatorn (client/src/pdf-export.ts respektive
+// /api/ass32/pdf). Vi bygger alltså inget innehåll här — vi hämtar det som
+// servern redan kan producera via /api/projects/:id/beredning. Att gå
+// server-till-server i stället för att låta webbläsaren anropa ase60 direkt
+// slipper CORS och håller ase60-generatorn oexponerad utåt.
+
+// Vilka av kundkortens ase60-projekt går faktiskt att bereda? Klienten gråar ut
+// resten. Ett enda anrop för hela listan så kundvyn slipper N request.
+app.get('/api/beredning/projekt', authMiddleware, async (req, res) => {
+  try {
+    const r = await ase60Fetch('/api/projects');
+    if (!r.ok) throw new Error(`ase60-generator ${r.status}`);
+    const data = await r.json();
+    const projekt = {};
+    for (const p of data.projects || []) {
+      const units = Array.isArray(p.units) ? p.units : [];
+      const ass32 = units.filter(u => u && u.system === 'ass32');
+      const ase60 = units.filter(u => u && (u.system || 'ase60') === 'ase60');
+      // Samma val som ase60:s egen batch: blandade projekt körs som det
+      // system som har flest partier.
+      const system = ass32.length > ase60.length ? 'ass32' : 'ase60';
+      projekt[p.id] = { namn: p.name || '', system, antalPartier: (system === 'ass32' ? ass32 : ase60).length };
+    }
+    res.json({ projekt });
+  } catch {
+    // Generatorn nere → tom lista. Klienten visar då alla kunder som gråade
+    // med förklaring i stället för att krascha beredningsvyn.
+    res.status(502).json({ error: 'Kunde inte nå ASE60-generatorn', projekt: {} });
+  }
+});
+
+// Ett kunddokument. Klienten anropar en gång per vald kund så den kan visa
+// löpande status och låta en enskild kund fallera utan att stoppa de andra.
+app.post('/api/beredning/dokument', authMiddleware, async (req, res) => {
+  const { projectId, sections } = req.body || {};
+  if (!projectId) return res.status(400).json({ error: 'projectId krävs' });
+  try {
+    const r = await ase60Fetch(`/api/projects/${encodeURIComponent(projectId)}/beredning`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sections: sections || undefined }),
+    });
+    if (!r.ok) {
+      let msg = `ASE60-generatorn svarade ${r.status}`;
+      try { const j = await r.json(); if (j && j.error) msg = j.error; } catch { /* icke-JSON-fel */ }
+      return res.status(r.status === 404 || r.status === 422 ? r.status : 502).json({ error: msg });
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(await r.text());
+  } catch {
+    res.status(502).json({ error: 'Kunde inte nå ASE60-generatorn' });
+  }
+});
+
+// Paketering: ase60-generatorn har archiver (/api/zip), lagersystemet har inget
+// zip-bibliotek. Vi skickar de färdiga dokumenten dit och strömmar tillbaka
+// arkivet — en mapp per kund enligt files[].path.
+app.post('/api/beredning/zip', authMiddleware, async (req, res) => {
+  const { name, files } = req.body || {};
+  if (!Array.isArray(files) || files.length === 0) return res.status(400).json({ error: 'Inga filer att paketera' });
+  try {
+    const r = await ase60Fetch('/api/zip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name || 'beredning', files }),
+    });
+    if (!r.ok) return res.status(502).json({ error: `Zip misslyckades (${r.status})` });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', r.headers.get('content-disposition') || 'attachment; filename="beredning.zip"');
+    res.send(Buffer.from(await r.arrayBuffer()));
   } catch {
     res.status(502).json({ error: 'Kunde inte nå ASE60-generatorn' });
   }
