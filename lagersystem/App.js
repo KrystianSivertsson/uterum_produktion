@@ -3711,7 +3711,12 @@ export default function App() {
   const [ritningar, setRitningar] = useState(RITNINGAR_FALLBACK);
   const [ase60Projekt, setAse60Projekt] = useState([]);
   const [valdAse60Projekt, setValdAse60Projekt] = useState(null);
+  // sokAse60 delas av två ställen som aldrig syns samtidigt: projektväljaren i
+  // "Ny kund"-formuläret (Kunder-vyn) och kundsöken i ASE60-vyn. ase60SokOppen
+  // styr bara om ASE60-vyns träfflista ligger framme — den behövs som eget
+  // state för att en tom sökruta ska kunna visa hela kundlistan.
   const [sokAse60, setSokAse60] = useState('');
+  const [ase60SokOppen, setAse60SokOppen] = useState(false);
   const [kundSok, setKundSok] = useState('');
   const [valdaKunderExport, setValdaKunderExport] = useState(() => new Set());
   const [klartRuta, setKlartRuta] = useState(null); // { rader, serier, projekt, laddar, fel }
@@ -4302,10 +4307,13 @@ export default function App() {
   // flikarna innan sessionskollen är klar, och utan token-beroendet skulle
   // hämtningen aldrig göras om när token väl kommer.
   // Adressen /ase60/<projekt>/ behöver också projektlistan för att kunna matchas.
+  // ASE60-vyn behöver också listan: kundsöken där letar i projekten, och den
+  // ska fungera direkt när man klickar in på fliken — inte bara när adressen
+  // råkar innehålla ett projekt (/ase60/<projekt>/).
   useEffect(() => {
     if (arKunder || arSammanstallning || arLagerforslag || arPlanering || arBeredning) { laddaKunder(); laddaAse60Projekt(); }
-    else if (vantandeVagRef.current?.ase60Slug) laddaAse60Projekt();
-  }, [arKunder, arSammanstallning, arLagerforslag, arPlanering, arBeredning, token]);
+    else if (arAse60 || vantandeVagRef.current?.ase60Slug) laddaAse60Projekt();
+  }, [arKunder, arSammanstallning, arLagerforslag, arPlanering, arBeredning, arAse60, token]);
 
   // Paket-listan (ASE 60 / ASS 32 / ...) är delad med ase60-generator och
   // Uterum-Konfigurator via GET /api/paket — ingen inloggning krävs, samma
@@ -4994,9 +5002,12 @@ export default function App() {
 
           <View style={styles.sidebarDivider} />
           <Text style={styles.sidebarTitel}>Alufräs bearbetning</Text>
+          {/* Kundsöken börjar stängd varje gång man går in på fliken, precis som
+              produktsöket (setSok('')) — annars låg en gammal träfflista och
+              skymde generatorn när man kom tillbaka. */}
           <TouchableOpacity
             style={[styles.sidebarFlik, arAse60 && styles.sidebarFlikAktiv]}
-            onPress={() => { setAktivFlik('__ase60__'); setSok(''); setVisaSidebar(false); setValdProdukt(null); }}>
+            onPress={() => { setAktivFlik('__ase60__'); setSok(''); setSokAse60(''); setAse60SokOppen(false); setVisaSidebar(false); setValdProdukt(null); }}>
             <Text style={[styles.sidebarFlikText, { color: c.sidebarText }, arAse60 && styles.sidebarFlikTextAktiv]}>
               🪟 Generator
             </Text>
@@ -5362,8 +5373,14 @@ export default function App() {
                 <View>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                     <Text style={[styles.kategoriRubrik, { color: c.textRubrik }]}>👥 Kunder</Text>
+                    {/* Nollställ projektväljaren när formuläret öppnas: valdAse60Projekt
+                        och sokAse60 delas med ASE60-vyns kundsök, och en kund man tittat
+                        på där ska inte dyka upp förvald i "Ny kund". */}
                     <TouchableOpacity
-                      onPress={() => setVisaLaggTillKund(v => !v)}
+                      onPress={() => {
+                        if (!visaLaggTillKund) { setValdAse60Projekt(null); setSokAse60(''); }
+                        setVisaLaggTillKund(v => !v);
+                      }}
                       style={{ backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 }}>
                       <Text style={{ color: '#fff', fontWeight: '700' }}>+ Lägg till kund</Text>
                     </TouchableOpacity>
@@ -5577,12 +5594,130 @@ export default function App() {
             });
           })()}
 
-          {!valdProdukt && arAse60 && Platform.OS === 'web' && React.createElement('iframe', {
-            key: 'ase60',
-            src: ASE60_URL,
-            style: { width: '100%', height: '100%', border: 'none', borderRadius: 8 },
-            title: 'ASE60-generator',
-          })}
+          {/* ASE60-generatorn är en egen app i en iframe. Ovanför den ligger en kundsök
+              mot generatorns projektlista (/api/ase60-projekt), eftersom generatorn själv
+              inte har någon sökning och listan blir oanvändbar när projekten blir många.
+              Söket använder kundSokTraff — samma delsträngs-/skiftlägesregler som
+              Kunder-vyn, så det känns likadant i hela appen. Träfflistan läggs som ett
+              överlägg OVANPÅ iframen i stället för att ersätta den: iframen får aldrig
+              avmonteras, för då tappar generatorn allt påbörjat arbete. */}
+          {!valdProdukt && arAse60 && Platform.OS === 'web' && (
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <TextInput
+                  style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  placeholder="🔍 Sök kund (namn, com-nr, färg, paket)..."
+                  placeholderTextColor={c.textMuted}
+                  value={sokAse60}
+                  onFocus={() => setAse60SokOppen(true)}
+                  onChangeText={t => { setSokAse60(t); setAse60SokOppen(true); }}
+                />
+                {(ase60SokOppen || sokAse60.length > 0) && (
+                  <TouchableOpacity
+                    onPress={() => { setSokAse60(''); setAse60SokOppen(false); }}
+                    style={{ paddingHorizontal: 14, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.input }}>
+                    <Text style={{ color: c.textMuted, fontSize: 13, fontWeight: '600' }}>✕ Stäng</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Vald kund. Adressen blir /ase60/<projekt>/ och tål omladdning, men
+                  generatorn i iframen går inte att djuplänka in i — därför visar vi
+                  projektets egna uppgifter här i stället för att styra iframen. */}
+              {valdAse60Projekt && (
+                <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 15 }}>👤 {valdAse60Projekt.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 3 }}>
+                      {valdAse60Projekt.comNo ? <Text style={{ color: c.textMuted, fontSize: 12 }}>{valdAse60Projekt.comNo}</Text> : null}
+                      {valdAse60Projekt.paket ? <Text style={{ color: '#2563eb', fontSize: 11, fontWeight: '700' }}>{valdAse60Projekt.paket}</Text> : null}
+                      {valdAse60Projekt.color ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(valdAse60Projekt.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)' }} />
+                          <Text style={{ color: c.textMuted, fontSize: 12 }}>{valdAse60Projekt.color}</Text>
+                        </View>
+                      ) : null}
+                      {valdAse60Projekt.units?.length > 0 ? (
+                        <Text style={{ color: c.textMuted, fontSize: 12 }}>
+                          {valdAse60Projekt.units.map(u => `${u.widthMm}×${u.heightMm} mm`).join(' · ')}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                  <TouchableOpacity onPress={() => setValdAse60Projekt(null)} style={{ padding: 8 }}>
+                    <Text style={{ color: c.textMuted, fontSize: 15 }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <View style={{ flex: 1 }}>
+                {React.createElement('iframe', {
+                  key: 'ase60',
+                  src: ASE60_URL,
+                  style: { width: '100%', height: '100%', border: 'none', borderRadius: 8 },
+                  title: 'ASE60-generator',
+                })}
+                {ase60SokOppen && (
+                  <ScrollView
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: c.bg }}
+                    contentContainerStyle={{ paddingBottom: 20 }}>
+                    {(() => {
+                      if (ase60Projekt.length === 0) {
+                        return (
+                          <View style={{ alignItems: 'center', marginTop: 40 }}>
+                            <Text style={{ color: c.textMuted, fontSize: 15, marginBottom: 12 }}>Inga ASE60-projekt hittades.</Text>
+                            <TouchableOpacity onPress={laddaAse60Projekt} style={{ backgroundColor: c.input, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 }}>
+                              <Text style={{ color: c.text }}>Ladda om</Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      }
+                      // description matchas med: där ligger märkning/ordernummer när
+                      // com-nr saknas i generatorns projekt.
+                      const traffar = ase60Projekt.filter(p =>
+                        kundSokTraff(sokAse60, p.name, p.comNo, p.color, p.paket, p.description));
+                      if (traffar.length === 0) {
+                        return (
+                          <Text style={[styles.tomText, { color: c.textMuted }]}>
+                            Ingen kund matchar "{sokAse60.trim()}".
+                          </Text>
+                        );
+                      }
+                      return traffar.map(proj => (
+                        <TouchableOpacity
+                          key={proj.id}
+                          onPress={() => { setValdAse60Projekt(proj); setSokAse60(''); setAse60SokOppen(false); }}
+                          style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+                            valdAse60Projekt?.id === proj.id && { borderColor: '#2563eb' }]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>👤 {proj.name}</Text>
+                            {proj.comNo ? <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>{proj.comNo}</Text> : null}
+                            {proj.paket ? (
+                              <Text style={{ color: '#2563eb', fontSize: 11, fontWeight: '700', marginTop: 2 }}>
+                                {proj.paket}{paketTillSystem(proj.paket) ? ` · ${paketTillSystem(proj.paket)}` : ''}
+                              </Text>
+                            ) : null}
+                            {proj.color ? (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                                <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(proj.color), borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)' }} />
+                                <Text style={{ color: c.textMuted, fontSize: 12 }}>{proj.color}</Text>
+                              </View>
+                            ) : null}
+                            {proj.units?.length > 0 ? (
+                              <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+                                {proj.units.map(u => `${u.widthMm}×${u.heightMm} mm`).join(' · ')}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <Text style={{ color: c.textMuted, fontSize: 13 }}>›</Text>
+                        </TouchableOpacity>
+                      ));
+                    })()}
+                  </ScrollView>
+                )}
+              </View>
+            </View>
+          )}
 
           {!valdProdukt && arSimulering && Platform.OS === 'web' && React.createElement('iframe', {
             key: 'simulering',
