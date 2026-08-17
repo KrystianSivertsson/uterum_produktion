@@ -1644,50 +1644,145 @@ function DatumFalt({ varde, onValt, c, tema }) {
   );
 }
 
-function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
+// Väljaren som lyfter in en kund på tavlan. Leveransdatumet sätts direkt här,
+// och det är ett medvetet val: en rad utan leveransdatum syns ändå inte på
+// tavlan, så "lägg till tomt och fyll i sen" hade gett en rad som fanns i
+// verkstadens huvud men försvann vid nästa omladdning. Ett steg, ett sparande,
+// och kunden är antingen inplanerad eller inte.
+function LaggTillPaTavlanModal({ valjbara, c, tema, mobil, sparar, onStang, onLagg }) {
+  const [sok, setSok] = React.useState('');
+  const [vald, setVald] = React.useState(null);
+  const [datum, setDatum] = React.useState('');
+  const q = sok.trim().toLowerCase();
+  const traffar = q ? valjbara.filter(k => (k.namn || '').toLowerCase().includes(q)) : valjbara;
+
+  return (
+    <Modal visible animationType="fade" transparent onRequestClose={onStang}>
+      <View style={um.bakgrund}>
+        <View style={[um.panel, { backgroundColor: c.modal, width: mobil ? '92%' : 460 }]}>
+          <View style={um.rubrikRad}>
+            <Text style={[um.rubrik, { color: c.textRubrik }]}>Lägg till kund på tavlan</Text>
+            <TouchableOpacity onPress={onStang}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+          </View>
+
+          {!vald ? (
+            <>
+              <TextInput
+                style={[um.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText, marginBottom: 8 }]}
+                placeholder="Sök kund..." placeholderTextColor={c.textMuted}
+                value={sok} onChangeText={setSok} autoFocus />
+              {/* Listan kan bli lång (alla gamla projekt ligger här) — egen
+                  scroll så panelen aldrig växer utanför surfplattans skärm. */}
+              <ScrollView style={{ maxHeight: 300 }}>
+                {traffar.length === 0 && (
+                  <Text style={{ color: c.textMuted, fontSize: 13, paddingVertical: 10 }}>
+                    {valjbara.length === 0 ? 'Alla kunder ligger redan på tavlan.' : 'Ingen kund matchar sökningen.'}
+                  </Text>
+                )}
+                {traffar.map(k => (
+                  <TouchableOpacity
+                    key={k.id}
+                    onPress={() => { setVald(k); setDatum(''); }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 10,
+                      borderRadius: 8, marginBottom: 4, backgroundColor: c.input, borderWidth: 1, borderColor: c.inputBorder }}>
+                    {!!k.farg && <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(k.farg), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />}
+                    <Text style={{ color: c.text, fontSize: 14, fontWeight: '600', flex: 1 }}>{k.namn}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          ) : (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                {!!vald.farg && <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: fargTillCSS(vald.farg), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />}
+                <Text style={{ color: c.textRubrik, fontSize: 16, fontWeight: '700' }}>{vald.namn}</Text>
+              </View>
+              <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 8 }}>
+                Leveransdatum — datumet kunden är lovad, och det som lägger kunden på tavlan.
+                Produktionsstart och klart-datum fyller du i på raden efteråt.
+              </Text>
+              <DatumFalt varde={datum} onValt={setDatum} c={c} tema={tema} />
+              <TouchableOpacity
+                onPress={() => onLagg(vald, datum)}
+                disabled={!datum || sparar}
+                style={[um.laggKnapp, { marginTop: 12 }, (!datum || sparar) && { opacity: 0.5 }]}>
+                <Text style={um.laggText}>{sparar ? 'Sparar...' : 'Lägg till på tavlan'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setVald(null)} style={{ marginTop: 10, alignItems: 'center' }}>
+                <Text style={{ color: c.textMuted, fontSize: 12 }}>← Välj annan kund</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOppnaKund }) {
   const { tema } = React.useContext(TemaContext) || {};
   const [sok, setSok] = React.useState('');
   // Klara kunder göms som standard — tavlan ska visa det som ligger kvar.
   const [visaKlara, setVisaKlara] = React.useState(false);
+  const [visaLaggTill, setVisaLaggTill] = React.useState(false);
   const [fel, setFel] = React.useState('');
   const [sparar, setSparar] = React.useState(null); // kundId:falt som just skickas
+  // Räknare som remountar datumfälten. Ångrar man borttagningen av en kund ska
+  // fältet hoppa tillbaka till serverns värde, och det gör det bara om den
+  // lokala kopian i DatumFalt nollställs.
+  const [aterstall, setAterstall] = React.useState(0);
 
   // Samma sammanslagning som Sammanställningen: ASE60-projekten visas som kunder
   // även innan de finns i kunder.json. Är kunden redan sparad används DEN radens
   // id, annars skulle en andra rad skapas för samma projekt.
-  const { synliga: rader, antalKlaraKunder } = React.useMemo(() => {
-    const lista = [];
+  const lista = React.useMemo(() => {
+    const alla = [];
     for (const proj of ase60Projekt) {
       const sparad = kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id);
-      lista.push({
+      alla.push({
         id: sparad?.id || proj.id, namn: proj.name, farg: sparad?.farg || proj.color || '',
         ase60ProjectId: proj.id, planering: sparad?.planering || {}, klart: sparad?.klart || {},
       });
     }
     for (const k of kunder.filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id))) {
-      lista.push({
+      alla.push({
         id: k.id, namn: k.namn, farg: k.farg || '', ase60ProjectId: k.ase60ProjectId || null,
         planering: k.planering || {}, klart: k.klart || {},
       });
     }
+    return alla;
+  }, [kunder, ase60Projekt]);
+
+  // Tavlan är inte kundregistret. En kund hör hit först när någon planerat in
+  // den, och det är leveransdatumet som säger det — utan den gränsen hamnade
+  // varenda gammalt ASE60-projekt på tavlan och gjorde den oanvändbar.
+  const arPlanerad = (k) => !!k.planering?.leveransDatum;
+  // "Klar" = alla moment avbockade, i planeringen eller på kundkortet.
+  const arKlar = (k) => KUND_FLIKAR.every(f => k.planering?.moment?.[f]?.klar || k.klart?.[f]);
+
+  const planerade = React.useMemo(() => lista.filter(arPlanerad), [lista]);
+  // Kunder som ännu inte är inplanerade — de som "+ Lägg till kund" väljer bland.
+  const valjbara = React.useMemo(
+    () => lista.filter(k => !arPlanerad(k)).sort((a, b) => (a.namn || '').localeCompare(b.namn || '', 'sv')),
+    [lista]);
+
+  const rader = React.useMemo(() => {
     const q = sok.trim().toLowerCase();
-    // "Aktiv" = inte färdigproducerad. En kund där ALLA moment är avbockade
-    // hör inte hemma på produktionstavlan längre. Den göms bara — "Visa klara"
-    // tar fram den igen, inget raderas.
-    const arKlar = (k) => KUND_FLIKAR.every(f => k.planering?.moment?.[f]?.klar || k.klart?.[f]);
-    const synliga = lista
+    // En kund där ALLA moment är avbockade är färdigproducerad och hör inte
+    // hemma på produktionstavlan längre. Den göms bara — "Visa klara" tar fram
+    // den igen, inget raderas.
+    return planerade
       .filter(k => visaKlara || !arKlar(k))
       .filter(k => !q || (k.namn || '').toLowerCase().includes(q))
-      // Leveransdatum styr ordningen — det är datumet kunden är lovad.
-      // Kunder utan leveransdatum sist, i namnordning.
+      // Leveransdatum styr ordningen — det är datumet kunden är lovad. Alla
+      // rader har ett (det är villkoret för att ligga här), lika datum sorteras
+      // på namn så ordningen inte hoppar mellan omritningar.
       .sort((a, b) => {
-        const da = a.planering?.leveransDatum || '', db = b.planering?.leveransDatum || '';
-        if (da && db && da !== db) return da < db ? -1 : 1;
-        if (da !== db) return da ? -1 : 1;
+        const da = a.planering.leveransDatum, db = b.planering.leveransDatum;
+        if (da !== db) return da < db ? -1 : 1;
         return (a.namn || '').localeCompare(b.namn || '', 'sv');
       });
-    return { synliga, antalKlaraKunder: lista.filter(arKlar).length };
-  }, [kunder, ase60Projekt, sok, visaKlara]);
+  }, [planerade, sok, visaKlara]);
 
   // Ett moment räknas som avrapporterat även när det bockats av på kundkortet
   // (där dras materialet från lagret) — annars hade planeringen visat 0/4 för en
@@ -1701,11 +1796,13 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
   };
   const antalKlara = (rad) => KUND_FLIKAR.filter(f => momentStatus(rad, f).klar).length;
 
+  // Returnerar om det gick vägen, så att den som lägger till en kund kan stänga
+  // väljaren först när servern svarat (och annars låta felrutan synas).
   const skicka = (rad, url, metod, body, nyckel) => {
-    if (!token) return;
+    if (!token) return Promise.resolve(false);
     setSparar(nyckel);
     setFel('');
-    fetch(url, {
+    return fetch(url, {
       method: metod,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       // namn/ase60ProjectId följer med så att servern kan skapa raden för ett
@@ -1713,12 +1810,29 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
       body: JSON.stringify({ ...body, namn: rad.namn, ase60ProjectId: rad.ase60ProjectId }),
     })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error('spara'))))
-      .then(kund => { onKundSparad(kund); setSparar(null); })
-      .catch(() => { setSparar(null); setFel('Kunde inte spara — kontrollera nätverket och försök igen.'); });
+      .then(kund => { onKundSparad(kund); setSparar(null); return true; })
+      .catch(() => { setSparar(null); setFel('Kunde inte spara — kontrollera nätverket och försök igen.'); return false; });
   };
 
-  const sattDatum = (rad, falt, varde) =>
-    skicka(rad, `${API}/api/kunder/${rad.id}/planering`, 'PUT', { [falt]: varde }, `${rad.id}:${falt}`);
+  const sattDatum = (rad, falt, varde) => {
+    // Leveransdatumet är det som håller kunden kvar på tavlan: rensas det
+    // försvinner raden. Fråga först — annars kan ett feltryck i datumfältet ta
+    // bort kunden mitt under handen på användaren.
+    if (falt === 'leveransDatum' && !varde && rad.planering?.leveransDatum) {
+      const fraga = `Ta bort ${rad.namn} från planeringstavlan?\n\n`
+        + 'Övriga datum och avbockningar finns kvar — kunden kommer tillbaka när du sätter ett nytt leveransdatum.';
+      if (Platform.OS === 'web' && !window.confirm(fraga)) {
+        setAterstall(n => n + 1); // ångrat: låt fältet hoppa tillbaka till det sparade datumet
+        return Promise.resolve(false);
+      }
+    }
+    return skicka(rad, `${API}/api/kunder/${rad.id}/planering`, 'PUT', { [falt]: varde }, `${rad.id}:${falt}`);
+  };
+
+  // Väljarens enda uppgift: sätta leveransdatumet, för det är det som lyfter in
+  // kunden på tavlan.
+  const laggTillPaTavlan = (rad, datum) =>
+    sattDatum(rad, 'leveransDatum', datum).then(ok => { if (ok) setVisaLaggTill(false); });
 
   const vaxlaMoment = (rad, moment) => {
     const status = momentStatus(rad, moment);
@@ -1736,12 +1850,20 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
 
   const KOL = { kund: 200, datum: 132, moment: 108, framsteg: 104, status: 140 };
   const tabellBredd = KOL.kund + KOL.datum * 3 + KOL.moment * KUND_FLIKAR.length + KOL.framsteg + KOL.status;
-  const summering = {
-    sena: rader.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'sen').length,
-    snart: rader.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'snart').length,
-    // Räknas på hela listan: när klara göms vore siffran annars alltid 0.
-    klara: antalKlaraKunder,
-  };
+  // Nyckeltalen räknas på ALLA planerade kunder, inte på raderna som råkar synas:
+  // sökrutan och "Visa klara" ska inte kunna flytta siffrorna, då gick de inte
+  // att lita på som lägesbild (och Klara hade alltid visat 0 när klara göms).
+  // Varje planerad kund hamnar i exakt en hink — klar / sen / snart / på tid —
+  // så Kunder är summan de tre andra räknas ur.
+  const summering = React.useMemo(() => ({
+    kunder: planerade.length,
+    sena: planerade.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'sen').length,
+    snart: planerade.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'snart').length,
+    klara: planerade.filter(arKlar).length,
+  }), [planerade]);
+  // Länkfärg: samma blå som "← Tillbaka till kunder", ljusare i mörkt tema där
+  // den annars försvinner mot de tonade radbakgrunderna.
+  const lankFarg = tema === 'mörkt' ? '#93c5fd' : '#2563eb';
 
   const Rubrik = ({ text, bredd, center }) => (
     <View style={{ width: bredd, paddingHorizontal: 8, paddingVertical: 10 }}>
@@ -1753,13 +1875,14 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
     <ScrollView style={{ flex: 1 }}>
       <Text style={[styles.kategoriRubrik, { color: c.textRubrik, marginBottom: 4 }]}>📅 Planering</Text>
       <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 12 }}>
-        Leverans, produktionsstart och när det ska vara klart — bocka av momenten allt eftersom.
+        Kunder med leveransdatum ligger på tavlan — sätt datum, bocka av momenten allt eftersom,
+        och när allt är klart faller kunden av.
       </Text>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12, alignItems: 'center' }}>
         <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, paddingVertical: 8, paddingHorizontal: 12 }]}>
           <Text style={{ color: c.textMuted, fontSize: 11 }}>Kunder</Text>
-          <Text style={{ color: c.textRubrik, fontSize: 18, fontWeight: '700' }}>{rader.length}</Text>
+          <Text style={{ color: c.textRubrik, fontSize: 18, fontWeight: '700' }}>{summering.kunder}</Text>
         </View>
         <View style={[styles.kort, { backgroundColor: c.kort, borderColor: '#ef4444', paddingVertical: 8, paddingHorizontal: 12 }]}>
           <Text style={{ color: c.textMuted, fontSize: 11 }}>Försenade</Text>
@@ -1773,6 +1896,13 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
           <Text style={{ color: c.textMuted, fontSize: 11 }}>Klara</Text>
           <Text style={{ color: '#16a34a', fontSize: 18, fontWeight: '700' }}>{summering.klara}</Text>
         </View>
+        {/* Enda vägen in på tavlan: en kund utan leveransdatum syns inte, så
+            utan väljaren hade tavlan stått tom och aldrig gått att fylla. */}
+        <TouchableOpacity
+          onPress={() => setVisaLaggTill(true)}
+          style={{ backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, justifyContent: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>+ Lägg till kund</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => setVisaKlara(v => !v)}
           style={[styles.kort, { backgroundColor: visaKlara ? '#16a34a22' : c.kort, borderColor: visaKlara ? '#16a34a' : c.kortBorder, paddingVertical: 8, paddingHorizontal: 12, justifyContent: 'center' }]}>
@@ -1793,8 +1923,20 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
       )}
 
       {rader.length === 0 && (
-        <Text style={{ color: c.textMuted, textAlign: 'center', marginTop: 40 }}>
-          {sok.trim() ? 'Ingen kund matchar sökningen.' : 'Inga kunder att planera ännu.'}
+        <Text style={{ color: c.textMuted, textAlign: 'center', marginTop: 40, lineHeight: 20 }}>
+          {sok.trim()
+            ? 'Ingen planerad kund matchar sökningen.'
+            : planerade.length === 0
+              ? 'Tavlan är tom — ingen kund har något leveransdatum ännu.\nTryck "+ Lägg till kund", välj kund och sätt leveransdatumet, så dyker raden upp här.'
+              : 'Alla planerade kunder är klara. Tryck "Visa klara" för att se dem.'}
+        </Text>
+      )}
+
+      {/* Sökrutan och "Visa klara" ändrar vad som syns men inte nyckeltalen —
+          säg därför rakt ut hur många rader listan är nere på just nu. */}
+      {rader.length > 0 && rader.length !== planerade.length && (
+        <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 6 }}>
+          Visar {rader.length} av {planerade.length} planerade kunder.
         </Text>
       )}
 
@@ -1824,15 +1966,24 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
                   // markering fungerar i både ljust och mörkt tema.
                   backgroundColor: status.ton || (i % 2 ? c.radJamn : c.rad),
                 }}>
-                  <View style={{ width: KOL.kund - 4, paddingHorizontal: 8, paddingVertical: 8 }}>
+                  {/* Bara kundrutan är klickbar, inte hela raden: datumfälten
+                      och momentrutorna ligger i samma rad och ett feltryck på
+                      surfplattan skulle annars kasta iväg en till kundkortet. */}
+                  <TouchableOpacity
+                    onPress={() => onOppnaKund?.(rad)}
+                    disabled={!onOppnaKund}
+                    style={{ width: KOL.kund - 4, paddingHorizontal: 8, paddingVertical: 8 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       {!!rad.farg && <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: fargTillCSS(rad.farg), borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' }} />}
-                      <Text numberOfLines={2} style={{ color: c.text, fontWeight: '600', fontSize: 14, flex: 1 }}>{rad.namn}</Text>
+                      <Text numberOfLines={2} style={{ color: onOppnaKund ? lankFarg : c.text, fontWeight: '600', fontSize: 14, flex: 1 }}>{rad.namn}</Text>
+                      {!!onOppnaKund && <Text style={{ color: lankFarg, fontSize: 15, fontWeight: '700' }}>›</Text>}
                     </View>
-                  </View>
+                  </TouchableOpacity>
                   {['leveransDatum', 'produktionStart', 'klartDatum'].map(falt => (
                     <View key={falt} style={{ width: KOL.datum, paddingHorizontal: 6, opacity: sparar === `${rad.id}:${falt}` ? 0.5 : 1 }}>
-                      <DatumFalt varde={rad.planering?.[falt] || ''} c={c} tema={tema}
+                      {/* aterstall i nyckeln: ångrad borttagning ska rita om
+                          fältet med serverns datum, inte det tömda. */}
+                      <DatumFalt key={aterstall} varde={rad.planering?.[falt] || ''} c={c} tema={tema}
                         onValt={v => sattDatum(rad, falt, v)} />
                     </View>
                   ))}
@@ -1884,7 +2035,15 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
         <Text style={{ color: c.textMuted, fontSize: 11, marginBottom: 20 }}>
           Röd rad = klart-datumet har passerat, gul = inom {PLANERING_VARNING_DAGAR} dagar, grön = alla moment avbockade.
           Streckad ruta = avbockad på kundkortet (materialet utbokat) och ångras där.
+          Klicka på kundnamnet för att öppna kundkortet. Rensar du leveransdatumet lämnar kunden tavlan.
         </Text>
+      )}
+
+      {visaLaggTill && (
+        <LaggTillPaTavlanModal
+          valjbara={valjbara} c={c} tema={tema} mobil={mobil} sparar={!!sparar}
+          onStang={() => setVisaLaggTill(false)}
+          onLagg={laggTillPaTavlan} />
       )}
     </ScrollView>
   );
@@ -4255,6 +4414,24 @@ export default function App() {
     return () => window.removeEventListener('popstate', vidPopstate);
   }, []);
 
+  // Planeringstavlan öppnar kundkortet exakt som kundlistan gör — samma
+  // kund-objekt och samma state — så att adressen blir /kunder/<kund>/<flik>/,
+  // omladdning fungerar och bakåtknappen tar en tillbaka till tavlan.
+  // ASE60-projekt utan rad i kunder.json byggs via kundFranAse60Projekt(),
+  // annars gick de inte att öppna från tavlan.
+  const oppnaKundkort = (rad) => {
+    if (!rad) return;
+    const proj = ase60Projekt.find(p => p.id === rad.ase60ProjectId || p.id === rad.id);
+    const sparad = kunder.find(k => k.id === rad.id || (rad.ase60ProjectId && k.ase60ProjectId === rad.ase60ProjectId));
+    const kund = proj ? kundFranAse60Projekt(proj, sparad) : sparad;
+    if (!kund) return;
+    setAktivFlik('__kunder__');
+    setValdProdukt(null);
+    setValdKund(kund);
+    setAktivKundFlik(KUND_FLIKAR[0]);
+    setKundMaterialSok('');
+  };
+
   const laggTillKund = () => {
     if (!nyKundNamn.trim()) return;
     const body = {
@@ -5415,7 +5592,8 @@ export default function App() {
           })}
 
           {!valdProdukt && arPlanering && (
-            <PlaneringVy kunder={kunder} ase60Projekt={ase60Projekt} token={token} c={c} mobil={mobil} onKundSparad={kundFranServer} />
+            <PlaneringVy kunder={kunder} ase60Projekt={ase60Projekt} token={token} c={c} mobil={mobil}
+              onKundSparad={kundFranServer} onOppnaKund={oppnaKundkort} />
           )}
 
           {!valdProdukt && arBeredning && (
