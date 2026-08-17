@@ -3277,6 +3277,20 @@ const BEREDNING_SEKTIONER = [
   { nyckel: 'glasmatt', etikett: 'Glasmått' },
 ];
 
+/**
+ * "4 partier · ASS 32" / "5 partier · ASE 60 + ASS 32". Blandade projekt får
+ * BÅDA systemen i dokumentet, så båda ska synas i raden — annars ser det ut
+ * som att hälften av partierna inte kommer med.
+ */
+function beredningRadText(info) {
+  const antal = info.antalPartier;
+  const delar = [];
+  if (info.ase60) delar.push(`ASE 60${info.ass32 ? ` ${info.ase60}` : ''}`);
+  if (info.ass32) delar.push(`ASS 32${info.ase60 ? ` ${info.ass32}` : ''}`);
+  if (!delar.length) delar.push(info.system === 'ass32' ? 'ASS 32' : 'ASE 60');
+  return `${antal} parti${antal === 1 ? '' : 'er'} · ${delar.join(' + ')}`;
+}
+
 /** Filnamnssäkert kundnamn — blir mappnamnet i zip-arkivet. */
 function beredningMappNamn(namn) {
   return (String(namn || 'kund').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim()) || 'kund';
@@ -3522,9 +3536,7 @@ function BeredningVy({ kunder, ase60Projekt, token, c, mobil }) {
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: c.textRubrik, fontWeight: '600', fontSize: 15 }}>👤 {rad.namn}</Text>
                   <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
-                    {dom.ok
-                      ? `${dom.info.antalPartier} parti${dom.info.antalPartier === 1 ? '' : 'er'} · ${dom.info.system === 'ass32' ? 'ASS 32' : 'ASE 60'}`
-                      : dom.skal}
+                    {dom.ok ? beredningRadText(dom.info) : dom.skal}
                   </Text>
                 </View>
               </TouchableOpacity>

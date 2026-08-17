@@ -735,12 +735,13 @@ app.get('/api/beredning/projekt', authMiddleware, async (req, res) => {
     const projekt = {};
     for (const p of data.projects || []) {
       const units = Array.isArray(p.units) ? p.units : [];
-      const ass32 = units.filter(u => u && u.system === 'ass32');
-      const ase60 = units.filter(u => u && (u.system || 'ase60') === 'ase60');
-      // Samma val som ase60:s egen batch: blandade projekt körs som det
-      // system som har flest partier.
-      const system = ass32.length > ase60.length ? 'ass32' : 'ase60';
-      projekt[p.id] = { namn: p.name || '', system, antalPartier: (system === 'ass32' ? ass32 : ase60).length };
+      const ass32 = units.filter(u => u && u.system === 'ass32').length;
+      const ase60 = units.filter(u => u && (u.system || 'ase60') === 'ase60').length;
+      // Beredningen tar med BÅDA systemen, så antalet partier är summan.
+      // Räknade vi bara majoritetssystemet såg ett rent ASS32-projekt ut att
+      // sakna partier och kunden gråades ut i onödan.
+      const system = ase60 && ass32 ? 'blandat' : (ass32 ? 'ass32' : 'ase60');
+      projekt[p.id] = { namn: p.name || '', system, antalPartier: ase60 + ass32, ase60, ass32 };
     }
     res.json({ projekt });
   } catch {
