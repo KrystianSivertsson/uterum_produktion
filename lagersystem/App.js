@@ -1647,13 +1647,15 @@ function DatumFalt({ varde, onValt, c, tema }) {
 function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
   const { tema } = React.useContext(TemaContext) || {};
   const [sok, setSok] = React.useState('');
+  // Klara kunder göms som standard — tavlan ska visa det som ligger kvar.
+  const [visaKlara, setVisaKlara] = React.useState(false);
   const [fel, setFel] = React.useState('');
   const [sparar, setSparar] = React.useState(null); // kundId:falt som just skickas
 
   // Samma sammanslagning som Sammanställningen: ASE60-projekten visas som kunder
   // även innan de finns i kunder.json. Är kunden redan sparad används DEN radens
   // id, annars skulle en andra rad skapas för samma projekt.
-  const rader = React.useMemo(() => {
+  const { synliga: rader, antalKlaraKunder } = React.useMemo(() => {
     const lista = [];
     for (const proj of ase60Projekt) {
       const sparad = kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id);
@@ -1669,16 +1671,23 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
       });
     }
     const q = sok.trim().toLowerCase();
-    return lista
+    // "Aktiv" = inte färdigproducerad. En kund där ALLA moment är avbockade
+    // hör inte hemma på produktionstavlan längre. Den göms bara — "Visa klara"
+    // tar fram den igen, inget raderas.
+    const arKlar = (k) => KUND_FLIKAR.every(f => k.planering?.moment?.[f]?.klar || k.klart?.[f]);
+    const synliga = lista
+      .filter(k => visaKlara || !arKlar(k))
       .filter(k => !q || (k.namn || '').toLowerCase().includes(q))
-      // Närmast deadline först; kunder utan klart-datum sist i namnordning.
+      // Leveransdatum styr ordningen — det är datumet kunden är lovad.
+      // Kunder utan leveransdatum sist, i namnordning.
       .sort((a, b) => {
-        const da = a.planering?.klartDatum || '', db = b.planering?.klartDatum || '';
+        const da = a.planering?.leveransDatum || '', db = b.planering?.leveransDatum || '';
         if (da && db && da !== db) return da < db ? -1 : 1;
         if (da !== db) return da ? -1 : 1;
         return (a.namn || '').localeCompare(b.namn || '', 'sv');
       });
-  }, [kunder, ase60Projekt, sok]);
+    return { synliga, antalKlaraKunder: lista.filter(arKlar).length };
+  }, [kunder, ase60Projekt, sok, visaKlara]);
 
   // Ett moment räknas som avrapporterat även när det bockats av på kundkortet
   // (där dras materialet från lagret) — annars hade planeringen visat 0/4 för en
@@ -1730,7 +1739,8 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
   const summering = {
     sena: rader.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'sen').length,
     snart: rader.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'snart').length,
-    klara: rader.filter(r => antalKlara(r) >= KUND_FLIKAR.length).length,
+    // Räknas på hela listan: när klara göms vore siffran annars alltid 0.
+    klara: antalKlaraKunder,
   };
 
   const Rubrik = ({ text, bredd, center }) => (
@@ -1763,6 +1773,13 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad }) {
           <Text style={{ color: c.textMuted, fontSize: 11 }}>Klara</Text>
           <Text style={{ color: '#16a34a', fontSize: 18, fontWeight: '700' }}>{summering.klara}</Text>
         </View>
+        <TouchableOpacity
+          onPress={() => setVisaKlara(v => !v)}
+          style={[styles.kort, { backgroundColor: visaKlara ? '#16a34a22' : c.kort, borderColor: visaKlara ? '#16a34a' : c.kortBorder, paddingVertical: 8, paddingHorizontal: 12, justifyContent: 'center' }]}>
+          <Text style={{ color: visaKlara ? '#16a34a' : c.textMuted, fontSize: 12, fontWeight: '600' }}>
+            {visaKlara ? '✓ Visar klara' : 'Visa klara'}
+          </Text>
+        </TouchableOpacity>
         <TextInput
           style={[styles.sokInput, { backgroundColor: c.sokInput, borderColor: c.inputBorder, color: c.text, width: mobil ? 130 : 200 }]}
           placeholder="Sök kund..." placeholderTextColor={c.textMuted}
