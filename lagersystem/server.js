@@ -977,7 +977,9 @@ app.post('/api/ecw-runs', (req, res) => {
   let idx = projectId ? kunder.findIndex(k => k.ase60ProjectId === projectId) : -1;
   if (idx === -1) idx = kunder.findIndex(k => (k.namn || '').toLowerCase() === projekt.trim().toLowerCase());
   const matt = (Array.isArray(partier) ? partier : [])
-    .map(p => ({ widthMm: p.breddMm, heightMm: p.hoejdMm, leaves: p.baagar }))
+    // serie ("ASS32" för Vår & höst, sash-serien för ASE60) sparas med — utan
+    // den kan sammanställningen inte se systemet på kunder som saknar paket.
+    .map(p => ({ widthMm: p.breddMm, heightMm: p.hoejdMm, leaves: p.baagar, serie: p.serie || null }))
     .filter(m => m.widthMm && m.heightMm);
   if (idx === -1) {
     kunder.push({

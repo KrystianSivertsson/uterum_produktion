@@ -1476,7 +1476,9 @@ function SammanstallningVy({ kunder, ase60Projekt, c }) {
       const sparad = kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id);
       combined.push({
         id: proj.id, namn: proj.name,
-        matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+        // system följer med per parti — annars går det inte att se att kunden
+        // är ASS32 när paket-taggen saknas (se systemFor nedan).
+        matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves, system: u.system || 'ase60' })) || [],
         material: sparad?.material || {},
         paket: sparad?.paket || proj.paket || null,
         ase60ProjectId: proj.id,
@@ -1488,7 +1490,19 @@ function SammanstallningVy({ kunder, ase60Projekt, c }) {
     return combined;
   }, [kunder, ase60Projekt]);
 
-  const systemFor = (k) => paketTillSystem(k.paket) || ((k.ase60ProjectId || k.matt?.length > 0) ? 'ASE60' : 'Ospecificerat');
+  // Paket-taggen först. Saknas den (nästan alla Konfigurator-projekt har tomt
+  // paket) läser vi av partiernas FAKTISKA system — units.system från
+  // generatorn, eller serie från ecw-runs. Utan det klassades varje ASS32-kund
+  // som ASE60 av fallbacken, så ASS32 syntes aldrig i sammanställningen.
+  const arAss32Parti = (m) => String(m?.system || m?.serie || '').toUpperCase() === 'ASS32';
+  const systemFor = (k) => {
+    const franPaket = paketTillSystem(k.paket);
+    if (franPaket) return franPaket;
+    const matt = k.matt || [];
+    if (matt.length && matt.every(arAss32Parti)) return 'ASS32';
+    if (matt.some(arAss32Parti)) return 'BLANDAT';
+    return (k.ase60ProjectId || matt.length > 0) ? 'ASE60' : 'Ospecificerat';
+  };
 
   const grupper = React.useMemo(() => {
     const map = new Map();
@@ -1517,6 +1531,7 @@ function SammanstallningVy({ kunder, ase60Projekt, c }) {
   const rubrikFor = (namn) => {
     if (namn === 'ASE60') return '🪟 ASE 60 (Bostandard)';
     if (namn === 'ASS32') return '🏡 ASS 32 (Vår-/Höst-/Vinterpaket)';
+    if (namn === 'BLANDAT') return '🧩 Blandat (ASE 60 + ASS 32)';
     return '❔ Ospecificerat paket';
   };
 
