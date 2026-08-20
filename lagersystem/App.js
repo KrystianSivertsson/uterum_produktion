@@ -1656,17 +1656,50 @@ function DatumFalt({ varde, onValt, c, tema }) {
   const [lokal, setLokal] = React.useState(varde || '');
   // Servern är facit: när svaret kommit (eller någon annan ändrat) synkas fältet.
   React.useEffect(() => { setLokal(varde || ''); }, [varde]);
+  const datumRef = React.useRef(null);
   if (Platform.OS === 'web') {
-    return React.createElement('input', {
-      type: 'date',
-      value: lokal,
-      onChange: (e) => { setLokal(e.target.value); onValt(e.target.value); },
-      style: {
-        backgroundColor: c.input, color: c.inputText, border: `1px solid ${c.inputBorder}`,
-        borderRadius: 6, padding: '6px 6px', fontSize: 13, width: '100%', boxSizing: 'border-box',
-        fontFamily: 'inherit', colorScheme: tema === 'mörkt' ? 'dark' : 'light',
-      },
-    });
+    // <input type="date"> visar WEBBLÄSARENS format (en-US ger 06/30/2026).
+    // Vi vill alltid ha ÅÅÅÅ-MM-DD, så texten är ett vanligt fält medan en
+    // dold date-input får stå för kalendern (📅 öppnar den via showPicker).
+    // Värdet är ISO i båda fallen — bara visningen skiljde.
+    const commit = (v) => {
+      const t = (v || '').trim();
+      if (!t) { setLokal(''); onValt(''); return; }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(t) && !Number.isNaN(Date.parse(t))) { setLokal(t); onValt(t); }
+      else setLokal(varde || '');            // ogiltigt → tillbaka till serverns värde
+    };
+    return React.createElement('div', {
+      style: { position: 'relative', display: 'flex', alignItems: 'center', gap: 4, width: '100%' },
+    }, [
+      React.createElement('input', {
+        key: 'txt', type: 'text', inputMode: 'numeric', placeholder: 'ÅÅÅÅ-MM-DD',
+        value: lokal,
+        onChange: (e) => setLokal(e.target.value),
+        onBlur: (e) => commit(e.target.value),
+        onKeyDown: (e) => { if (e.key === 'Enter') e.target.blur(); },
+        style: {
+          backgroundColor: c.input, color: c.inputText, border: `1px solid ${c.inputBorder}`,
+          borderRadius: 6, padding: '6px 6px', fontSize: 13, flex: 1, minWidth: 0, boxSizing: 'border-box',
+          fontFamily: 'inherit',
+        },
+      }),
+      React.createElement('button', {
+        key: 'btn', type: 'button', title: 'Välj i kalender',
+        onClick: () => { const el = datumRef.current; if (el) { if (el.showPicker) el.showPicker(); else el.focus(); } },
+        style: {
+          background: 'none', border: 'none', cursor: 'pointer', fontSize: 14,
+          padding: '2px 2px', lineHeight: 1, color: c.textMuted,
+        },
+      }, '📅'),
+      React.createElement('input', {
+        key: 'dat', type: 'date', ref: datumRef, value: lokal, tabIndex: -1, 'aria-hidden': true,
+        onChange: (e) => { setLokal(e.target.value); onValt(e.target.value); },
+        style: {
+          position: 'absolute', right: 0, bottom: 0, width: 1, height: 1,
+          opacity: 0, pointerEvents: 'none', colorScheme: tema === 'mörkt' ? 'dark' : 'light',
+        },
+      }),
+    ]);
   }
   return (
     <TextInput
