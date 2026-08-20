@@ -70,10 +70,10 @@ const RITNINGAR_FALLBACK = [
 ];
 const KUND_FLIKAR = ['Träfräs', 'Alufräs', 'Beslag', 'Glas'];
 // Planeringstavlans moment (Daniel 2026-08-20): milstolparna runt kundkortets
-// materialflikar — bygglov och beredning före produktionen, leverans sist.
-// Kundkortet behåller KUND_FLIKAR: de nya momenten är PLANERINGS-egna och
+// materialflikar — bygglov och beredning först, sedan produktionen, leverans
+// sist. Kundkortet behåller KUND_FLIKAR: de nya momenten är PLANERINGS-egna och
 // bokar inte ut något material, de bockas bara av på tavlan.
-const PLANERING_MOMENT = ['Bygglov', 'Beredning 1', 'Beredning 2', ...KUND_FLIKAR, 'Leverans'];
+const PLANERING_MOMENT = ['Bygglov', 'Beredning', ...KUND_FLIKAR, 'Leverans'];
 // Sorteringsval på planeringstavlan.
 const PLANERING_SORT = [
   { id: 'leverans', text: 'Leveransdatum', falt: 'leveransDatum' },
