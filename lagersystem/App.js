@@ -5325,6 +5325,31 @@ export default function App() {
                       </TouchableOpacity>
                     ))}
                   </View>
+                  {/* Samma info-text som på planeringstavlan — redigerbar här
+                      också. Sparas via planerings-endpointen: PUT /api/kunder/:id
+                      tar bara emot namn/färg/mått/paket och hade tappat den. */}
+                  <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
+                    <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>INFO</Text>
+                    <InfoFalt
+                      varde={valdKund.planering?.info || ''}
+                      c={c}
+                      sparar={false}
+                      onSpara={async (text) => {
+                        try {
+                          const r = await fetch(`${API}/api/kunder/${valdKund.id}/planering`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                            body: JSON.stringify({ info: text, namn: valdKund.namn }),
+                          });
+                          if (!r.ok) return;
+                          const sparad = await r.json();
+                          setValdKund(sparad);
+                          setKunder(prev => prev.some(k => k.id === sparad.id)
+                            ? prev.map(k => (k.id === sparad.id ? sparad : k))
+                            : [...prev, sparad]);
+                        } catch { /* nätverksfel — texten ligger kvar i fältet */ }
+                      }} />
+                  </View>
                   {(valdKund.farg || valdKund.matt?.length > 0) && (
                     <View style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
                       <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ASE60 PROJEKT</Text>
