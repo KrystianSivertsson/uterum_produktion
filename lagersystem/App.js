@@ -69,6 +69,19 @@ const RITNINGAR_FALLBACK = [
   { id: 'aoc50', label: 'AOC 50 Ritningar', fil: 'ritningar_aoc50.pdf' },
 ];
 const KUND_FLIKAR = ['Träfräs', 'Alufräs', 'Beslag', 'Glas'];
+// Planeringstavlans moment (Daniel 2026-08-20): milstolparna runt kundkortets
+// materialflikar — bygglov och beredning före produktionen, leverans sist.
+// Kundkortet behåller KUND_FLIKAR: de nya momenten är PLANERINGS-egna och
+// bokar inte ut något material, de bockas bara av på tavlan.
+const PLANERING_MOMENT = ['Bygglov', 'Beredning 1', 'Beredning 2', ...KUND_FLIKAR, 'Leverans'];
+// Sorteringsval på planeringstavlan.
+const PLANERING_SORT = [
+  { id: 'leverans', text: 'Leveransdatum', falt: 'leveransDatum' },
+  { id: 'start', text: 'Prod. start', falt: 'produktionStart' },
+  { id: 'klart', text: 'Klart senast', falt: 'klartDatum' },
+  { id: 'namn', text: 'Kund A–Ö' },
+  { id: 'framsteg', text: 'Minst klart först' },
+];
 
 // ─── Adressrader (URL ↔ vy) ───────────────────────────────────────────────────
 // Appen är ett enda komponentträd utan router-bibliotek, så vyn har hittills
@@ -1740,6 +1753,9 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
   // Klara kunder göms som standard — tavlan ska visa det som ligger kvar.
   const [visaKlara, setVisaKlara] = React.useState(false);
   const [visaLaggTill, setVisaLaggTill] = React.useState(false);
+  // Sorteringsval (leveransdatum som förr). Rader utan datum läggs sist —
+  // annars hamnar tomma fält först och skymmer det som faktiskt är planerat.
+  const [sortering, setSortering] = React.useState('leverans');
   const [fel, setFel] = React.useState('');
   const [sparar, setSparar] = React.useState(null); // kundId:falt som just skickas
   // Räknare som remountar datumfälten. Ångrar man borttagningen av en kund ska
@@ -1773,7 +1789,7 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
   // varenda gammalt ASE60-projekt på tavlan och gjorde den oanvändbar.
   const arPlanerad = (k) => !!k.planering?.leveransDatum;
   // "Klar" = alla moment avbockade, i planeringen eller på kundkortet.
-  const arKlar = (k) => KUND_FLIKAR.every(f => k.planering?.moment?.[f]?.klar || k.klart?.[f]);
+  const arKlar = (k) => PLANERING_MOMENT.every(f => k.planering?.moment?.[f]?.klar || k.klart?.[f]);
 
   const planerade = React.useMemo(() => lista.filter(arPlanerad), [lista]);
   // Kunder som ännu inte är inplanerade — de som "+ Lägg till kund" väljer bland.
@@ -1789,15 +1805,24 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
     return planerade
       .filter(k => visaKlara || !arKlar(k))
       .filter(k => !q || (k.namn || '').toLowerCase().includes(q))
-      // Leveransdatum styr ordningen — det är datumet kunden är lovad. Alla
-      // rader har ett (det är villkoret för att ligga här), lika datum sorteras
-      // på namn så ordningen inte hoppar mellan omritningar.
+      // Vald sortering styr ordningen (leveransdatum som default — datumet
+      // kunden är lovad). Lika värden sorteras på namn så ordningen inte
+      // hoppar mellan omritningar. Saknat datum läggs sist.
       .sort((a, b) => {
-        const da = a.planering.leveransDatum, db = b.planering.leveransDatum;
-        if (da !== db) return da < db ? -1 : 1;
-        return (a.namn || '').localeCompare(b.namn || '', 'sv');
+        const namn = () => (a.namn || '').localeCompare(b.namn || '', 'sv');
+        const val = PLANERING_SORT.find(s => s.id === sortering) || PLANERING_SORT[0];
+        if (val.id === 'namn') return namn();
+        if (val.id === 'framsteg') {
+          const fa = antalKlara(a), fb = antalKlara(b);
+          return fa !== fb ? fa - fb : namn();
+        }
+        const da = a.planering?.[val.falt] || '', db = b.planering?.[val.falt] || '';
+        if (!da && !db) return namn();
+        if (!da) return 1;          // utan datum sist
+        if (!db) return -1;
+        return da !== db ? (da < db ? -1 : 1) : namn();
       });
-  }, [planerade, sok, visaKlara]);
+  }, [planerade, sok, visaKlara, sortering]);
 
   // Ett moment räknas som avrapporterat även när det bockats av på kundkortet
   // (där dras materialet från lagret) — annars hade planeringen visat 0/4 för en
@@ -1809,7 +1834,7 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
     if (k) return { klar: true, av: k.av, tid: k.tid, kalla: 'kundkort' };
     return { klar: false };
   };
-  const antalKlara = (rad) => KUND_FLIKAR.filter(f => momentStatus(rad, f).klar).length;
+  const antalKlara = (rad) => PLANERING_MOMENT.filter(f => momentStatus(rad, f).klar).length;
 
   // Returnerar om det gick vägen, så att den som lägger till en kund kan stänga
   // väljaren först när servern svarat (och annars låta felrutan synas).
@@ -1864,7 +1889,7 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
   };
 
   const KOL = { kund: 200, datum: 132, moment: 108, framsteg: 104, status: 140 };
-  const tabellBredd = KOL.kund + KOL.datum * 3 + KOL.moment * KUND_FLIKAR.length + KOL.framsteg + KOL.status;
+  const tabellBredd = KOL.kund + KOL.datum * 3 + KOL.moment * PLANERING_MOMENT.length + KOL.framsteg + KOL.status;
   // Nyckeltalen räknas på ALLA planerade kunder, inte på raderna som råkar synas:
   // sökrutan och "Visa klara" ska inte kunna flytta siffrorna, då gick de inte
   // att lita på som lägesbild (och Klara hade alltid visat 0 när klara göms).
@@ -1872,8 +1897,8 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
   // så Kunder är summan de tre andra räknas ur.
   const summering = React.useMemo(() => ({
     kunder: planerade.length,
-    sena: planerade.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'sen').length,
-    snart: planerade.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), KUND_FLIKAR.length).niva === 'snart').length,
+    sena: planerade.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), PLANERING_MOMENT.length).niva === 'sen').length,
+    snart: planerade.filter(r => planeringStatus(r.planering?.klartDatum, antalKlara(r), PLANERING_MOMENT.length).niva === 'snart').length,
     klara: planerade.filter(arKlar).length,
   }), [planerade]);
   // Länkfärg: samma blå som "← Tillbaka till kunder", ljusare i mörkt tema där
@@ -1929,6 +1954,26 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
           style={[styles.sokInput, { backgroundColor: c.sokInput, borderColor: c.inputBorder, color: c.text, width: mobil ? 130 : 200 }]}
           placeholder="Sök kund..." placeholderTextColor={c.textMuted}
           value={sok} onChangeText={setSok} />
+        {/* Sortering — knapprad i stället för dropdown så valet syns direkt
+            och går att träffa med fingret på surfplattan i verkstan. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <Text style={{ color: c.textMuted, fontSize: 11, marginRight: 2 }}>Sortera:</Text>
+          {PLANERING_SORT.map(s => {
+            const vald = sortering === s.id;
+            return (
+              <TouchableOpacity key={s.id} onPress={() => setSortering(s.id)}
+                style={[styles.kort, {
+                  backgroundColor: vald ? '#2563eb22' : c.kort,
+                  borderColor: vald ? '#2563eb' : c.kortBorder,
+                  paddingVertical: 7, paddingHorizontal: 10, justifyContent: 'center',
+                }]}>
+                <Text style={{ color: vald ? '#2563eb' : c.textMuted, fontSize: 12, fontWeight: vald ? '700' : '600' }}>
+                  {s.text}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {!!fel && (
@@ -1965,14 +2010,14 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
               <Rubrik text="LEVERANS" bredd={KOL.datum} />
               <Rubrik text="PROD. START" bredd={KOL.datum} />
               <Rubrik text="KLART SENAST" bredd={KOL.datum} />
-              {KUND_FLIKAR.map(f => <Rubrik key={f} text={f.toUpperCase()} bredd={KOL.moment} center />)}
+              {PLANERING_MOMENT.map(f => <Rubrik key={f} text={f.toUpperCase()} bredd={KOL.moment} center />)}
               <Rubrik text="KLART" bredd={KOL.framsteg} center />
               <Rubrik text="STATUS" bredd={KOL.status} />
             </View>
 
             {rader.map((rad, i) => {
               const klara = antalKlara(rad);
-              const status = planeringStatus(rad.planering?.klartDatum, klara, KUND_FLIKAR.length);
+              const status = planeringStatus(rad.planering?.klartDatum, klara, PLANERING_MOMENT.length);
               return (
                 <View key={rad.id} style={{
                   flexDirection: 'row', alignItems: 'center', borderRadius: 8, marginBottom: 3,
@@ -2002,7 +2047,7 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
                         onValt={v => sattDatum(rad, falt, v)} />
                     </View>
                   ))}
-                  {KUND_FLIKAR.map(moment => {
+                  {PLANERING_MOMENT.map(moment => {
                     const m = momentStatus(rad, moment);
                     return (
                       <View key={moment} style={{ width: KOL.moment, paddingHorizontal: 4, paddingVertical: 4 }}>
@@ -2029,11 +2074,11 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
                     );
                   })}
                   <View style={{ width: KOL.framsteg, paddingHorizontal: 8, alignItems: 'center' }}>
-                    <Text style={{ color: klara === KUND_FLIKAR.length ? '#16a34a' : c.text, fontWeight: '700', fontSize: 14 }}>
-                      {klara}/{KUND_FLIKAR.length}
+                    <Text style={{ color: klara === PLANERING_MOMENT.length ? '#16a34a' : c.text, fontWeight: '700', fontSize: 14 }}>
+                      {klara}/{PLANERING_MOMENT.length}
                     </Text>
                     <View style={{ height: 4, borderRadius: 2, backgroundColor: c.inputBorder, width: '100%', marginTop: 3 }}>
-                      <View style={{ height: 4, borderRadius: 2, backgroundColor: klara === KUND_FLIKAR.length ? '#16a34a' : '#2563eb', width: `${(klara / KUND_FLIKAR.length) * 100}%` }} />
+                      <View style={{ height: 4, borderRadius: 2, backgroundColor: klara === PLANERING_MOMENT.length ? '#16a34a' : '#2563eb', width: `${(klara / PLANERING_MOMENT.length) * 100}%` }} />
                     </View>
                   </View>
                   <View style={{ width: KOL.status, paddingHorizontal: 8 }}>
