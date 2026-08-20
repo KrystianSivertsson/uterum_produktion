@@ -530,8 +530,33 @@ app.post('/api/changes', authMiddleware, (req, res) => {
 });
 
 // --- KUNDER ---
+// AKTIVERAD = kunden har minst en fil på kortet (ECW, BTL, STEP eller PDF).
+// Konfiguratorn sparar ett kundkort vid VARJE sparning, så utan den gränsen
+// fylls lagret av utkast och revisioner som aldrig gått till produktion.
+// Filerna indexeras per projectId (konfiguratorns projekt-id) i fyra index.
+function aktivaProjektIds() {
+  const ids = new Set();
+  for (const fil of [ECW_INDEX_FILE, BTL_INDEX_FILE, STEP_INDEX_FILE, PDF_INDEX_FILE]) {
+    for (const rad of readJSON(fil, [])) {
+      if (rad && rad.projectId) ids.add(String(rad.projectId));
+    }
+  }
+  return ids;
+}
+
+// Klienten filtrerar kund- och projektlistorna mot den här mängden.
+app.get('/api/aktiva-projekt', authMiddleware, (req, res) => {
+  res.json({ aktiva: [...aktivaProjektIds()] });
+});
+
 app.get('/api/kunder', authMiddleware, (req, res) => {
-  res.json(readJSON(KUNDER_FILE, []));
+  const aktiva = aktivaProjektIds();
+  const kunder = readJSON(KUNDER_FILE, []);
+  // aktiverad följer med per kund så klienten slipper korsa listorna själv.
+  res.json(kunder.map(k => ({
+    ...k,
+    aktiverad: aktiva.has(String(k.ase60ProjectId || '')) || aktiva.has(String(k.id || '')),
+  })));
 });
 
 app.post('/api/kunder', authMiddleware, (req, res) => {

@@ -4442,16 +4442,31 @@ export default function App() {
     }
   }, [arAndringslogg, token, inloggad]);
 
+  // AKTIVERADE kunder/projekt = de som har minst en fil (ECW/BTL/STEP/PDF) på
+  // kortet. Konfiguratorn sparar ett kundkort vid varje sparning, så utan den
+  // gränsen fylls lagret av utkast och revisioner. Utkasten ligger kvar i
+  // konfiguratorn — de filtreras bara bort HÄR, inget raderas.
   const laddaKunder = () => {
     if (!token) return;
     fetch(`${API}/api/kunder`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(d => { listorLaddadeRef.current.kunder = true; setKunder(d); }).catch(() => {});
+      .then(r => r.json())
+      .then(d => {
+        listorLaddadeRef.current.kunder = true;
+        setKunder((Array.isArray(d) ? d : []).filter(k => k.aktiverad));
+      }).catch(() => {});
   };
 
   const laddaAse60Projekt = () => {
     if (!token) return;
-    fetch(`${API}/api/ase60-projekt`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(d => { listorLaddadeRef.current.ase60 = true; setAse60Projekt(d); }).catch(() => {});
+    const h = { Authorization: `Bearer ${token}` };
+    Promise.all([
+      fetch(`${API}/api/ase60-projekt`, { headers: h }).then(r => r.json()),
+      fetch(`${API}/api/aktiva-projekt`, { headers: h }).then(r => r.json()).catch(() => ({ aktiva: [] })),
+    ]).then(([projekt, akt]) => {
+      listorLaddadeRef.current.ase60 = true;
+      const aktiva = new Set((akt && akt.aktiva) || []);
+      setAse60Projekt((Array.isArray(projekt) ? projekt : []).filter(p => aktiva.has(String(p.id))));
+    }).catch(() => {});
   };
 
   // token finns med i beroendena: en djuplänk rakt in i en kundvy renderar
