@@ -73,7 +73,11 @@ const KUND_FLIKAR = ['Träfräs', 'Alufräs', 'Beslag', 'Glas'];
 // materialflikar — bygglov och beredning först, sedan produktionen, leverans
 // sist. Kundkortet behåller KUND_FLIKAR: de nya momenten är PLANERINGS-egna och
 // bokar inte ut något material, de bockas bara av på tavlan.
-const PLANERING_MOMENT = ['Bygglov', 'Beredning', ...KUND_FLIKAR, 'Leverans'];
+// Bygglov + beredning står FÖRE datumkolumnerna (direkt efter kundnamnet) —
+// de sker innan något datum sätts. Produktionsmomenten och leverans efter.
+const PLANERING_MOMENT_FORE = ['Bygglov', 'Beredning'];
+const PLANERING_MOMENT_EFTER = [...KUND_FLIKAR, 'Leverans'];
+const PLANERING_MOMENT = [...PLANERING_MOMENT_FORE, ...PLANERING_MOMENT_EFTER];
 // Sorteringsval på planeringstavlan.
 const PLANERING_SORT = [
   { id: 'leverans', text: 'Leveransdatum', falt: 'leveransDatum' },
@@ -1905,6 +1909,35 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
   // den annars försvinner mot de tonade radbakgrunderna.
   const lankFarg = tema === 'mörkt' ? '#93c5fd' : '#2563eb';
 
+  // Momentruta — samma ruta används på båda sidor om datumkolumnerna
+  // (bygglov/beredning före, produktion + leverans efter).
+  const momentRuta = (rad, moment) => {
+    const m = momentStatus(rad, moment);
+    return (
+      <View key={moment} style={{ width: KOL.moment, paddingHorizontal: 4, paddingVertical: 4 }}>
+        <TouchableOpacity
+          onPress={() => vaxlaMoment(rad, moment)}
+          disabled={sparar === `${rad.id}:${moment}`}
+          style={{
+            borderRadius: 6, borderWidth: 1, paddingVertical: 5, paddingHorizontal: 4, alignItems: 'center',
+            backgroundColor: m.klar ? '#dcfce7' : c.input,
+            borderColor: m.klar ? '#16a34a' : c.inputBorder,
+            borderStyle: m.kalla === 'kundkort' ? 'dashed' : 'solid',
+            opacity: sparar === `${rad.id}:${moment}` ? 0.5 : 1,
+          }}>
+          <Text style={{ color: m.klar ? '#15803d' : c.textMuted, fontSize: 12, fontWeight: '600' }}>
+            {m.klar ? '✓' : '○'} {moment}
+          </Text>
+          {m.klar && (
+            <Text numberOfLines={1} style={{ color: '#166534', fontSize: 9, marginTop: 1 }}>
+              {fornamn(m.av) || '—'} {kortDatum(m.tid)}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const Rubrik = ({ text, bredd, center }) => (
     <View style={{ width: bredd, paddingHorizontal: 8, paddingVertical: 10 }}>
       <Text style={{ color: c.tabellHuvudText, fontSize: 11, fontWeight: '700', letterSpacing: 0.4, textAlign: center ? 'center' : 'left' }}>{text}</Text>
@@ -2007,10 +2040,11 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
           <View style={{ width: tabellBredd }}>
             <View style={{ flexDirection: 'row', backgroundColor: c.tabellHuvud, borderRadius: 8, marginBottom: 4 }}>
               <Rubrik text="KUND" bredd={KOL.kund} />
+              {PLANERING_MOMENT_FORE.map(f => <Rubrik key={f} text={f.toUpperCase()} bredd={KOL.moment} center />)}
               <Rubrik text="LEVERANS" bredd={KOL.datum} />
               <Rubrik text="PROD. START" bredd={KOL.datum} />
               <Rubrik text="KLART SENAST" bredd={KOL.datum} />
-              {PLANERING_MOMENT.map(f => <Rubrik key={f} text={f.toUpperCase()} bredd={KOL.moment} center />)}
+              {PLANERING_MOMENT_EFTER.map(f => <Rubrik key={f} text={f.toUpperCase()} bredd={KOL.moment} center />)}
               <Rubrik text="KLART" bredd={KOL.framsteg} center />
               <Rubrik text="STATUS" bredd={KOL.status} />
             </View>
@@ -2039,6 +2073,7 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
                       {!!onOppnaKund && <Text style={{ color: lankFarg, fontSize: 15, fontWeight: '700' }}>›</Text>}
                     </View>
                   </TouchableOpacity>
+                  {PLANERING_MOMENT_FORE.map(moment => momentRuta(rad, moment))}
                   {['leveransDatum', 'produktionStart', 'klartDatum'].map(falt => (
                     <View key={falt} style={{ width: KOL.datum, paddingHorizontal: 6, opacity: sparar === `${rad.id}:${falt}` ? 0.5 : 1 }}>
                       {/* aterstall i nyckeln: ångrad borttagning ska rita om
@@ -2047,32 +2082,7 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
                         onValt={v => sattDatum(rad, falt, v)} />
                     </View>
                   ))}
-                  {PLANERING_MOMENT.map(moment => {
-                    const m = momentStatus(rad, moment);
-                    return (
-                      <View key={moment} style={{ width: KOL.moment, paddingHorizontal: 4, paddingVertical: 4 }}>
-                        <TouchableOpacity
-                          onPress={() => vaxlaMoment(rad, moment)}
-                          disabled={sparar === `${rad.id}:${moment}`}
-                          style={{
-                            borderRadius: 6, borderWidth: 1, paddingVertical: 5, paddingHorizontal: 4, alignItems: 'center',
-                            backgroundColor: m.klar ? '#dcfce7' : c.input,
-                            borderColor: m.klar ? '#16a34a' : c.inputBorder,
-                            borderStyle: m.kalla === 'kundkort' ? 'dashed' : 'solid',
-                            opacity: sparar === `${rad.id}:${moment}` ? 0.5 : 1,
-                          }}>
-                          <Text style={{ color: m.klar ? '#15803d' : c.textMuted, fontSize: 12, fontWeight: '600' }}>
-                            {m.klar ? '✓' : '○'} {moment}
-                          </Text>
-                          {m.klar && (
-                            <Text numberOfLines={1} style={{ color: '#166534', fontSize: 9, marginTop: 1 }}>
-                              {fornamn(m.av) || '—'} {kortDatum(m.tid)}
-                            </Text>
-                          )}
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  })}
+                  {PLANERING_MOMENT_EFTER.map(moment => momentRuta(rad, moment))}
                   <View style={{ width: KOL.framsteg, paddingHorizontal: 8, alignItems: 'center' }}>
                     <Text style={{ color: klara === PLANERING_MOMENT.length ? '#16a34a' : c.text, fontWeight: '700', fontSize: 14 }}>
                       {klara}/{PLANERING_MOMENT.length}
