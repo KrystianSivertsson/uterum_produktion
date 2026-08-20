@@ -619,6 +619,13 @@ app.put('/api/kunder/:id/planering', authMiddleware, (req, res) => {
     const v = String(req.body[f] ?? '');
     if (v) planering[f] = v; else delete planering[f];
   }
+  // Fritext-info per kund på tavlan ("väntar bygglov", "leverans f.m." osv).
+  // Tomt = rensa. Kapas till 500 tecken så en klistrad roman inte sväller
+  // kunder.json och spräcker radhöjden på tavlan.
+  if (req.body?.info !== undefined) {
+    const t = String(req.body.info ?? '').trim().slice(0, 500);
+    if (t) planering.info = t; else delete planering.info;
+  }
   kunder[idx].planering = planering;
   writeJSON(KUNDER_FILE, kunder);
   res.json(kunder[idx]);

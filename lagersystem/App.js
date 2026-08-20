@@ -1709,6 +1709,31 @@ function DatumFalt({ varde, onValt, c, tema }) {
   );
 }
 
+// Fritext-info på tavlan. Egen komponent av samma skäl som DatumFalt: lokal
+// text medan man skriver, servern är facit när svaret kommit. Sparas på blur
+// (och Escape ångrar) — inte per tangenttryck.
+function InfoFalt({ varde, onSpara, c, sparar }) {
+  const [lokal, setLokal] = React.useState(varde || '');
+  React.useEffect(() => { setLokal(varde || ''); }, [varde]);
+  const andrad = (lokal || '') !== (varde || '');
+  return (
+    <TextInput
+      value={lokal}
+      onChangeText={setLokal}
+      onBlur={() => { if (andrad) onSpara(lokal); }}
+      onKeyPress={e => { if (e.nativeEvent?.key === 'Escape') setLokal(varde || ''); }}
+      placeholder="Info…"
+      placeholderTextColor={c.textMuted}
+      multiline
+      style={{
+        backgroundColor: c.input, color: c.inputText,
+        borderWidth: 1, borderColor: andrad ? '#f59e0b' : c.inputBorder,
+        borderRadius: 6, paddingVertical: 5, paddingHorizontal: 6,
+        fontSize: 12, minHeight: 34, opacity: sparar ? 0.5 : 1,
+      }} />
+  );
+}
+
 // Väljaren som lyfter in en kund på tavlan. Leveransdatumet sätts direkt här,
 // och det är ett medvetet val: en rad utan leveransdatum syns ändå inte på
 // tavlan, så "lägg till tomt och fyll i sen" hade gett en rad som fanns i
@@ -1906,6 +1931,11 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
     return skicka(rad, `${API}/api/kunder/${rad.id}/planering`, 'PUT', { [falt]: varde }, `${rad.id}:${falt}`);
   };
 
+  // Fritext-info per kund. Sparas när fältet lämnas (blur) — inte per
+  // tangenttryck, annars blir det ett serveranrop per bokstav.
+  const sattInfo = (rad, text) =>
+    skicka(rad, `${API}/api/kunder/${rad.id}/planering`, 'PUT', { info: text }, `${rad.id}:info`);
+
   // Väljarens enda uppgift: sätta leveransdatumet, för det är det som lyfter in
   // kunden på tavlan.
   const laggTillPaTavlan = (rad, datum) =>
@@ -1925,8 +1955,8 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
       { moment, klar: !status.klar }, `${rad.id}:${moment}`);
   };
 
-  const KOL = { kund: 200, datum: 132, moment: 108, framsteg: 104, status: 140 };
-  const tabellBredd = KOL.kund + KOL.datum * 3 + KOL.moment * PLANERING_MOMENT.length + KOL.framsteg + KOL.status;
+  const KOL = { kund: 200, datum: 132, moment: 108, framsteg: 104, status: 140, info: 200 };
+  const tabellBredd = KOL.kund + KOL.datum * 3 + KOL.moment * PLANERING_MOMENT.length + KOL.framsteg + KOL.status + KOL.info;
   // Nyckeltalen räknas på ALLA planerade kunder, inte på raderna som råkar synas:
   // sökrutan och "Visa klara" ska inte kunna flytta siffrorna, då gick de inte
   // att lita på som lägesbild (och Klara hade alltid visat 0 när klara göms).
@@ -2078,6 +2108,7 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
               <Rubrik text="PROD. START" bredd={KOL.datum} />
               <Rubrik text="KLART SENAST" bredd={KOL.datum} />
               {PLANERING_MOMENT_EFTER.map(f => <Rubrik key={f} text={f.toUpperCase()} bredd={KOL.moment} center />)}
+              <Rubrik text="INFO" bredd={KOL.info} />
               <Rubrik text="KLART" bredd={KOL.framsteg} center />
               <Rubrik text="STATUS" bredd={KOL.status} />
             </View>
@@ -2116,6 +2147,11 @@ function PlaneringVy({ kunder, ase60Projekt, token, c, mobil, onKundSparad, onOp
                     </View>
                   ))}
                   {PLANERING_MOMENT_EFTER.map(moment => momentRuta(rad, moment))}
+                  <View style={{ width: KOL.info, paddingHorizontal: 6, paddingVertical: 4 }}>
+                    <InfoFalt varde={rad.planering?.info || ''} c={c}
+                      sparar={sparar === `${rad.id}:info`}
+                      onSpara={text => sattInfo(rad, text)} />
+                  </View>
                   <View style={{ width: KOL.framsteg, paddingHorizontal: 8, alignItems: 'center' }}>
                     <Text style={{ color: klara === PLANERING_MOMENT.length ? '#16a34a' : c.text, fontWeight: '700', fontSize: 14 }}>
                       {klara}/{PLANERING_MOMENT.length}
