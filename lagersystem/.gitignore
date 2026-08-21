@@ -58,3 +58,4 @@ data/stampling.json
 # generated native folders
 /ios
 /android
+tools/sync-u.config.json
