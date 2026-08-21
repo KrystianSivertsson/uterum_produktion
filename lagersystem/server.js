@@ -549,14 +549,32 @@ app.get('/api/aktiva-projekt', authMiddleware, (req, res) => {
   res.json({ aktiva: [...aktivaProjektIds()] });
 });
 
+/**
+ * Aktiverad: uttrycklig flagga om någon satt den, annars "har filer".
+ * Filregeln ensam räcker inte — testprojekt har också filer (11 av 41 var
+ * test när flaggan infördes). Fallbacken gör att inget forsvinner vid
+ * infarandet: allt som var aktivt förblir aktivt tills någon bockar ur det.
+ */
+function arAktiverad(k, aktiva) {
+  if (typeof k.aktiveradManuell === 'boolean') return k.aktiveradManuell;
+  return aktiva.has(String(k.ase60ProjectId || '')) || aktiva.has(String(k.id || ''));
+}
+
 app.get('/api/kunder', authMiddleware, (req, res) => {
   const aktiva = aktivaProjektIds();
   const kunder = readJSON(KUNDER_FILE, []);
   // aktiverad följer med per kund så klienten slipper korsa listorna själv.
-  res.json(kunder.map(k => ({
-    ...k,
-    aktiverad: aktiva.has(String(k.ase60ProjectId || '')) || aktiva.has(String(k.id || '')),
-  })));
+  res.json(kunder.map(k => ({ ...k, aktiverad: arAktiverad(k, aktiva) })));
+});
+
+// Slå av/på en kund för hand. Av = den försvinner ur lagrets vyer och ur
+// U:-synken, men raderas inte — på igen tar tillbaka den.
+app.put('/api/kunder/:id/aktiverad', authMiddleware, (req, res) => {
+  const kunder = readJSON(KUNDER_FILE, []);
+  const idx = kundIndexUpsert(kunder, req.params.id, req.body, req.user);
+  kunder[idx].aktiveradManuell = !!req.body?.aktiverad;
+  writeJSON(KUNDER_FILE, kunder);
+  res.json({ ...kunder[idx], aktiverad: kunder[idx].aktiveradManuell });
 });
 
 app.post('/api/kunder', authMiddleware, (req, res) => {

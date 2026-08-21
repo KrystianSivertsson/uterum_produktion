@@ -57,11 +57,33 @@ export function mappNamn(namn) {
 }
 
 const TYPER = [
-  { slug: 'ecw-filer', ladda: (id, f) => `${id}/${f.id}/ladda-ner` },
-  { slug: 'btl-filer', ladda: (id, f) => `${id}/${f.id}/ladda-ner` },
-  { slug: 'step-filer', ladda: (id, f) => `${id}/${f.id}/ladda-ner` },
-  { slug: 'pdf-filer', ladda: (id, f) => `${id}/${f.id}/visa` },
+  { slug: 'ecw-filer', andelse: '.ECW', ladda: (id, f) => `${id}/${f.id}/ladda-ner` },
+  { slug: 'btl-filer', andelse: '.btl', ladda: (id, f) => `${id}/${f.id}/ladda-ner` },
+  { slug: 'step-filer', andelse: '.zip', ladda: (id, f) => `${id}/${f.id}/ladda-ner` },
+  { slug: 'pdf-filer', andelse: '.pdf', ladda: (id, f) => `${id}/${f.id}/visa` },
 ];
+
+/** PDF:erna sparas utan ändelse i lagret — lägg på typens om den saknas. */
+function medAndelse(filnamn, typ) {
+  const n = String(filnamn || '').trim() || 'fil';
+  return /\.[A-Za-z0-9]{2,4}$/.test(n) ? n : n + typ.andelse;
+}
+
+/**
+ * Samma fil sparas om vid varje körning i lagret (Ferdi Kilic har 244 ECW-
+ * poster på ~4 filnamn). Kundmappen ska spegla det AKTUELLA läget, så vi
+ * behåller den nyaste per filnamn — annars skrivs de över varandra i
+ * godtycklig ordning och mappen blir en slump av gamla revisioner.
+ */
+function nyastePerFilnamn(lista, typ) {
+  const bast = new Map();
+  for (const f of lista) {
+    const namn = medAndelse(f.filename, typ);
+    const nu = bast.get(namn);
+    if (!nu || new Date(f.skapad || 0) > new Date(nu.skapad || 0)) bast.set(namn, { ...f, _namn: namn });
+  }
+  return [...bast.values()];
+}
 
 async function main() {
   const cfg = laesKonfig();
@@ -93,9 +115,15 @@ async function main() {
     for (const typ of TYPER) {
       const r = await fetch(`${bas}/api/${typ.slug}/${encodeURIComponent(projektId)}`, { headers: H });
       if (!r.ok) continue;
-      for (const f of await r.json()) {
-        const dit = path.join(mal, f.filename);
-        if (fs.existsSync(dit)) { fanns++; continue; }
+      const lista = await r.json();
+      if (!Array.isArray(lista) || !lista.length) continue;
+      for (const f of nyastePerFilnamn(lista, typ)) {
+        const dit = path.join(mal, f._namn);
+        // Hoppa bara över om den lokala filen är minst lika ny — annars har
+        // någon lagt en nyare version i lagret och mappen ska följa med.
+        if (fs.existsSync(dit) && fs.statSync(dit).mtimeMs >= new Date(f.skapad || 0).getTime()) {
+          fanns++; continue;
+        }
         attHamta.push({ typ, f, dit, projektId });
       }
     }
@@ -104,11 +132,11 @@ async function main() {
     console.log(`  ${mapp}  (+${attHamta.length})`);
     if (!TORR && !fs.existsSync(mal)) { fs.mkdirSync(mal, { recursive: true }); mappar++; }
     for (const { typ, f, dit } of attHamta) {
-      if (TORR) { console.log(`     ${f.filename}`); nya++; continue; }
+      if (TORR) { console.log(`     ${f._namn}`); nya++; continue; }
       const r = await fetch(`${bas}/api/${typ.slug}/${typ.ladda(encodeURIComponent(projektId), f)}`, { headers: H });
-      if (!r.ok) { console.warn(`     MISSLYCKADES ${f.filename} (${r.status})`); continue; }
+      if (!r.ok) { console.warn(`     MISSLYCKADES ${f._namn} (${r.status})`); continue; }
       fs.writeFileSync(dit, Buffer.from(await r.arrayBuffer()));
-      console.log(`     ${f.filename}`);
+      console.log(`     ${f._namn}`);
       nya++;
     }
   }

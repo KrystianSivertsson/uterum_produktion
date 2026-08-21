@@ -5340,6 +5340,37 @@ export default function App() {
                       </TouchableOpacity>
                     ))}
                   </View>
+                  {/* Aktiverad: styr om kunden syns i lagrets vyer och följer
+                      med i U:-synken. Av raderar inget — på igen tar tillbaka
+                      den. Testprojekt bockas ur här. */}
+                  <TouchableOpacity
+                    onPress={async () => {
+                      const nytt = !(valdKund.aktiverad !== false);
+                      try {
+                        const r = await fetch(`${API}/api/kunder/${valdKund.id}/aktiverad`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                          body: JSON.stringify({ aktiverad: nytt, namn: valdKund.namn }),
+                        });
+                        if (!r.ok) return;
+                        const sparad = await r.json();
+                        setValdKund(sparad);
+                        setKunder(prev => prev.map(k => (k.id === sparad.id ? sparad : k)));
+                        if (!nytt) setValdKund(null);   // avaktiverad → lämnar listan
+                      } catch { /* nätverksfel — läget står kvar */ }
+                    }}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12,
+                      alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 10,
+                      borderRadius: 8, borderWidth: 1,
+                      backgroundColor: valdKund.aktiverad !== false ? '#16a34a22' : c.kort,
+                      borderColor: valdKund.aktiverad !== false ? '#16a34a' : c.kortBorder,
+                    }}>
+                    <Text style={{ fontSize: 14 }}>{valdKund.aktiverad !== false ? '✅' : '⬜'}</Text>
+                    <Text style={{ color: valdKund.aktiverad !== false ? '#16a34a' : c.textMuted, fontSize: 12, fontWeight: '700' }}>
+                      {valdKund.aktiverad !== false ? 'Aktiverad' : 'Ej aktiverad'}
+                    </Text>
+                  </TouchableOpacity>
                   {/* Samma info-text som på planeringstavlan — redigerbar här
                       också. Sparas via planerings-endpointen: PUT /api/kunder/:id
                       tar bara emot namn/färg/mått/paket och hade tappat den. */}
