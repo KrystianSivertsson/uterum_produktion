@@ -19,10 +19,40 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const HAR = path.dirname(fileURLToPath(import.meta.url));
 const TORR = process.argv.includes('--torr');
+
+// Vissa dokument (ASS32-profilbladet, träkonstruktionen) skickas till lagret
+// som HTML — de är byggda för webbläsarens "Spara som PDF". I kundmappen vill
+// vi ha riktig PDF, så de renderas med Chrome/Edge i headless-läge.
+const WEBBLASARE = [
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+].find(p => fs.existsSync(p)) || null;
+
+/**
+ * HTML → PDF bredvid originalet. Returnerar PDF-sökvägen, eller null om
+ * ingen webbläsare finns eller renderingen gick fel (då behålls HTML:en).
+ */
+export function htmlTillPdf(htmlSokvag) {
+  if (!WEBBLASARE) return null;
+  const pdf = htmlSokvag.replace(/\.html?$/i, '.pdf');
+  const url = 'file:///' + htmlSokvag.replace(/\\/g, '/');
+  try {
+    execFileSync(WEBBLASARE, [
+      '--headless=new', '--disable-gpu', '--no-pdf-header-footer',
+      `--print-to-pdf=${pdf}`, url,
+    ], { timeout: 180000, stdio: 'ignore' });
+    return fs.existsSync(pdf) && fs.statSync(pdf).size > 0 ? pdf : null;
+  } catch {
+    return null;
+  }
+}
 
 function laesKonfig() {
   const fil = path.join(HAR, 'sync-u.config.json');
@@ -136,6 +166,18 @@ async function main() {
       const r = await fetch(`${bas}/api/${typ.slug}/${typ.ladda(encodeURIComponent(projektId), f)}`, { headers: H });
       if (!r.ok) { console.warn(`     MISSLYCKADES ${f._namn} (${r.status})`); continue; }
       fs.writeFileSync(dit, Buffer.from(await r.arrayBuffer()));
+      // HTML-dokumenten ska ligga som PDF i kundmappen. Lyckas renderingen
+      // tas HTML:en bort; annars behålls den så inget går förlorat.
+      if (/\.html?$/i.test(dit)) {
+        const pdf = htmlTillPdf(dit);
+        if (pdf) {
+          fs.rmSync(dit, { force: true });
+          console.log(`     ${path.basename(pdf)}  (renderad ur HTML)`);
+          nya++;
+          continue;
+        }
+        console.warn(`     ${f._namn}  (kunde inte renderas till PDF — HTML behålls)`);
+      }
       console.log(`     ${f._namn}`);
       nya++;
     }
