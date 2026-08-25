@@ -28,11 +28,12 @@ const _writeJSONEarly = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2)
  * aktuella maskinfiler ut — Ahlstrands korningar listade fyra filer var men
  * bara en fanns kvar pa kortet.
  *
- * Nu behalls de tre nyaste versionerna per projekt OCH filnamn, aldre filer tas
- * bort fran disken, och det globala taket ar en nodutgang i stallet for
- * vardagsmat.
+ * Nu behalls BARA den senaste versionen per projekt OCH filnamn. Aldre kopior
+ * tas bort fran disken, och det globala taket ar en nodutgang i stallet for
+ * vardagsmat. En exporterad fil ar alltid ateskapbar — det ar den aktuella som
+ * ska ligga pa kundkortet, inte en hog gamla revisioner.
  */
-const BEHALL_PER_FIL = 3;
+const BEHALL_PER_FIL = 1;   // bara senaste versionen av varje fil
 function beskarRegister(index, projectId, filename) {
   const sammaFil = index
     .map((rad, i) => ({ rad, i }))
@@ -72,14 +73,27 @@ function stadaRegisterVidStart() {
         behall.set(nyckel, lista);
       }
       const kvar = [];
+      const bort = [];
       for (const lista of behall.values()) {
         lista.sort((a, b) => String(b.skapad).localeCompare(String(a.skapad)));
         kvar.push(...lista.slice(0, BEHALL_PER_FIL));
+        bort.push(...lista.slice(BEHALL_PER_FIL));
       }
       kvar.sort((a, b) => String(a.skapad).localeCompare(String(b.skapad)));
       if (kvar.length !== index.length) {
         _writeJSONEarly(fil, kvar);
-        console.log(`${namn}-registret stadat: ${index.length} → ${kvar.length} poster`);
+        // Registerraden ar borta, sa filen gar anda inte att na langre.
+        let frigjort = 0;
+        for (const rad of bort) {
+          try {
+            if (rad.filePath && fs.existsSync(rad.filePath)) {
+              frigjort += fs.statSync(rad.filePath).size;
+              fs.rmSync(rad.filePath, { force: true });
+            }
+          } catch { /* filen kan redan vara borta */ }
+        }
+        console.log(`${namn}-registret stadat: ${index.length} → ${kvar.length} poster`
+          + `, ${bort.length} gamla filer borttagna (${(frigjort / 1048576).toFixed(1)} MB)`);
       }
     } catch (e) {
       console.warn(`Kunde inte stada ${namn}-registret:`, e.message);
