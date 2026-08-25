@@ -115,7 +115,11 @@ function nyastePerFilnamn(lista, typ) {
   return [...bast.values()];
 }
 
-async function main() {
+/**
+ * En synk-runda. `tyst` loggar bara det som faktiskt hämtas — live-läget kör
+ * varje minut och ska inte spamma loggen med "0 nya filer".
+ */
+export async function synkaEnGang({ tyst = false } = {}) {
   const cfg = laesKonfig();
   const bas = cfg.url.replace(/\/+$/, '');
 
@@ -130,7 +134,7 @@ async function main() {
 
   const kunder = await (await fetch(`${bas}/api/kunder`, { headers: H })).json();
   const aktiva = (Array.isArray(kunder) ? kunder : []).filter(k => k.aktiverad);
-  console.log(`${aktiva.length} aktiverade kunder (av ${kunder.length}) → ${cfg.mal}`);
+  if (!tyst) console.log(`${aktiva.length} aktiverade kunder (av ${kunder.length}) → ${cfg.mal}`);
   if (TORR) console.log('TORRKÖRNING — inget skrivs.\n');
 
   let nya = 0, fanns = 0, mappar = 0;
@@ -149,9 +153,13 @@ async function main() {
       if (!Array.isArray(lista) || !lista.length) continue;
       for (const f of nyastePerFilnamn(lista, typ)) {
         const dit = path.join(mal, f._namn);
+        // HTML-dokument renderas till PDF och HTML:en tas bort — då finns
+        // originalfilen aldrig kvar, och utan den här kontrollen skulle
+        // live-synken hämta och rendera om samma dokument varje varv.
+        const redanHar = /\.html?$/i.test(dit) ? dit.replace(/\.html?$/i, '.pdf') : dit;
         // Hoppa bara över om den lokala filen är minst lika ny — annars har
         // någon lagt en nyare version i lagret och mappen ska följa med.
-        if (fs.existsSync(dit) && fs.statSync(dit).mtimeMs >= new Date(f.skapad || 0).getTime()) {
+        if (fs.existsSync(redanHar) && fs.statSync(redanHar).mtimeMs >= new Date(f.skapad || 0).getTime()) {
           fanns++; continue;
         }
         attHamta.push({ typ, f, dit, projektId });
@@ -159,7 +167,8 @@ async function main() {
     }
     if (!attHamta.length) continue;
 
-    console.log(`  ${mapp}  (+${attHamta.length})`);
+    if (tyst) console.log(`[${new Date().toLocaleTimeString('sv-SE')}] ${mapp}  (+${attHamta.length})`);
+    else console.log(`  ${mapp}  (+${attHamta.length})`);
     if (!TORR && !fs.existsSync(mal)) { fs.mkdirSync(mal, { recursive: true }); mappar++; }
     for (const { typ, f, dit } of attHamta) {
       if (TORR) { console.log(`     ${f._namn}`); nya++; continue; }
@@ -182,10 +191,12 @@ async function main() {
       nya++;
     }
   }
-  console.log(`\nKlart: ${nya} ${TORR ? 'skulle hämtas' : 'nya filer'}, ${fanns} fanns redan, ${mappar} nya mappar.`);
+  if (!tyst) console.log(`
+Klart: ${nya} ${TORR ? 'skulle hämtas' : 'nya filer'}, ${fanns} fanns redan, ${mappar} nya mappar.`);
+  return { nya, fanns, mappar, aktiva: aktiva.length };
 }
 
 // Kör bara när filen startas direkt — annars går mappNamn() inte att testa.
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  main().catch(e => { console.error('Synken avbröts:', e.message); process.exit(1); });
+  synkaEnGang().catch(e => { console.error('Synken avbröts:', e.message); process.exit(1); });
 }
