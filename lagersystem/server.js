@@ -21,6 +21,71 @@ const _ECW_DIR_EARLY = path.join(__dirname, 'data', 'ecw');
 const _ECW_INDEX_EARLY = path.join(__dirname, 'data', 'ecw.json');
 const _readJSONEarly = (f, fb) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return fb; } };
 const _writeJSONEarly = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
+/**
+ * Halller fil-registren rena. Varje export sparade en NY post for samma filnamn,
+ * sa en enda kund kunde samla hundratals kopior (Ferdi Kilic: 240 poster av
+ * fyra filnamn). Nar det globala taket pa 500 slog i foll ANDRA kunders
+ * aktuella maskinfiler ut — Ahlstrands korningar listade fyra filer var men
+ * bara en fanns kvar pa kortet.
+ *
+ * Nu behalls de tre nyaste versionerna per projekt OCH filnamn, aldre filer tas
+ * bort fran disken, och det globala taket ar en nodutgang i stallet for
+ * vardagsmat.
+ */
+const BEHALL_PER_FIL = 3;
+function beskarRegister(index, projectId, filename) {
+  const sammaFil = index
+    .map((rad, i) => ({ rad, i }))
+    .filter(({ rad }) => rad.projectId === projectId && rad.filename === filename)
+    .sort((a, b) => String(b.rad.skapad).localeCompare(String(a.rad.skapad)));
+  const attSlanga = new Set(sammaFil.slice(BEHALL_PER_FIL).map(({ i }) => i));
+  for (const i of attSlanga) {
+    try { if (index[i].filePath && fs.existsSync(index[i].filePath)) fs.rmSync(index[i].filePath, { force: true }); } catch {}
+  }
+  for (let i = index.length - 1; i >= 0; i--) if (attSlanga.has(i)) index.splice(i, 1);
+  if (index.length > 3000) index.splice(0, index.length - 3000);
+  return index;
+}
+
+/**
+ * Engangsstadning vid start: registren har redan vuxit sig fulla (453 av 500
+ * ECW-poster, varav 240 pa EN kund) och det ar darfor andra kunders filer
+ * saknas. Trimma till samma regel som ovan. Filerna pa disken lamnas kvar —
+ * bara registerraderna tas bort, sa inget gar forlorat om regeln behover andras.
+ */
+function stadaRegisterVidStart() {
+  const register = [
+    ['ECW', _ECW_INDEX_EARLY],
+    ['PDF', _PDF_INDEX_EARLY],
+    ['BTL', _BTL_INDEX_EARLY],
+    ['STEP', _STEP_INDEX_EARLY],
+  ];
+  for (const [namn, fil] of register) {
+    try {
+      if (!fs.existsSync(fil)) continue;
+      const index = _readJSONEarly(fil, []);
+      const behall = new Map();
+      for (const rad of index) {
+        const nyckel = `${rad.projectId}|${rad.filename}`;
+        const lista = behall.get(nyckel) || [];
+        lista.push(rad);
+        behall.set(nyckel, lista);
+      }
+      const kvar = [];
+      for (const lista of behall.values()) {
+        lista.sort((a, b) => String(b.skapad).localeCompare(String(a.skapad)));
+        kvar.push(...lista.slice(0, BEHALL_PER_FIL));
+      }
+      kvar.sort((a, b) => String(a.skapad).localeCompare(String(b.skapad)));
+      if (kvar.length !== index.length) {
+        _writeJSONEarly(fil, kvar);
+        console.log(`${namn}-registret stadat: ${index.length} → ${kvar.length} poster`);
+      }
+    } catch (e) {
+      console.warn(`Kunde inte stada ${namn}-registret:`, e.message);
+    }
+  }
+}
 app.post('/api/ecw-filer/intern', (req, res) => {
   if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
   const { projectId, projectName, filename, ecwBase64 } = req.body;
@@ -36,7 +101,8 @@ app.post('/api/ecw-filer/intern', (req, res) => {
   if (!fs.existsSync(_ECW_INDEX_EARLY)) _writeJSONEarly(_ECW_INDEX_EARLY, []);
   const index = _readJSONEarly(_ECW_INDEX_EARLY, []);
   index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
-  if (index.length > 500) index.splice(0, index.length - 500);
+
+  beskarRegister(index, projectId, safeFilename);
   _writeJSONEarly(_ECW_INDEX_EARLY, index);
   res.json({ ok: true });
 });
@@ -65,7 +131,7 @@ app.post('/api/pdf-filer/intern', (req, res) => {
   if (!fs.existsSync(_PDF_INDEX_EARLY)) _writeJSONEarly(_PDF_INDEX_EARLY, []);
   const index = _readJSONEarly(_PDF_INDEX_EARLY, []);
   index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename + ext, filePath, skapad: new Date().toISOString() });
-  if (index.length > 500) index.splice(0, index.length - 500);
+  beskarRegister(index, projectId, safeFilename + ext);
   _writeJSONEarly(_PDF_INDEX_EARLY, index);
   res.json({ ok: true });
 });
@@ -89,7 +155,7 @@ app.post('/api/btl-filer/intern', (req, res) => {
   if (!fs.existsSync(_BTL_INDEX_EARLY)) _writeJSONEarly(_BTL_INDEX_EARLY, []);
   const index = _readJSONEarly(_BTL_INDEX_EARLY, []);
   index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
-  if (index.length > 500) index.splice(0, index.length - 500);
+  beskarRegister(index, projectId, safeFilename);
   _writeJSONEarly(_BTL_INDEX_EARLY, index);
   res.json({ ok: true });
 });
@@ -99,6 +165,9 @@ app.post('/api/btl-filer/intern', (req, res) => {
 // "Exportera STEP"-knapp — samma mönster som BTL ovan.
 const _STEP_DIR_EARLY = path.join(__dirname, 'data', 'step');
 const _STEP_INDEX_EARLY = path.join(__dirname, 'data', 'step.json');
+
+// Kors forst nar ALLA fyra registervagar ar deklarerade (const = TDZ ovanfor).
+stadaRegisterVidStart();
 app.post('/api/step-filer/intern', (req, res) => {
   if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
   const { projectId, projectName, filename, stepBase64 } = req.body;
@@ -114,7 +183,7 @@ app.post('/api/step-filer/intern', (req, res) => {
   if (!fs.existsSync(_STEP_INDEX_EARLY)) _writeJSONEarly(_STEP_INDEX_EARLY, []);
   const index = _readJSONEarly(_STEP_INDEX_EARLY, []);
   index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath, skapad: new Date().toISOString() });
-  if (index.length > 500) index.splice(0, index.length - 500);
+  beskarRegister(index, projectId, safeFilename);
   _writeJSONEarly(_STEP_INDEX_EARLY, index);
   res.json({ ok: true });
 });
