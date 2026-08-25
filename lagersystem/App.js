@@ -35,10 +35,140 @@ function urlBase64ToUint8Array(base64String) {
 }
 const STORAGE_KEY = 'lagersystem_produkter';
 const ORDRAR_KEY = 'lagersystem_ordrar';
+const FARG_MM_KEY = 'lagersystem_farger_mm_v1';
 const TOKEN_KEY = 'lagersystem_token';
 const TEMA_KEY = 'lagersystem_tema';
 const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Trä balkar', 'Osorterat'];
 const FORINSTALLDA_FARGER = ['Svart/RAL9005', 'Vit/NCS-0502-Y', 'Antracitgrå/RAL7016'];
+
+// ─── Profillängder & kapbitar ─────────────────────────────────────────────────
+// Lagret räknar profiler i STÄNGER, men verkstan kapar bitar ur dem. Tar vi
+// 3870 mm ur en 6 m-stång försvinner hela stången ur saldot och resten läggs in
+// som en kapbit — annars ser lagret ut att ha 6 m kvar som inte finns, och
+// kapbitarna glöms bort i stället för att användas.
+const KAP_MIN_SPAR_MM = 380;      // kortare rest än så är spill, inte lager
+const KAP_FORLUST_MM = 5;         // klingans bredd — samma 5 mm som ECW-nästningen
+const STANDARD_STANG_MM = 6000;
+
+/**
+ * Längd → mm. Äldre poster sparades i meter (6 = 6 m), så allt under 100 tolkas
+ * som meter och resten som mm. Nya poster skrivs alltid i mm.
+ */
+function tillMm(v) {
+  const n = parseFloat(String(v ?? '').replace(',', '.'));
+  if (!isFinite(n) || n <= 0) return 0;
+  return n < 100 ? Math.round(n * 1000) : Math.round(n);
+}
+
+/** Produktens stocklängd i mm ("6000 mm" i dimension), fallback 6 m. */
+function stangLangdMm(produkt) {
+  const m = /(\d[\d\s]*)\s*mm/i.exec(String(produkt?.dimension || ''));
+  return m ? parseInt(m[1].replace(/\s/g, ''), 10) : STANDARD_STANG_MM;
+}
+
+/** "Svart/RAL9005", "svart " och "Svart" är samma färg. */
+function fargNyckel(s) {
+  return String(s || '').toLowerCase().split(/[\s/,]+/).filter(Boolean)[0] || '';
+}
+
+/** Vid ihopslagning: behåll det mest informativa namnet (det med RAL/NCS-kod). */
+function bastaFargNamn(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const harKod = (x) => /\d/.test(x);
+  if (harKod(a) !== harKod(b)) return harKod(a) ? a : b;
+  return a.length >= b.length ? a : b;
+}
+
+/**
+ * Färgposter → en rad per färg OCH längd, i mm, sorterat färg → längst först.
+ * Poster utan längd räknas som hela stänger (flaggas med antagen: true) — det
+ * är därför samma färg kunde dyka upp två gånger utan att man såg skillnaden.
+ */
+function farglistaRader(produkt) {
+  const stang = stangLangdMm(produkt);
+  const map = new Map();
+  for (const f of (produkt?.farger || [])) {
+    const antal = parseInt(f.antal) || 0;
+    if (antal <= 0) continue;
+    const angiven = tillMm(f.langd);
+    const mm = angiven || stang;
+    const nyckel = `${fargNyckel(f.farg)}|${mm}`;
+    const ex = map.get(nyckel);
+    if (ex) {
+      ex.antal += antal;
+      ex.farg = bastaFargNamn(ex.farg, String(f.farg || '').trim());
+      ex.antagen = ex.antagen && !angiven;
+    } else {
+      map.set(nyckel, { farg: String(f.farg || '').trim(), mm, antal, antagen: !angiven, kapbit: mm < stang });
+    }
+  }
+  return [...map.values()].sort((a, b) => a.farg.localeCompare(b.farg, 'sv') || b.mm - a.mm);
+}
+
+/** Summerar färgrader → { st, mm } (mm = löpmått totalt). */
+function farglistaSumma(produkt) {
+  const rader = farglistaRader(produkt);
+  return {
+    st: rader.reduce((s, r) => s + r.antal, 0),
+    mm: rader.reduce((s, r) => s + r.mm * r.antal, 0),
+  };
+}
+
+/**
+ * Uttag av `antal` bitar à `langdMm` i en färg.
+ *
+ * Bäst-passande bit används först — minsta stång eller kapbit som räcker — så
+ * kapbitarna töms innan en ny 6-metare bryts. Resten blir en ny kapbit om den
+ * är minst KAP_MIN_SPAR_MM, annars spill. Returnerar nya färgrader + en logg
+ * över vad som faktiskt hände så uttaget går att visa för användaren.
+ */
+function taUtLangd(farger, produkt, farg, langdMm, antal) {
+  const stang = stangLangdMm(produkt);
+  const nyckel = fargNyckel(farg);
+  const rader = (farger || []).map(f => ({
+    farg: f.farg,
+    mm: tillMm(f.langd) || stang,
+    antal: parseInt(f.antal) || 0,
+  }));
+  const handelser = [];
+  let kvar = Math.max(0, parseInt(antal) || 0);
+  while (kvar > 0) {
+    let bast = -1;
+    rader.forEach((r, i) => {
+      if (fargNyckel(r.farg) !== nyckel || r.antal <= 0 || r.mm < langdMm) return;
+      if (bast < 0 || r.mm < rader[bast].mm) bast = i;
+    });
+    if (bast < 0) { handelser.push({ typ: 'slut', antal: kvar }); break; }
+    const kalla = rader[bast];
+    kalla.antal -= 1;
+    const rest = kalla.mm - langdMm - KAP_FORLUST_MM;
+    if (rest >= KAP_MIN_SPAR_MM) {
+      const i = rader.findIndex(r => fargNyckel(r.farg) === nyckel && r.mm === rest);
+      if (i >= 0) rader[i].antal += 1;
+      else rader.push({ farg: kalla.farg, mm: rest, antal: 1 });
+      handelser.push({ typ: 'kapbit', ur: kalla.mm, rest });
+    } else {
+      handelser.push({ typ: 'spill', ur: kalla.mm, rest: Math.max(0, rest) });
+    }
+    kvar -= 1;
+  }
+  return {
+    farger: rader.filter(r => r.antal > 0).map(r => ({ farg: r.farg, langd: r.mm, antal: r.antal })),
+    handelser,
+  };
+}
+
+/** Påfyllning: lägg till `antal` bitar à `langdMm` (slås ihop med lika rad). */
+function fyllPaLangd(farger, produkt, farg, langdMm, antal) {
+  const stang = stangLangdMm(produkt);
+  const mm = langdMm || stang;
+  const rader = (farger || []).map(f => ({ farg: f.farg, mm: tillMm(f.langd) || stang, antal: parseInt(f.antal) || 0 }));
+  const i = rader.findIndex(r => fargNyckel(r.farg) === fargNyckel(farg) && r.mm === mm);
+  if (i >= 0) { rader[i].antal += antal; rader[i].farg = bastaFargNamn(rader[i].farg, farg); }
+  else rader.push({ farg, mm, antal });
+  return rader.filter(r => r.antal > 0).map(r => ({ farg: r.farg, langd: r.mm, antal: r.antal }));
+}
 // Paket kunden köpt — styr vilket system (ASE60/ASS32) den räknas som i
 // Sammanställningen. Exakt samma lista + mappning som Uterum-Konfiguratorns
 // egen paket-väljare (paketTillSystem, wireframeModel.js) och ase60-
@@ -3713,7 +3843,9 @@ function BeredningVy({ kunder, ase60Projekt, token, c, mobil }) {
 function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
   const { c } = React.useContext(TemaContext);
   const totalMeter = (produkt.langder || []).reduce((s, l) => s + (l.langd * l.antal), 0);
-  const fargSorterad = [...(produkt.farger || [])].sort((a, b) => a.farg.localeCompare(b.farg, 'sv'));
+  const fargRader = farglistaRader(produkt);
+  const fargSumma = farglistaSumma(produkt);
+  const stangMm = stangLangdMm(produkt);
   const artikelBildPng = produkt.artikel ? `${API}/artikel-bilder/${produkt.artikel}.png` : null;
   const artikelBildJpg = produkt.artikel ? `${API}/artikel-bilder/${produkt.artikel}.jpg` : null;
   const [pngFel, setPngFel] = useState(false);
@@ -3770,7 +3902,7 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
             </View>
             <View style={{ backgroundColor: produkt.antal <= produkt.minAntal ? '#fee2e2' : '#dcfce7', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 4 }}>
               <Text style={{ color: produkt.antal <= produkt.minAntal ? '#ef4444' : '#16a34a', fontWeight: '700', fontSize: 13 }}>
-                {produkt.antal}{produkt.enhet || 'st'} {produkt.antal <= produkt.minAntal ? '⚠️ Lågt' : '✓ OK'}
+                {produkt.antal}{produkt.enhet || 'st'}{fargSumma.mm > 0 ? ` · ${(fargSumma.mm / 1000).toFixed(1)} m` : ''} {produkt.antal <= produkt.minAntal ? '⚠️ Lågt' : '✓ OK'}
               </Text>
             </View>
           </View>
@@ -3794,20 +3926,45 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
         </View>
       )}
 
-      {/* Färger */}
-      {fargSorterad.length > 0 && (
+      {/* Färger — en rad per färg OCH längd, aldrig två rader som ser lika ut */}
+      {fargRader.length > 0 && (
         <View style={{ marginTop: 24 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: c.textRubrik, marginBottom: 12 }}>Färger</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {fargSorterad.map((f, i) => (
-              <View key={i} style={{ backgroundColor: c.kort, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: c.kortBorder, minWidth: 100, alignItems: 'center' }}>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: c.textRubrik }}>{f.farg}</Text>
-                <Text style={{ color: c.textMuted, fontSize: 13, marginTop: 2 }}>
-                  {f.antal}st{f.langd ? ` × ${f.langd}m` : ''}
-                </Text>
-              </View>
-            ))}
+          <Text style={{ fontSize: 16, fontWeight: '700', color: c.textRubrik, marginBottom: 12 }}>Färger &amp; längder</Text>
+          <View style={{ flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 6, backgroundColor: c.tabellHuvud, borderTopLeftRadius: 8, borderTopRightRadius: 8 }}>
+            <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700' }}>FÄRG</Text>
+            <Text style={{ width: 70, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>ANTAL</Text>
+            <Text style={{ width: 110, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>LÄNGD</Text>
+            <Text style={{ width: 90, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>LÖPMETER</Text>
           </View>
+          {fargRader.map((r, i) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: c.kort, borderBottomWidth: 1, borderColor: c.kortBorder }}>
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{r.farg}</Text>
+                {r.kapbit && (
+                  <View style={{ backgroundColor: '#f59e0b22', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 }}>
+                    <Text style={{ color: '#b45309', fontSize: 10, fontWeight: '700' }}>KAPBIT</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={{ width: 70, color: c.textRubrik, fontWeight: '700', fontSize: 14, textAlign: 'right' }}>{r.antal} st</Text>
+              <Text style={{ width: 110, color: r.antagen ? c.textMuted : c.text, fontSize: 14, textAlign: 'right' }}>{r.mm} mm{r.antagen ? '*' : ''}</Text>
+              <Text style={{ width: 90, color: '#2563eb', fontWeight: '600', fontSize: 13, textAlign: 'right' }}>{(r.mm * r.antal / 1000).toFixed(1)} m</Text>
+            </View>
+          ))}
+          <View style={{ flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: c.tabellHuvud, borderBottomLeftRadius: 8, borderBottomRightRadius: 8 }}>
+            <Text style={{ flex: 1, color: c.textMuted, fontSize: 12 }}>Totalt</Text>
+            <Text style={{ width: 70, color: c.textRubrik, fontWeight: '700', fontSize: 13, textAlign: 'right' }}>{fargSumma.st} st</Text>
+            <View style={{ width: 110 }} />
+            <Text style={{ width: 90, color: c.textRubrik, fontWeight: '700', fontSize: 13, textAlign: 'right' }}>{(fargSumma.mm / 1000).toFixed(1)} m</Text>
+          </View>
+          {fargRader.some(r => r.antagen) && (
+            <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 6 }}>
+              * längden saknas på posten — räknas som hel stång ({stangMm} mm).
+            </Text>
+          )}
+          <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 4 }}>
+            Kapas en bit ur en stång försvinner hela stången ur saldot och resten läggs in som kapbit. Kapbitar används före nya stänger. Rester under {KAP_MIN_SPAR_MM} mm är spill och sparas inte.
+          </Text>
         </View>
       )}
     </ScrollView>
@@ -4298,6 +4455,24 @@ export default function App() {
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
         await AsyncStorage.setItem(invKey, '1');
         console.log(`Inventering ${INVENTERING_DATUM}: ${resultat.uppdaterade} uppdaterade, ${resultat.skapade.length} nya, ${resultat.nollade.length} dubbletter nollade`);
+      }
+      // Färglängder till mm + slå ihop rader som såg identiska ut ("Svart 8st"
+      // och "Svart 9st" var samma hela stänger, bara inlagda vid olika
+      // tillfällen). Körs en gång per webbläsare, samma mönster som ovan.
+      if (!(await AsyncStorage.getItem(FARG_MM_KEY))) {
+        let rorda = 0;
+        lista = lista.map(p => {
+          if (!Array.isArray(p.farger) || p.farger.length === 0) return p;
+          const rader = farglistaRader(p).map(r => ({ farg: r.farg, langd: r.mm, antal: r.antal }));
+          const oforandrad = rader.length === p.farger.length
+            && rader.every((r, i) => r.farg === p.farger[i].farg && r.langd === tillMm(p.farger[i].langd) && r.antal === (parseInt(p.farger[i].antal) || 0));
+          if (oforandrad) return p;
+          rorda++;
+          return { ...p, farger: rader };
+        });
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
+        await AsyncStorage.setItem(FARG_MM_KEY, '1');
+        console.log(`Färglängder normaliserade till mm: ${rorda} produkter`);
       }
       setProdukter(lista);
       try { const od = await AsyncStorage.getItem(ORDRAR_KEY); setOrdrar(od ? JSON.parse(od) : []); } catch {}
@@ -4880,32 +5055,45 @@ export default function App() {
       : uttag;
     const minAntal = parseInt(formMinAntal) || 5;
     const genomfor = () => {
-      const fargerUttag = formFarger.filter(f => f.farg.trim()).map(f => ({ farg: f.farg.trim(), langd: parseFloat(f.langd) || 0, antal: parseInt(f.antal) || 0 }));
+      const fargerUttag = formFarger.filter(f => f.farg.trim()).map(f => ({ farg: f.farg.trim(), langd: tillMm(f.langd), antal: parseInt(f.antal) || 0 }));
       const langder = formLangder.filter(l => l.langd).map(l => ({ langd: parseFloat(l.langd) || 0, antal: parseInt(l.antal) || 0 }));
       let nyLista;
       if (redigeraProdukt) {
-        // Uttag: subtrahera angivna färger från lagret. Påfyllning: addera
-        // (befintlig färg räknas upp, ny färg läggs till som rad).
+        // Uttag: kapa angiven längd ur bäst passande stång/kapbit — hela stången
+        // lämnar saldot och resten kommer tillbaka som kapbit (se taUtLangd).
+        // Påfyllning: lägg in bitar på angiven längd, hel stång om längd saknas.
         let nyFarger = [...(redigeraProdukt.farger || [])];
+        const kapLogg = [];
         fargerUttag.forEach(u => {
-          const idx = nyFarger.findIndex(f => f.farg === u.farg);
+          if (u.antal <= 0) return;
           if (arPafyllning) {
-            if (idx >= 0) nyFarger[idx] = { ...nyFarger[idx], antal: (nyFarger[idx].antal || 0) + u.antal };
-            else if (u.antal > 0) nyFarger.push(u);
-          } else if (idx >= 0) {
-            nyFarger[idx] = { ...nyFarger[idx], antal: Math.max(0, nyFarger[idx].antal - u.antal) };
+            nyFarger = fyllPaLangd(nyFarger, redigeraProdukt, u.farg, u.langd, u.antal);
+            return;
           }
+          const kapLangd = u.langd || stangLangdMm(redigeraProdukt);
+          const r = taUtLangd(nyFarger, redigeraProdukt, u.farg, kapLangd, u.antal);
+          nyFarger = r.farger;
+          r.handelser.forEach(h => {
+            if (h.typ === 'kapbit') kapLogg.push(`${u.farg}: ${kapLangd} mm ur ${h.ur} mm → kapbit ${h.rest} mm`);
+            else if (h.typ === 'spill') kapLogg.push(`${u.farg}: ${kapLangd} mm ur ${h.ur} mm → rest ${h.rest} mm = spill (under ${KAP_MIN_SPAR_MM} mm)`);
+            else if (h.typ === 'slut') kapLogg.push(`${u.farg}: ${h.antal} st à ${kapLangd} mm kunde INTE tas ut — ingen bit så lång i lager`);
+          });
         });
         nyFarger = nyFarger.filter(f => f.antal > 0);
         const gammal = redigeraProdukt;
         const andringar = [];
         if (gammal.namn !== formNamn.trim()) andringar.push({ falt: 'Namn', fran: gammal.namn, till: formNamn.trim() });
         if ((gammal.artikel||'') !== formArtikel.trim()) andringar.push({ falt: 'Artikelnr', fran: gammal.artikel||'', till: formArtikel.trim() });
-        if (uttag > 0) andringar.push({ falt: arPafyllning ? 'Påfyllning' : 'Uttag', fran: `${gammal.antal}${gammal.enhet||'st'}`, till: `${antal}${formEnhet} (${arPafyllning ? '+' : '-'}${uttag})` });
+        // Har produkten färgrader är summan av dem sanningen: ett uttag som
+        // lämnar en kapbit tar bort en stång och lägger till en bit, så antalet
+        // bitar kan stå still medan löpmetern sjunker.
+        const antalEfter = nyFarger.length > 0 ? nyFarger.reduce((sum, f) => sum + (parseInt(f.antal) || 0), 0) : antal;
+        if (uttag > 0) andringar.push({ falt: arPafyllning ? 'Påfyllning' : 'Uttag', fran: `${gammal.antal}${gammal.enhet||'st'}`, till: `${antalEfter}${formEnhet} (${arPafyllning ? '+' : '-'}${uttag})` });
         if ((gammal.enhet||'st') !== formEnhet) andringar.push({ falt: 'Enhet', fran: gammal.enhet||'st', till: formEnhet });
         if (gammal.kategori !== formKategori.trim()) andringar.push({ falt: 'Kategori', fran: gammal.kategori, till: formKategori.trim() });
         if (gammal.minAntal !== minAntal) andringar.push({ falt: 'Varningsgräns', fran: String(gammal.minAntal), till: String(minAntal) });
-        const uppdaterad = { ...redigeraProdukt, namn: formNamn.trim(), artikel: formArtikel.trim(), antal, kategori: formKategori.trim(), minAntal, enhet: formEnhet, bild: formBild, farger: nyFarger, langder };
+        if (kapLogg.length > 0) andringar.push({ falt: 'Kapbitar', fran: '', till: kapLogg.join(' · ') });
+        const uppdaterad = { ...redigeraProdukt, namn: formNamn.trim(), artikel: formArtikel.trim(), antal: antalEfter, kategori: formKategori.trim(), minAntal, enhet: formEnhet, bild: formBild, farger: nyFarger, langder };
         nyLista = produkter.map(p => p.id === redigeraProdukt.id ? uppdaterad : p);
         if (valdProdukt?.id === redigeraProdukt.id) setValdProdukt(uppdaterad);
         if (andringar.length > 0 && token) {
@@ -6298,7 +6486,14 @@ export default function App() {
                   );
                 })}
               </View>
-              {/* Färgrader: Färg | Längd (m) | Antal st | × */}
+              {redigeraProdukt && (
+                <Text style={{ color: c.textMuted, fontSize: 11, marginBottom: 8, lineHeight: 16 }}>
+                  {formRiktning === 'pafyllning'
+                    ? `Längd = bitarnas längd i mm. Lämnas den tom räknas de som hela stänger (${stangLangdMm(redigeraProdukt)} mm).`
+                    : `Längd = kaplängden i mm. Minsta bit som räcker används först, hela stången lämnar saldot och resten läggs in som kapbit (klinga ${KAP_FORLUST_MM} mm). Rester under ${KAP_MIN_SPAR_MM} mm är spill.`}
+                </Text>
+              )}
+              {/* Färgrader: Färg | Längd (mm) | Antal st | × */}
               {formFarger.map((f, i) => (
                 <View key={i} style={{ marginBottom: 8 }}>
                   <TextInput style={[styles.input, { marginBottom: 4, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
@@ -6306,7 +6501,7 @@ export default function App() {
                     value={f.farg} onChangeText={v => setFormFarger(prev => prev.map((x, j) => j === i ? { ...x, farg: v } : x))} />
                   <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                     <TextInput style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
-                      placeholder="Längd (m)" placeholderTextColor={c.textMuted} keyboardType="numeric"
+                      placeholder="Längd (mm)" placeholderTextColor={c.textMuted} keyboardType="numeric"
                       value={f.langd} onChangeText={v => setFormFarger(prev => prev.map((x, j) => j === i ? { ...x, langd: v } : x))} />
                     <TextInput style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
                       placeholder="Antal st" placeholderTextColor={c.textMuted} keyboardType="numeric"
