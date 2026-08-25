@@ -57,7 +57,7 @@ const STANDARD_STANG_MM = 6000;
 function tillMm(v) {
   const n = parseFloat(String(v ?? '').replace(',', '.'));
   if (!isFinite(n) || n <= 0) return 0;
-  return n < 100 ? Math.round(n * 1000) : Math.round(n);
+  return n < 100 ? Math.round(n * 1000) : Math.round(n * 10) / 10;
 }
 
 /** Produktens stocklängd i mm ("6000 mm" i dimension), fallback 6 m. */
@@ -69,6 +69,27 @@ function stangLangdMm(produkt) {
 /** "Svart/RAL9005", "svart " och "Svart" är samma färg. */
 function fargNyckel(s) {
   return String(s || '').toLowerCase().split(/[\s/,]+/).filter(Boolean)[0] || '';
+}
+
+/** RAL-/NCS-koden ur ett färgnamn ("Antracitgrå/RAL7016" → "7016"). */
+function fargKod(s) {
+  const m = /\b(?:ral|ncs)[\s-]*([0-9][0-9\s-]*)/i.exec(String(s || ''));
+  return m ? m[1].replace(/[\s-]/g, '') : '';
+}
+
+/**
+ * Samma färg? Kundkortet säger "Antracit", lagret "Antracitgrå/RAL7016" —
+ * finns kod på båda avgör koden, annars räcker det att namnen börjar likadant.
+ * Utan detta hittade avdraget aldrig färgen och kapade ingenting.
+ */
+function sammaFarg(a, b) {
+  const ka = fargKod(a);
+  const kb = fargKod(b);
+  if (ka && kb) return ka === kb;
+  const na = fargNyckel(a);
+  const nb = fargNyckel(b);
+  if (!na || !nb) return false;
+  return na === nb || na.startsWith(nb) || nb.startsWith(na);
 }
 
 /** Vid ihopslagning: behåll det mest informativa namnet (det med RAL/NCS-kod). */
@@ -87,23 +108,23 @@ function bastaFargNamn(a, b) {
  */
 function farglistaRader(produkt) {
   const stang = stangLangdMm(produkt);
-  const map = new Map();
+  const rader = [];
   for (const f of (produkt?.farger || [])) {
     const antal = parseInt(f.antal) || 0;
     if (antal <= 0) continue;
     const angiven = tillMm(f.langd);
     const mm = angiven || stang;
-    const nyckel = `${fargNyckel(f.farg)}|${mm}`;
-    const ex = map.get(nyckel);
+    const namn = String(f.farg || '').trim();
+    const ex = rader.find(r => r.mm === mm && sammaFarg(r.farg, namn));
     if (ex) {
       ex.antal += antal;
-      ex.farg = bastaFargNamn(ex.farg, String(f.farg || '').trim());
+      ex.farg = bastaFargNamn(ex.farg, namn);
       ex.antagen = ex.antagen && !angiven;
     } else {
-      map.set(nyckel, { farg: String(f.farg || '').trim(), mm, antal, antagen: !angiven, kapbit: mm < stang });
+      rader.push({ farg: namn, mm, antal, antagen: !angiven, kapbit: mm < stang });
     }
   }
-  return [...map.values()].sort((a, b) => a.farg.localeCompare(b.farg, 'sv') || b.mm - a.mm);
+  return rader.sort((a, b) => a.farg.localeCompare(b.farg, 'sv') || b.mm - a.mm);
 }
 
 /** Summerar färgrader → { st, mm } (mm = löpmått totalt). */
@@ -125,7 +146,6 @@ function farglistaSumma(produkt) {
  */
 function taUtLangd(farger, produkt, farg, langdMm, antal) {
   const stang = stangLangdMm(produkt);
-  const nyckel = fargNyckel(farg);
   const rader = (farger || []).map(f => ({
     farg: f.farg,
     mm: tillMm(f.langd) || stang,
@@ -136,15 +156,15 @@ function taUtLangd(farger, produkt, farg, langdMm, antal) {
   while (kvar > 0) {
     let bast = -1;
     rader.forEach((r, i) => {
-      if (fargNyckel(r.farg) !== nyckel || r.antal <= 0 || r.mm < langdMm) return;
+      if (!sammaFarg(r.farg, farg) || r.antal <= 0 || r.mm < langdMm) return;
       if (bast < 0 || r.mm < rader[bast].mm) bast = i;
     });
     if (bast < 0) { handelser.push({ typ: 'slut', antal: kvar }); break; }
     const kalla = rader[bast];
     kalla.antal -= 1;
-    const rest = kalla.mm - langdMm - KAP_FORLUST_MM;
+    const rest = Math.round((kalla.mm - langdMm - KAP_FORLUST_MM) * 10) / 10;
     if (rest >= KAP_MIN_SPAR_MM) {
-      const i = rader.findIndex(r => fargNyckel(r.farg) === nyckel && r.mm === rest);
+      const i = rader.findIndex(r => sammaFarg(r.farg, farg) && r.mm === rest);
       if (i >= 0) rader[i].antal += 1;
       else rader.push({ farg: kalla.farg, mm: rest, antal: 1 });
       handelser.push({ typ: 'kapbit', ur: kalla.mm, rest });
@@ -156,6 +176,35 @@ function taUtLangd(farger, produkt, farg, langdMm, antal) {
   return {
     farger: rader.filter(r => r.antal > 0).map(r => ({ farg: r.farg, langd: r.mm, antal: r.antal })),
     handelser,
+  };
+}
+
+/** Längd för visning: 1468.5 → "1468,5", 6000 → "6000". */
+function fmtMm(v) {
+  return String(Math.round(v * 10) / 10).replace('.', ',');
+}
+
+/**
+ * Nettot av ett uttag för en färg: hur många hela stänger som gick åt, vilka
+ * kapbitar som blev kvar och vilka som förbrukades. Rå händelselista duger
+ * inte — kapas fyra bitar ur samma stång är de tre första "kapbitarna" bara
+ * mellanlägen som nästa kap åt upp.
+ */
+function fargDiff(fore, efter, prod, farg) {
+  const stang = stangLangdMm(prod);
+  const delta = new Map();
+  const rakna = (lista, tecken) => {
+    for (const r of farglistaRader({ ...prod, farger: lista })) {
+      if (!sammaFarg(r.farg, farg)) continue;
+      delta.set(r.mm, (delta.get(r.mm) || 0) + tecken * r.antal);
+    }
+  };
+  rakna(fore, -1);
+  rakna(efter, 1);
+  return {
+    stangerAt: -(delta.get(stang) || 0),
+    nya: [...delta.entries()].filter(([mm, d]) => mm !== stang && d > 0).sort((a, b) => b[0] - a[0]),
+    forbrukade: [...delta.entries()].filter(([mm, d]) => mm !== stang && d < 0).sort((a, b) => b[0] - a[0]),
   };
 }
 
@@ -187,30 +236,37 @@ function simuleraKlart(produkter, rader, kundFarg) {
     const nu = hamta(prod);
     const langd = tillMm(rad.langdMm);
     const harFarg = !!kundFarg
-      && farglistaRader({ ...prod, farger: nu.farger }).some(r => fargNyckel(r.farg) === fargNyckel(kundFarg));
+      && farglistaRader({ ...prod, farger: nu.farger }).some(r => sammaFarg(r.farg, kundFarg));
 
     if (langd > 0 && harFarg) {
-      const r = taUtLangd(nu.farger, prod, kundFarg, langd, st);
+      const fore = nu.farger;
+      const r = taUtLangd(fore, prod, kundFarg, langd, st);
+      const d = fargDiff(fore, r.farger, prod, kundFarg);
       nu.farger = r.farger;
       nu.rord = true;
-      const kapbitar = r.handelser.filter(h => h.typ === 'kapbit');
-      const spill = r.handelser.filter(h => h.typ === 'spill');
       const slut = r.handelser.find(h => h.typ === 'slut');
+      const spill = r.handelser.filter(h => h.typ === 'spill');
       const delar = [];
-      if (kapbitar.length) delar.push(`${kapbitar.length} kapbit${kapbitar.length === 1 ? '' : 'ar'} in (${[...new Set(kapbitar.map(h => h.rest))].join(', ')} mm)`);
+      delar.push(d.stangerAt > 0 ? `${d.stangerAt} hel${d.stangerAt === 1 ? ' stång' : 'a stänger'} går åt` : 'ingen hel stång går åt');
+      if (d.forbrukade.length) delar.push(`använder kapbit ${d.forbrukade.map(([mm, n2]) => `${fmtMm(mm)} mm${-n2 > 1 ? ` ×${-n2}` : ''}`).join(', ')}`);
+      if (d.nya.length) delar.push(`kapbit kvar ${d.nya.map(([mm, n2]) => `${fmtMm(mm)} mm${n2 > 1 ? ` ×${n2}` : ''}`).join(', ')}`);
       if (spill.length) delar.push(`${spill.length} rest under ${KAP_MIN_SPAR_MM} mm = spill`);
       texter.set(i, {
-        text: `${st} st à ${langd} mm kapas ur ${kundFarg}${delar.length ? ' · ' + delar.join(' · ') : ''}`,
+        text: `${st} st à ${fmtMm(langd)} mm ur ${kundFarg} · ${delar.join(' · ')}`,
         varning: slut ? `⚠️ ${slut.antal} st ryms inte — ingen bit så lång i ${kundFarg}` : '',
       });
       nu.kap.push(...r.handelser
         .filter(h => h.typ !== 'slut')
-        .map(h => h.typ === 'kapbit' ? `${langd} ur ${h.ur} → kapbit ${h.rest}` : `${langd} ur ${h.ur} → spill ${h.rest}`));
+        .map(h => h.typ === 'kapbit' ? `${fmtMm(langd)} ur ${fmtMm(h.ur)} → kapbit ${fmtMm(h.rest)}` : `${fmtMm(langd)} ur ${fmtMm(h.ur)} → spill ${fmtMm(h.rest)}`));
     } else {
       nu.delta += st;
+      const harNagonFarg = farglistaRader({ ...prod, farger: nu.farger }).length > 0;
       texter.set(i, {
-        text: langd > 0 ? `${st} st à ${langd} mm — dras som ${st} hela bitar` : `${st} ${rad.enhet || 'st'} dras från antalet`,
-        varning: langd > 0 ? (kundFarg ? `⚠️ ingen ${kundFarg} registrerad på artikeln — kapas ej` : '⚠️ kunden saknar färg — kapas ej') : '',
+        text: langd > 0 ? `${st} st à ${fmtMm(langd)} mm — dras som ${st} hela bitar` : `${st} ${rad.enhet || 'st'} dras från antalet`,
+        varning: langd <= 0 ? ''
+          : !kundFarg ? '⚠️ kunden saknar färg — kapas ej'
+          : !harNagonFarg ? '⚠️ artikeln har inga färgrader i lagret — kapas ej'
+          : `⚠️ ingen ${kundFarg} på artikeln — kapas ej`,
       });
     }
   });
@@ -231,7 +287,7 @@ function fyllPaLangd(farger, produkt, farg, langdMm, antal) {
   const stang = stangLangdMm(produkt);
   const mm = langdMm || stang;
   const rader = (farger || []).map(f => ({ farg: f.farg, mm: tillMm(f.langd) || stang, antal: parseInt(f.antal) || 0 }));
-  const i = rader.findIndex(r => fargNyckel(r.farg) === fargNyckel(farg) && r.mm === mm);
+  const i = rader.findIndex(r => sammaFarg(r.farg, farg) && r.mm === mm);
   if (i >= 0) { rader[i].antal += antal; rader[i].farg = bastaFargNamn(rader[i].farg, farg); }
   else rader.push({ farg, mm, antal });
   return rader.filter(r => r.antal > 0).map(r => ({ farg: r.farg, langd: r.mm, antal: r.antal }));
@@ -4990,8 +5046,17 @@ export default function App() {
           const xa = (x.artikel || '').trim();
           return xa === profilArt || (profilArtNum && xa === profilArtNum);
         });
-        const medLangd = kandidater.find(x => (x.dimension || '').replace(/\D/g, '') === String(p.langdMm));
-        const prod = medLangd || kandidater[0] || null;
+        // Finns artikeln som flera lagerposter: välj den som faktiskt går att
+        // kapa ur. Tidigare jämfördes KAPLÄNGDEN mot produktens stocklängd
+        // ("2955" mot "6000 mm"), vilket aldrig kunde matcha — då föll den
+        // tillbaka på första bästa post, ofta en gammal dubblett med saldo 0.
+        const kundFarg = valdKund?.farg || '';
+        const rankad = [...kandidater].sort((a, b) => {
+          const racker = (x) => (p.langdMm ? (stangLangdMm(x) >= p.langdMm ? 1 : 0) : 1);
+          const harFarg = (x) => (kundFarg && farglistaRader(x).some(r => sammaFarg(r.farg, kundFarg)) ? 1 : 0);
+          return racker(b) - racker(a) || harFarg(b) - harFarg(a) || (b.antal || 0) - (a.antal || 0);
+        });
+        const prod = rankad[0] || null;
         return {
           produktId: prod?.id || null,
           namn: prod?.namn || p.beskrivning || p.artikel,
@@ -5002,7 +5067,17 @@ export default function App() {
           typ: 'profil',
         };
       });
-      setKlartRuta({ rader: [...profilRader, ...manuella], serier: data.serier || [], projekt: data.projekt || '', laddar: false });
+      // Materiallistan har en rad per ROLL: karm vänster och karm höger är två
+      // rader med samma artikel och längd, likaså bågens låssida och
+      // handtagssida. I lagret är det samma bit — slås de inte ihop ser listan
+      // ut att innehålla dubbletter och avdraget görs i två omgångar.
+      const slagna = [];
+      for (const r of profilRader) {
+        const ex = slagna.find(x => x.artikel === r.artikel && x.langdMm === r.langdMm && x.produktId === r.produktId);
+        if (ex) ex.antal += r.antal;
+        else slagna.push({ ...r });
+      }
+      setKlartRuta({ rader: [...slagna, ...manuella], serier: data.serier || [], projekt: data.projekt || '', laddar: false });
     } catch (e) {
       setKlartRuta({
         rader: manuella, serier: [], projekt: '', laddar: false,
