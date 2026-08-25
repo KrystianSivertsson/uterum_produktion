@@ -46,7 +46,13 @@ const FORINSTALLDA_FARGER = ['Svart/RAL9005', 'Vit/NCS-0502-Y', 'Antracitgrå/RA
 // 3870 mm ur en 6 m-stång försvinner hela stången ur saldot och resten läggs in
 // som en kapbit — annars ser lagret ut att ha 6 m kvar som inte finns, och
 // kapbitarna glöms bort i stället för att användas.
-const KAP_MIN_SPAR_MM = 380;      // kortare rest än så är spill, inte lager
+const KAP_MIN_SPAR_MM = 380;      // alu: kortare rest än så är spill, inte lager
+const RULL_MIN_SPAR_MM = 450;     // rullvara: stumpar under 0,45 m är spill
+
+/** Minsta rest värd att spara. Packningar och rullvara har egen gräns. */
+function kapMinSpar(produkt) {
+  return produkt?.enhet === 'm' ? RULL_MIN_SPAR_MM : KAP_MIN_SPAR_MM;
+}
 const KAP_FORLUST_MM = 5;         // klingans bredd — samma 5 mm som ECW-nästningen
 
 /** Klingan äter bara aluminium. Packningar och rullvara (enhet m) kapas med
@@ -185,7 +191,7 @@ function taUtLangd(farger, produkt, farg, langdMm, antal) {
     const kalla = rader[bast];
     kalla.antal -= 1;
     const rest = Math.round((kalla.mm - langdMm - kapForlust(produkt)) * 10) / 10;
-    if (rest >= KAP_MIN_SPAR_MM) {
+    if (rest >= kapMinSpar(produkt)) {
       const i = rader.findIndex(r => sammaFarg(r.farg, kalla.farg) && r.mm === rest);
       if (i >= 0) rader[i].antal += 1;
       else rader.push({ farg: kalla.farg, mm: rest, antal: 1 });
@@ -271,7 +277,7 @@ function simuleraKlart(produkter, rader, kundFarg) {
       const finns = hela.reduce((sum, r) => sum + r.antal, 0);
       const tar = Math.min(st, finns);
       const spill = (rad.spill || []).slice(0, tar).map(tillMm);
-      const sparade = spill.filter(v => v >= KAP_MIN_SPAR_MM);
+      const sparade = spill.filter(v => v >= kapMinSpar(prod));
       if (tar > 0) {
         let kvar = tar;
         let farger = nu.farger;
@@ -290,12 +296,12 @@ function simuleraKlart(produkter, rader, kundFarg) {
       const delar = [`${tar} hel${tar === 1 ? ' stång' : 'a stänger'} à ${fmtMm(stang)} mm`];
       if (sparade.length) delar.push(`kapbit kvar ${[...new Set(sparade)].map(v => `${fmtMm(v)} mm`).join(', ')}`);
       const spillt = spill.length - sparade.length;
-      if (spillt > 0) delar.push(`${spillt} rest under ${KAP_MIN_SPAR_MM} mm = spill`);
+      if (spillt > 0) delar.push(`${spillt} rest under ${fmtMm(kapMinSpar(prod))} mm = spill`);
       texter.set(i, {
         text: delar.join(' · '),
         varning: tar < st ? `⚠️ bara ${tar} av ${st} stänger finns i lager${kundFarg ? ` (${kundFarg})` : ''}` : '',
       });
-      nu.kap.push(...spill.map((v, k) => `stång ${k + 1}: rest ${fmtMm(v)} mm${v >= KAP_MIN_SPAR_MM ? '' : ' (spill)'}`));
+      nu.kap.push(...spill.map((v, k) => `stång ${k + 1}: rest ${fmtMm(v)} mm${v >= kapMinSpar(prod) ? '' : ' (spill)'}`));
       return;
     }
 
@@ -321,7 +327,7 @@ function simuleraKlart(produkter, rader, kundFarg) {
       delar.push(d.stangerAt > 0 ? `${d.stangerAt} hel${d.stangerAt === 1 ? ' stång' : 'a stänger'} går åt` : 'ingen hel stång går åt');
       if (d.forbrukade.length) delar.push(`använder kapbit ${d.forbrukade.map(([mm, n2]) => `${fmtMm(mm)} mm${-n2 > 1 ? ` ×${-n2}` : ''}`).join(', ')}`);
       if (d.nya.length) delar.push(`kapbit kvar ${d.nya.map(([mm, n2]) => `${fmtMm(mm)} mm${n2 > 1 ? ` ×${n2}` : ''}`).join(', ')}`);
-      if (spill.length) delar.push(`${spill.length} rest under ${KAP_MIN_SPAR_MM} mm = spill`);
+      if (spill.length) delar.push(`${spill.length} rest under ${fmtMm(kapMinSpar(prod))} mm = spill`);
       texter.set(i, {
         text: `${st} st à ${fmtMm(langd)} mm ur ${kundFarg} · ${delar.join(' · ')}`,
         varning: slut ? `⚠️ ${slut.antal} st ryms inte — ingen bit så lång i ${kundFarg}` : '',
@@ -329,6 +335,25 @@ function simuleraKlart(produkter, rader, kundFarg) {
       nu.kap.push(...r.handelser
         .filter(h => h.typ !== 'slut')
         .map(h => h.typ === 'kapbit' ? `${fmtMm(langd)} ur ${fmtMm(h.ur)} → kapbit ${fmtMm(h.rest)}` : `${fmtMm(langd)} ur ${fmtMm(h.ur)} → spill ${fmtMm(h.rest)}`));
+    } else if (langd <= 0 && rad.enhet === 'm' && farglistaRader({ ...prod, farger: nu.farger }).length > 0) {
+      // METERVARA med registrerade rullar: 24 m packning ska kapas ur den
+      // påbörjade rullen, inte dras som 24 rullar ur saldot.
+      const meterMm = Math.round((parseFloat(String(rad.antal).replace(',', '.')) || 0) * 1000);
+      const r = taUtLangd(nu.farger, prod, kundFarg, meterMm, 1);
+      const d = fargDiff(nu.farger, r.farger, prod, kundFarg);
+      nu.farger = r.farger;
+      nu.rord = true;
+      const slut = r.handelser.find(h => h.typ === 'slut');
+      const spill = r.handelser.filter(h => h.typ === 'spill');
+      const delar = [];
+      if (d.forbrukade.length) delar.push(`ur rulle ${d.forbrukade.map(([mm]) => `${fmtMm(mm / 1000)} m`).join(', ')}`);
+      if (d.nya.length) delar.push(`kvar ${d.nya.map(([mm]) => `${fmtMm(mm / 1000)} m`).join(', ')}`);
+      if (spill.length) delar.push(`rest under ${RULL_MIN_SPAR_MM / 1000} m = spill`);
+      texter.set(i, {
+        text: `${fmtMm(meterMm / 1000)} m${delar.length ? ' · ' + delar.join(' · ') : ''}`,
+        varning: slut ? `⚠️ ingen rulle har ${fmtMm(meterMm / 1000)} m kvar` : '',
+      });
+      return;
     } else {
       // Beslag och tätningar (ingen längd) dras rakt av. En PROFIL som inte gick
       // att kapa lämnas orörd — att dra den från totalen skulle spreta mot
@@ -4165,7 +4190,9 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
             </Text>
           )}
           <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 4 }}>
-            Kapas en bit ur en stång försvinner hela stången ur saldot och resten läggs in som kapbit. Kapbitar används före nya stänger. Rester under {KAP_MIN_SPAR_MM} mm är spill och sparas inte. "Ej färgsatt" är stänger utan registrerad färg — de kan tas till vilken kund som helst.
+            {produkt.enhet === 'm'
+              ? `Tas det ur en rulle fortsätter uttagen på den påbörjade rullen tills den är slut. Rester under ${RULL_MIN_SPAR_MM / 1000} m är spill och sparas inte.`
+              : `Kapas en bit ur en stång försvinner hela stången ur saldot och resten läggs in som kapbit. Kapbitar används före nya stänger. Rester under ${KAP_MIN_SPAR_MM} mm är spill och sparas inte.`} "Ej färgsatt" är stänger utan registrerad färg — de kan tas till vilken kund som helst.
           </Text>
         </View>
       )}
@@ -5340,7 +5367,10 @@ export default function App() {
     const antalFranFarger = fargerMedAntal.length > 0
       ? fargerMedAntal.reduce((s, f) => s + (parseInt(f.antal) || 0), 0)
       : null;
-    const uttag = antalFranFarger !== null ? antalFranFarger : (parseInt(formAntal) || 0);
+    // Metervara kan tas ut i decimaler ("2,5 m") — parseInt hade gjort 2 av det.
+    const antalText = String(formAntal).replace(',', '.');
+    const uttag = antalFranFarger !== null ? antalFranFarger
+      : (formEnhet === 'm' ? (parseFloat(antalText) || 0) : (parseInt(antalText) || 0));
     const arPafyllning = formRiktning === 'pafyllning';
     const antal = redigeraProdukt
       ? (arPafyllning
@@ -5362,7 +5392,21 @@ export default function App() {
         // "9 rullar a 40 m" / "12 stanger a 6000 mm": langden galler antalet i
         // toppfaltet och blir en langdrad utan farg, inte bara en siffra.
         const bitLangd = tillMm(formLangdPerBit);
-        if (bitLangd > 0 && fargerUttag.length === 0 && uttag > 0) {
+        const harRullar = farglistaRader(redigeraProdukt).length > 0;
+
+        // METERUTTAG ur rulle: "ta ut 2,5 m" ska kapa den PABORJADE rullen, inte
+        // dra 2 rullar ur saldot. Basta passning tar minsta rulle som racker, sa
+        // en oppnad rulle tommas innan en ny brytes.
+        if (!bitLangd && formEnhet === 'm' && harRullar && !arPafyllning && uttag > 0 && fargerUttag.length === 0) {
+          const meterMm = Math.round(uttag * 1000);
+          const r = taUtLangd(nyFarger, redigeraProdukt, '', meterMm, 1);
+          nyFarger = r.farger;
+          r.handelser.forEach(h => {
+            if (h.typ === 'kapbit') kapLogg.push(`${uttag} m ur rulle ${fmtMm(h.ur / 1000)} m → ${fmtMm(h.rest / 1000)} m kvar`);
+            else if (h.typ === 'spill') kapLogg.push(`${uttag} m ur rulle ${fmtMm(h.ur / 1000)} m → rest ${fmtMm(h.rest / 1000)} m = spill`);
+            else if (h.typ === 'slut') kapLogg.push(`ingen rulle har ${uttag} m kvar`);
+          });
+        } else if (bitLangd > 0 && fargerUttag.length === 0 && uttag > 0) {
           if (arPafyllning) {
             nyFarger = fyllPaLangd(nyFarger, redigeraProdukt, '', bitLangd, uttag);
             kapLogg.push(`+${uttag} st à ${fmtMm(bitLangd)} mm`);
@@ -5388,7 +5432,7 @@ export default function App() {
           nyFarger = r.farger;
           r.handelser.forEach(h => {
             if (h.typ === 'kapbit') kapLogg.push(`${u.farg}: ${kapLangd} mm ur ${h.ur} mm → kapbit ${h.rest} mm`);
-            else if (h.typ === 'spill') kapLogg.push(`${u.farg}: ${kapLangd} mm ur ${h.ur} mm → rest ${h.rest} mm = spill (under ${KAP_MIN_SPAR_MM} mm)`);
+            else if (h.typ === 'spill') kapLogg.push(`${u.farg}: ${kapLangd} mm ur ${h.ur} mm → rest ${h.rest} mm = spill (under ${kapMinSpar(redigeraProdukt)} mm)`);
             else if (h.typ === 'slut') kapLogg.push(`${u.farg}: ${h.antal} st à ${kapLangd} mm kunde INTE tas ut — ingen bit så lång i lager`);
           });
         });
@@ -6843,7 +6887,9 @@ export default function App() {
                 <Text style={{ color: c.textMuted, fontSize: 11, marginBottom: 8, lineHeight: 16 }}>
                   {formRiktning === 'pafyllning'
                     ? `Längd = bitarnas längd i mm. Lämnas den tom räknas de som hela stänger (${stangLangdMm(redigeraProdukt)} mm).`
-                    : `Längd = kaplängden i mm. Minsta bit som räcker används först, hela stången lämnar saldot och resten läggs in som kapbit (klinga ${KAP_FORLUST_MM} mm). Rester under ${KAP_MIN_SPAR_MM} mm är spill.`}
+                    : formEnhet === 'm'
+                      ? `Antalet är METER att ta ut. Uttaget fortsätter på den påbörjade rullen tills den är slut; rester under ${RULL_MIN_SPAR_MM / 1000} m är spill.`
+                      : `Längd = kaplängden i mm. Minsta bit som räcker används först, hela stången lämnar saldot och resten läggs in som kapbit (klinga ${KAP_FORLUST_MM} mm). Rester under ${KAP_MIN_SPAR_MM} mm är spill.`}
                 </Text>
               )}
               {/* Färgrader: Färg | Längd (mm) | Antal st | × */}
