@@ -159,6 +159,73 @@ function taUtLangd(farger, produkt, farg, langdMm, antal) {
   };
 }
 
+/**
+ * Vad ett godkänt "Klart" gör med lagret. Samma funktion driver både
+ * förhandsvisningen i rutan och själva avdraget, så det som står i rutan är
+ * exakt det som händer.
+ *
+ * Materiallistan från generatorn säger "8 st à 1154 mm" — det är BITAR, inte
+ * stänger. Tidigare drogs 8 stänger av; nu kapas de ur stänger/kapbitar i
+ * kundens färg via taUtLangd. Rader utan längd (beslag, tätningar, glas) dras
+ * rakt av från antalet som förut.
+ */
+function simuleraKlart(produkter, rader, kundFarg) {
+  const perProdukt = new Map();
+  const texter = new Map();
+  const logg = [];
+  const hamta = (prod) => {
+    if (!perProdukt.has(prod.id)) {
+      perProdukt.set(prod.id, { farger: [...(prod.farger || [])], antal: prod.antal, delta: 0, rord: false, kap: [] });
+    }
+    return perProdukt.get(prod.id);
+  };
+
+  rader.forEach((rad, i) => {
+    const prod = rad.produktId ? produkter.find(x => x.id === rad.produktId) : null;
+    const st = parseInt(rad.antal) || 0;
+    if (!prod || st <= 0) return;
+    const nu = hamta(prod);
+    const langd = tillMm(rad.langdMm);
+    const harFarg = !!kundFarg
+      && farglistaRader({ ...prod, farger: nu.farger }).some(r => fargNyckel(r.farg) === fargNyckel(kundFarg));
+
+    if (langd > 0 && harFarg) {
+      const r = taUtLangd(nu.farger, prod, kundFarg, langd, st);
+      nu.farger = r.farger;
+      nu.rord = true;
+      const kapbitar = r.handelser.filter(h => h.typ === 'kapbit');
+      const spill = r.handelser.filter(h => h.typ === 'spill');
+      const slut = r.handelser.find(h => h.typ === 'slut');
+      const delar = [];
+      if (kapbitar.length) delar.push(`${kapbitar.length} kapbit${kapbitar.length === 1 ? '' : 'ar'} in (${[...new Set(kapbitar.map(h => h.rest))].join(', ')} mm)`);
+      if (spill.length) delar.push(`${spill.length} rest under ${KAP_MIN_SPAR_MM} mm = spill`);
+      texter.set(i, {
+        text: `${st} st à ${langd} mm kapas ur ${kundFarg}${delar.length ? ' · ' + delar.join(' · ') : ''}`,
+        varning: slut ? `⚠️ ${slut.antal} st ryms inte — ingen bit så lång i ${kundFarg}` : '',
+      });
+      nu.kap.push(...r.handelser
+        .filter(h => h.typ !== 'slut')
+        .map(h => h.typ === 'kapbit' ? `${langd} ur ${h.ur} → kapbit ${h.rest}` : `${langd} ur ${h.ur} → spill ${h.rest}`));
+    } else {
+      nu.delta += st;
+      texter.set(i, {
+        text: langd > 0 ? `${st} st à ${langd} mm — dras som ${st} hela bitar` : `${st} ${rad.enhet || 'st'} dras från antalet`,
+        varning: langd > 0 ? (kundFarg ? `⚠️ ingen ${kundFarg} registrerad på artikeln — kapas ej` : '⚠️ kunden saknar färg — kapas ej') : '',
+      });
+    }
+  });
+
+  const nyProdukter = produkter.map(prod => {
+    const nu = perProdukt.get(prod.id);
+    if (!nu) return prod;
+    const bas = nu.rord ? nu.farger.reduce((sum, f) => sum + (parseInt(f.antal) || 0), 0) : nu.antal;
+    const antal = Math.max(0, bas - nu.delta);
+    logg.push({ produktId: prod.id, namn: prod.namn, enhet: prod.enhet || 'st', fran: prod.antal, till: antal, kap: nu.kap });
+    return { ...prod, antal, farger: nu.rord ? nu.farger : prod.farger };
+  });
+  return { nyProdukter, texter, logg };
+}
+
 /** Påfyllning: lägg till `antal` bitar à `langdMm` (slås ihop med lika rad). */
 function fyllPaLangd(farger, produkt, farg, langdMm, antal) {
   const stang = stangLangdMm(produkt);
@@ -4959,28 +5026,62 @@ export default function App() {
     if (!klartRuta) return;
     const rader = klartRuta.rader.filter(r => r.produktId && (parseInt(r.antal) || 0) > 0);
     if (rader.length === 0) return;
-    loggaKundUttag(rader, 'uttag');
-    const nyProdukter = produkter.map(p => {
-      const summa = rader.filter(r => r.produktId === p.id).reduce((s, r) => s + (parseInt(r.antal) || 0), 0);
-      if (!summa) return p;
-      return { ...p, antal: Math.max(0, p.antal - summa) };
-    });
+    // Läget FÖRE avdraget sparas på kunden — då kan Ångra lägga tillbaka exakt
+    // de stänger och kapbitar som togs, i stället för att bara räkna upp antalet.
+    const berorda = new Set(rader.map(r => r.produktId));
+    const lagerFore = produkter
+      .filter(p => berorda.has(p.id))
+      .map(p => ({ produktId: p.id, antal: p.antal, farger: p.farger ? JSON.parse(JSON.stringify(p.farger)) : null }));
+    const { nyProdukter, logg } = simuleraKlart(produkter, klartRuta.rader, valdKund?.farg || '');
+    loggaKlartUttag(logg);
     setProdukter(nyProdukter);
     sparaProdukter(nyProdukter);
     const material = { ...(valdKund.material || {}) };
     material[aktivKundFlik] = klartRuta.rader
       .filter(r => (parseInt(r.antal) || 0) > 0)
       .map(r => ({ produktId: r.produktId, namn: r.namn, artikel: r.artikel || '', enhet: r.enhet || 'st', antal: parseInt(r.antal) || 0, langdMm: r.langdMm }));
-    const klart = { ...(valdKund.klart || {}), [aktivKundFlik]: { tid: new Date().toISOString(), av: inloggad?.namn || inloggad?.username || '' } };
+    const klart = { ...(valdKund.klart || {}), [aktivKundFlik]: { tid: new Date().toISOString(), av: inloggad?.namn || inloggad?.username || '', lagerFore } };
     uppdateraKund({ ...valdKund, material, klart });
     setKlartRuta(null);
   };
+
+  /** Loggar det verkliga utfallet per produkt, kapbitarna inkluderade. */
+  const loggaKlartUttag = (logg) => {
+    if (!token) return;
+    logg.forEach(({ produktId, namn, enhet, fran, till, kap }) => {
+      if (fran === till && (!kap || kap.length === 0)) return;
+      const andringar = [{
+        falt: 'Uttag',
+        fran: `${fran}${enhet}`,
+        till: `${till}${enhet} (${valdKund.namn} / ${aktivKundFlik})`,
+      }];
+      if (kap && kap.length) andringar.push({ falt: 'Kapbitar', fran: '', till: kap.join(' · ') });
+      fetch(`${API}/api/changes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ produktId, produktNamn: namn, andringar }),
+      }).catch(() => {});
+    });
+  };
+
+  // Utfallet av Klart-rutan, räknat med exakt samma funktion som godkännandet
+  // sedan kör skarpt — det som står i rutan kan därför inte skilja sig från
+  // vad som händer med lagret.
+  const klartUtfall = React.useMemo(
+    () => simuleraKlart(produkter, klartRuta?.rader || [], valdKund?.farg || ''),
+    [produkter, klartRuta, valdKund],
+  );
 
   const angraKundFlikKlart = () => {
     const lista = (valdKund.material?.[aktivKundFlik] || []).filter(m => (parseInt(m.antal) || 0) > 0);
     const genomfor = () => {
       loggaKundUttag(lista, 'aterlagg');
+      // Finns ett sparat läge från godkännandet läggs stänger OCH kapbitar
+      // tillbaka precis som de såg ut — annars (äldre poster) bara antalet.
+      const fore = valdKund.klart?.[aktivKundFlik]?.lagerFore;
       const nyProdukter = produkter.map(p => {
+        const f = Array.isArray(fore) ? fore.find(x => x.produktId === p.id) : null;
+        if (f) return { ...p, antal: f.antal, farger: f.farger ? JSON.parse(JSON.stringify(f.farger)) : p.farger };
         const m = lista.find(x => x.produktId === p.id);
         if (!m) return p;
         return { ...p, antal: p.antal + (parseInt(m.antal) || 0) };
@@ -6297,6 +6398,8 @@ export default function App() {
       {visaAnvandare && <AnvandarHantering token={token} onStang={() => setVisaAnvandare(false)} />}
 
       {/* Klart-godkännanderuta: visar all input innan något dras från lagret */}
+      {/* Klart-rutan visar utfallet av avdraget innan det godkänns — samma
+          simulering som sedan körs skarpt, så inget kan skilja sig åt. */}
       <Modal visible={!!klartRuta} animationType="fade" transparent onRequestClose={() => setKlartRuta(null)}>
         <View style={styles.modalBakgrund}>
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
@@ -6326,11 +6429,23 @@ export default function App() {
                 <Text style={{ color: c.textMuted, fontSize: 14, marginVertical: 12, textAlign: 'center' }}>Inget material att dra av.</Text>
               )}
 
+              {!klartRuta?.laddar && !!valdKund?.farg && (
+                <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 8 }}>
+                  Kundens färg: <Text style={{ color: c.text, fontWeight: '700' }}>{valdKund.farg}</Text> — profilerna kapas ur den färgens stänger och kapbitar.
+                </Text>
+              )}
+              {!klartRuta?.laddar && !valdKund?.farg && (klartRuta?.rader || []).some(r => r.langdMm) && (
+                <View style={{ backgroundColor: '#fffbeb', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                  <Text style={{ color: '#92400e', fontSize: 12 }}>Kunden saknar färg — profilerna dras som hela bitar utan kapbitar. Sätt färg på kundkortet för att räkna rätt.</Text>
+                </View>
+              )}
+
               {!klartRuta?.laddar && (klartRuta?.rader || []).map((rad, i) => {
                 const p = rad.produktId ? produkter.find(x => x.id === rad.produktId) : null;
                 const antal = parseInt(rad.antal) || 0;
                 const saknas = !rad.produktId;
                 const forLite = p && antal > p.antal;
+                const utfall = klartUtfall.texter.get(i);
                 return (
                   <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
                     <View style={{ flex: 1 }}>
@@ -6341,11 +6456,17 @@ export default function App() {
                         {rad.artikel || '—'}
                         {rad.langdMm ? ` · ${rad.langdMm} mm` : ''}
                         {p ? ` · i lager: ${p.antal}${p.enhet || 'st'}` : ''}
-                        {saknas ? ' · ⚠️ finns ej i lagret — dras ej' : (forLite ? ' · ⚠️ räcker inte' : '')}
+                        {saknas ? ' · ⚠️ finns ej i lagret — dras ej' : (forLite && !rad.langdMm ? ' · ⚠️ räcker inte' : '')}
                       </Text>
+                      {utfall && (
+                        <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 2 }}>→ {utfall.text}</Text>
+                      )}
+                      {utfall?.varning ? (
+                        <Text style={{ color: '#b45309', fontSize: 11, marginTop: 2 }}>{utfall.varning}</Text>
+                      ) : null}
                     </View>
                     <TextInput
-                      style={[styles.input, { width: 64, marginBottom: 0, textAlign: 'center', backgroundColor: c.input, borderColor: (saknas || forLite) ? '#ef4444' : c.inputBorder, color: c.inputText }]}
+                      style={[styles.input, { width: 64, marginBottom: 0, textAlign: 'center', backgroundColor: c.input, borderColor: (saknas || (forLite && !rad.langdMm)) ? '#ef4444' : c.inputBorder, color: c.inputText }]}
                       keyboardType="numeric"
                       value={String(rad.antal)}
                       onChangeText={t => andraKlartRad(i, t)} />
