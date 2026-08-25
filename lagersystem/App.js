@@ -48,6 +48,12 @@ const FORINSTALLDA_FARGER = ['Svart/RAL9005', 'Vit/NCS-0502-Y', 'Antracitgrå/RA
 // kapbitarna glöms bort i stället för att användas.
 const KAP_MIN_SPAR_MM = 380;      // kortare rest än så är spill, inte lager
 const KAP_FORLUST_MM = 5;         // klingans bredd — samma 5 mm som ECW-nästningen
+
+/** Klingan äter bara aluminium. Packningar och rullvara (enhet m) kapas med
+ *  kniv — 2,5 m ur en 40 m-rulle lämnar 37,5 m, inte 37,495. */
+function kapForlust(produkt) {
+  return produkt?.enhet === 'm' ? 0 : KAP_FORLUST_MM;
+}
 const STANDARD_STANG_MM = 6000;
 
 /**
@@ -178,7 +184,7 @@ function taUtLangd(farger, produkt, farg, langdMm, antal) {
     if (bast < 0) { handelser.push({ typ: 'slut', antal: kvar }); break; }
     const kalla = rader[bast];
     kalla.antal -= 1;
-    const rest = Math.round((kalla.mm - langdMm - KAP_FORLUST_MM) * 10) / 10;
+    const rest = Math.round((kalla.mm - langdMm - kapForlust(produkt)) * 10) / 10;
     if (rest >= KAP_MIN_SPAR_MM) {
       const i = rader.findIndex(r => sammaFarg(r.farg, kalla.farg) && r.mm === rest);
       if (i >= 0) rader[i].antal += 1;
@@ -4092,7 +4098,9 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
             </View>
             <View style={{ backgroundColor: produkt.antal <= produkt.minAntal ? '#fee2e2' : '#dcfce7', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 4 }}>
               <Text style={{ color: produkt.antal <= produkt.minAntal ? '#ef4444' : '#16a34a', fontWeight: '700', fontSize: 13 }}>
-                {produkt.antal}{produkt.enhet || 'st'}{fargSumma.mm > 0 ? ` · ${(fargSumma.mm / 1000).toFixed(1)} m` : ''} {produkt.antal <= produkt.minAntal ? '⚠️ Lågt' : '✓ OK'}
+                {fargSumma.mm > 0
+                  ? `${fargSumma.st} st · ${(fargSumma.mm / 1000).toFixed(1)} m`
+                  : `${produkt.antal}${produkt.enhet || 'st'}`} {produkt.antal <= produkt.minAntal ? '⚠️ Lågt' : '✓ OK'}
               </Text>
             </View>
           </View>
@@ -4139,7 +4147,9 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
                 )}
               </View>
               <Text style={{ width: 70, color: c.textRubrik, fontWeight: '700', fontSize: 14, textAlign: 'right' }}>{r.antal} st</Text>
-              <Text style={{ width: 110, color: r.antagen ? c.textMuted : c.text, fontSize: 14, textAlign: 'right' }}>{r.mm} mm{r.antagen ? '*' : ''}</Text>
+              <Text style={{ width: 110, color: r.antagen ? c.textMuted : c.text, fontSize: 14, textAlign: 'right' }}>
+                {produkt.enhet === 'm' ? `${fmtMm(r.mm / 1000)} m` : `${fmtMm(r.mm)} mm`}{r.antagen ? '*' : ''}
+              </Text>
               <Text style={{ width: 90, color: '#2563eb', fontWeight: '600', fontSize: 13, textAlign: 'right' }}>{(r.mm * r.antal / 1000).toFixed(1)} m</Text>
             </View>
           ))}
@@ -4197,6 +4207,9 @@ export default function App() {
   const [formBild, setFormBild] = useState(null);
   const [formFarger, setFormFarger] = useState([]);
   const [formLangder, setFormLangder] = useState([]);
+  // Langd per bit/rulle. "9 rullar a 40 m" ska bli 9 st och 360 m i lagret —
+  // inte 40. Samma falt anvands for profiler ("12 stanger a 6000 mm").
+  const [formLangdPerBit, setFormLangdPerBit] = useState('');
   const [visaAnvandare, setVisaAnvandare] = useState(false);
   const [visaChat, setVisaChat] = useState(false);
   const [andringslogg, setAndringslogg] = useState([]);
@@ -5301,7 +5314,7 @@ export default function App() {
     setFormNamn(''); setFormArtikel(''); setFormAntal('');
     setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSimulering || arSammanstallning || arLagerforslag || arPlanering || arBeredning ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
-    setFormBild(null); setFormFarger([]); setFormLangder([]);
+    setFormBild(null); setFormFarger([]); setFormLangder([]); setFormLangdPerBit('');
     setModalVisible(true);
   };
 
@@ -5317,6 +5330,7 @@ export default function App() {
     setFormBild(produkt.bild || null);
     setFormFarger([]);
     setFormLangder([]);
+    setFormLangdPerBit('');
     setModalVisible(true);
   };
 
@@ -5344,6 +5358,25 @@ export default function App() {
         // Påfyllning: lägg in bitar på angiven längd, hel stång om längd saknas.
         let nyFarger = [...(redigeraProdukt.farger || [])];
         const kapLogg = [];
+
+        // "9 rullar a 40 m" / "12 stanger a 6000 mm": langden galler antalet i
+        // toppfaltet och blir en langdrad utan farg, inte bara en siffra.
+        const bitLangd = tillMm(formLangdPerBit);
+        if (bitLangd > 0 && fargerUttag.length === 0 && uttag > 0) {
+          if (arPafyllning) {
+            nyFarger = fyllPaLangd(nyFarger, redigeraProdukt, '', bitLangd, uttag);
+            kapLogg.push(`+${uttag} st à ${fmtMm(bitLangd)} mm`);
+          } else {
+            const r = taUtLangd(nyFarger, redigeraProdukt, '', bitLangd, uttag);
+            nyFarger = r.farger;
+            r.handelser.forEach(h => {
+              if (h.typ === 'kapbit') kapLogg.push(`${fmtMm(bitLangd)} ur ${fmtMm(h.ur)} → kapbit ${fmtMm(h.rest)}`);
+              else if (h.typ === 'spill') kapLogg.push(`${fmtMm(bitLangd)} ur ${fmtMm(h.ur)} → rest ${fmtMm(h.rest)} = spill`);
+              else if (h.typ === 'slut') kapLogg.push(`${h.antal} st à ${fmtMm(bitLangd)} mm fanns inte i lager`);
+            });
+          }
+        }
+
         fargerUttag.forEach(u => {
           if (u.antal <= 0) return;
           if (arPafyllning) {
@@ -6746,6 +6779,21 @@ export default function App() {
                 </View>
               );
             })()}
+
+            {/* Längd per bit/rulle — "9 rullar à 40 m" i stället för bara 40 */}
+            <Text style={[styles.inputLabel, { color: c.textMuted }]}>
+              {formEnhet === 'm' ? 'Längd per rulle (m) — valfritt' : 'Längd per bit (mm) — valfritt'}
+            </Text>
+            <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+              placeholder={formEnhet === 'm' ? 'T.ex. 40 → antalet ovan blir antal rullar' : 'T.ex. 6000 → antalet ovan blir antal stänger'}
+              placeholderTextColor={c.textMuted} keyboardType="numeric"
+              value={formLangdPerBit} onChangeText={setFormLangdPerBit} />
+            {!!formLangdPerBit && (parseInt(formAntal) || 0) > 0 && (
+              <Text style={{ color: c.textMuted, fontSize: 12, marginTop: -8, marginBottom: 12 }}>
+                = {parseInt(formAntal)} st à {formLangdPerBit} {formEnhet === 'm' ? 'm' : 'mm'}
+                {' '}({((tillMm(formLangdPerBit) * (parseInt(formAntal) || 0)) / 1000).toFixed(1)} m totalt)
+              </Text>
+            )}
 
             {inloggad.roll === 'admin' && (
               <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]} placeholder="Varning vid antal (standard 5)" placeholderTextColor={c.textMuted}
