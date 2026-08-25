@@ -745,28 +745,35 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
     if (!Array.isArray(proj.units) || proj.units.length === 0) {
       return res.json({ projekt: proj.name || '', serier: [], profiler: [] });
     }
-    // Fullstandig materiallista (profiler + beslag/tatningar/glas) — se
-    // ase60-generator/server/domain/bom.ts. Ersatte tidigare /api/pack-anropet
-    // som bara raknade av de tva raprofilerna (karm + baga).
-    const bomR = await ase60Fetch('/api/bom', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ units: proj.units }),
-    });
-    if (!bomR.ok) return res.status(502).json({ error: 'Materiallistan misslyckades i ASE60-generatorn' });
-    const bomResult = await bomR.json();
-    const profiler = (bomResult.lines || []).map(l => ({
-      artikel: l.art,
-      beskrivning: l.desc,
-      langdMm: l.lengthMm || null,
-      antal: l.qty,
-    }));
+    // ASE60 och ASS32 har HELT olika materiallistor. Kors ASE60:s /api/bom pa
+    // ASS32-partier svarar den anda — med ASE60-artiklar (487000, 504010 ...)
+    // som inte ingar i jobbet. Varje system maste darfor fraga sin egen kalla.
+    const ass32Units = proj.units.filter(u => u && u.system === 'ass32');
+    const ase60Units = proj.units.filter(u => !u || u.system !== 'ass32');
+
+    const profiler = [];
+    let bomWarnings = [];
+    if (ase60Units.length) {
+      const bomR = await ase60Fetch('/api/bom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ units: ase60Units }),
+      });
+      if (!bomR.ok) return res.status(502).json({ error: 'Materiallistan misslyckades i ASE60-generatorn' });
+      const bomResult = await bomR.json();
+      bomWarnings = bomResult.warnings || [];
+      profiler.push(...(bomResult.lines || []).map(l => ({
+        artikel: l.art,
+        beskrivning: l.desc,
+        langdMm: l.lengthMm || null,
+        antal: l.qty,
+      })));
+    }
+
     // Lager-atgang i STANGER per artikel. Materiallistan raknar bitar ("8 st a
     // 1154 mm") medan lagret har hela stanger — generatorn nastar darfor per
     // artikel och svarar med antal stanger + spillet per stang, samma
     // packning som ECW:n och PDF:ens optimeringssida.
-    const ass32Units = proj.units.filter(u => u && u.system === 'ass32');
-    const ase60Units = proj.units.filter(u => !u || u.system !== 'ass32');
     const stanger = [];
     for (const [vag, units] of [['/api/lager-atgang', ase60Units], ['/api/ass32/lager-atgang', ass32Units]]) {
       if (!units.length) continue;
@@ -779,11 +786,22 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
         if (!r.ok) continue;
         const data = await r.json();
         if (Array.isArray(data.stanger)) stanger.push(...data.stanger);
+        // ASS32:s beslag/tatningar/glas kommer med har — ASE60:s ligger redan
+        // i profiler ovan via /api/bom.
+        if (vag.includes('ass32') && Array.isArray(data.ovrigt)) {
+          profiler.push(...data.ovrigt.map(o => ({
+            artikel: o.artikel,
+            beskrivning: o.benamning,
+            langdMm: o.langdMm || null,
+            antal: o.antal,
+            enhet: o.enhet || 'st',
+          })));
+        }
       } catch { /* faller tillbaka pa bitlistan nedan */ }
     }
 
     const serier = [...new Set(proj.units.map(u => u && u.series).filter(Boolean))];
-    res.json({ projekt: proj.name || '', serier, profiler, stanger, bomWarnings: bomResult.warnings || [] });
+    res.json({ projekt: proj.name || '', serier, profiler, stanger, bomWarnings });
   } catch {
     res.status(502).json({ error: 'Kunde inte nå ASE60-generatorn' });
   }
