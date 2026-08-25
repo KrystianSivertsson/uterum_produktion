@@ -761,8 +761,29 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
       langdMm: l.lengthMm || null,
       antal: l.qty,
     }));
+    // Lager-atgang i STANGER per artikel. Materiallistan raknar bitar ("8 st a
+    // 1154 mm") medan lagret har hela stanger — generatorn nastar darfor per
+    // artikel och svarar med antal stanger + spillet per stang, samma
+    // packning som ECW:n och PDF:ens optimeringssida.
+    const ass32Units = proj.units.filter(u => u && u.system === 'ass32');
+    const ase60Units = proj.units.filter(u => !u || u.system !== 'ass32');
+    const stanger = [];
+    for (const [vag, units] of [['/api/lager-atgang', ase60Units], ['/api/ass32/lager-atgang', ass32Units]]) {
+      if (!units.length) continue;
+      try {
+        const r = await ase60Fetch(vag, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ units }),
+        });
+        if (!r.ok) continue;
+        const data = await r.json();
+        if (Array.isArray(data.stanger)) stanger.push(...data.stanger);
+      } catch { /* faller tillbaka pa bitlistan nedan */ }
+    }
+
     const serier = [...new Set(proj.units.map(u => u && u.series).filter(Boolean))];
-    res.json({ projekt: proj.name || '', serier, profiler, bomWarnings: bomResult.warnings || [] });
+    res.json({ projekt: proj.name || '', serier, profiler, stanger, bomWarnings: bomResult.warnings || [] });
   } catch {
     res.status(502).json({ error: 'Kunde inte nå ASE60-generatorn' });
   }

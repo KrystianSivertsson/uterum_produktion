@@ -250,6 +250,49 @@ function simuleraKlart(produkter, rader, kundFarg) {
     const st = parseInt(rad.antal) || 0;
     if (!prod || st <= 0) return;
     const nu = hamta(prod);
+
+    // STANGRAD: optimeringen har redan nastat bitarna. Vi drar N hela stanger
+    // och lagger tillbaka varje stangs spill som kapbit — ingen egen nastning
+    // har, sa lagret konsumerar exakt de stanger maskinen kor.
+    if (rad.typ === 'stang') {
+      const stang = tillMm(rad.stangLangdMm) || stangLangdMm(prod);
+      if (farglistaRader({ ...prod, farger: nu.farger }).length === 0 && nu.antal > 0) {
+        nu.farger = [{ farg: '', langd: stang, antal: nu.antal }];
+        nu.rord = true;
+      }
+      const hela = farglistaRader({ ...prod, farger: nu.farger })
+        .filter(r => r.mm >= stang && matcharFarg(r.farg, kundFarg));
+      const finns = hela.reduce((sum, r) => sum + r.antal, 0);
+      const tar = Math.min(st, finns);
+      const spill = (rad.spill || []).slice(0, tar).map(tillMm);
+      const sparade = spill.filter(v => v >= KAP_MIN_SPAR_MM);
+      if (tar > 0) {
+        let kvar = tar;
+        let farger = nu.farger;
+        for (const r of hela) {
+          if (kvar <= 0) break;
+          const n = Math.min(kvar, r.antal);
+          farger = taUtLangd(farger, prod, r.farg || kundFarg, stang, n).farger;
+          kvar -= n;
+        }
+        for (const langdKvar of sparade) {
+          farger = fyllPaLangd(farger, prod, hela[0]?.farg || '', langdKvar, 1);
+        }
+        nu.farger = farger;
+        nu.rord = true;
+      }
+      const delar = [`${tar} hel${tar === 1 ? ' stång' : 'a stänger'} à ${fmtMm(stang)} mm`];
+      if (sparade.length) delar.push(`kapbit kvar ${[...new Set(sparade)].map(v => `${fmtMm(v)} mm`).join(', ')}`);
+      const spillt = spill.length - sparade.length;
+      if (spillt > 0) delar.push(`${spillt} rest under ${KAP_MIN_SPAR_MM} mm = spill`);
+      texter.set(i, {
+        text: delar.join(' · '),
+        varning: tar < st ? `⚠️ bara ${tar} av ${st} stänger finns i lager${kundFarg ? ` (${kundFarg})` : ''}` : '',
+      });
+      nu.kap.push(...spill.map((v, k) => `stång ${k + 1}: rest ${fmtMm(v)} mm${v >= KAP_MIN_SPAR_MM ? '' : ' (spill)'}`));
+      return;
+    }
+
     const langd = tillMm(rad.langdMm);
     // Saknar artikeln färgrader helt (vanligast — de flesta profiler ligger som
     // bara ett antal) räknas hela saldot som stänger utan färg. Kapningen
@@ -5062,7 +5105,14 @@ export default function App() {
       // Glasraden (artikel "GLAS") hör hemma under egen Glas-flik, inte Alufräs
       // — annars räknas den dubbelt om båda flikarna körs "Klart".
       const radAvGlas = p => String(p.artikel).trim().toUpperCase() === 'GLAS';
-      const profilerForFlik = (data.profiler || []).filter(p => aktivKundFlik === 'Glas' ? radAvGlas(p) : !radAvGlas(p));
+      // Profilerna kommer som STÄNGER ur optimeringen (samma nästning som ECW:n
+      // och PDF:ens kaplista). Bitraderna för samma artiklar tas bort — de är
+      // samma material räknat en gång till, och de står inte som bitar i PDF:en.
+      const stangArtiklar = new Set((data.stanger || []).map(s => String(s.artikel).replace(/[A-Za-z]+$/, '')));
+      const arStangArtikel = p => stangArtiklar.has(String(p.artikel).trim().replace(/[A-Za-z]+$/, ''));
+      const profilerForFlik = (data.profiler || [])
+        .filter(p => aktivKundFlik === 'Glas' ? radAvGlas(p) : !radAvGlas(p))
+        .filter(p => aktivKundFlik === 'Glas' || !arStangArtikel(p));
       const profilRader = profilerForFlik.map(p => {
         // Matcha lagerprodukt: samma artikelnr (ASE60 har ibland bokstavssuffix,
         // t.ex. 487850A = lagrets 487850), helst med rätt längd i dimension-fältet
@@ -5107,7 +5157,31 @@ export default function App() {
         if (ex) ex.antal += r.antal;
         else slagna.push({ ...r });
       }
-      setKlartRuta({ rader: [...slagna, ...manuella], serier: data.serier || [], projekt: data.projekt || '', laddar: false });
+      const stangRader = aktivKundFlik === 'Glas' ? [] : (data.stanger || []).map(st => {
+        const artNum = String(st.artikel).replace(/[A-Za-z]+$/, '');
+        const kandidater = produkter.filter(x => {
+          const xa = (x.artikel || '').trim();
+          return xa === st.artikel || xa.replace(/[A-Za-z]+$/, '') === artNum;
+        });
+        const kundFarg = valdKund?.farg || '';
+        const prod = [...kandidater].sort((a, b) =>
+          (farglistaRader(b).some(r => matcharFarg(r.farg, kundFarg)) ? 1 : 0)
+          - (farglistaRader(a).some(r => matcharFarg(r.farg, kundFarg)) ? 1 : 0)
+          || (b.antal || 0) - (a.antal || 0))[0] || null;
+        return {
+          produktId: prod?.id || null,
+          namn: prod?.namn || st.benamning || st.artikel,
+          artikel: String(st.artikel),
+          langdMm: null,
+          stangLangdMm: st.stangLangdMm,
+          spill: st.spill || [],
+          bitar: st.bitar || [],
+          enhet: prod?.enhet || 'st',
+          antal: st.antalStanger,
+          typ: 'stang',
+        };
+      });
+      setKlartRuta({ rader: [...stangRader, ...slagna, ...manuella], serier: data.serier || [], projekt: data.projekt || '', laddar: false });
     } catch (e) {
       setKlartRuta({
         rader: manuella, serier: [], projekt: '', laddar: false,
@@ -6555,16 +6629,21 @@ export default function App() {
                   <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>
-                        {rad.typ === 'profil' ? '🔩 ' : ''}{rad.namn}
+                        {rad.typ === 'stang' ? '📏 ' : rad.typ === 'profil' ? '🔩 ' : ''}{rad.namn}
                       </Text>
                       <Text style={{ color: saknas ? '#ef4444' : (forLite ? '#ef4444' : c.textMuted), fontSize: 12 }}>
                         {rad.artikel || '—'}
-                        {rad.langdMm ? ` · ${rad.langdMm} mm` : ''}
+                        {rad.typ === 'stang' ? ` · stänger à ${rad.stangLangdMm} mm` : (rad.langdMm ? ` · ${rad.langdMm} mm` : '')}
                         {p ? ` · i lager: ${p.antal}${p.enhet || 'st'}` : ''}
                         {saknas ? ' · ⚠️ finns ej i lagret — dras ej' : (forLite && !rad.langdMm ? ' · ⚠️ räcker inte' : '')}
                       </Text>
                       {utfall && (
                         <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 2 }}>→ {utfall.text}</Text>
+                      )}
+                      {rad.typ === 'stang' && (rad.bitar || []).length > 0 && (
+                        <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 1 }}>
+                          kapas till: {rad.bitar.map(b => `${b.antal}×${b.langd} mm`).join(', ')}
+                        </Text>
                       )}
                       {utfall?.varning ? (
                         <Text style={{ color: '#b45309', fontSize: 11, marginTop: 2 }}>{utfall.varning}</Text>
