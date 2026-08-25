@@ -34,10 +34,23 @@ const _writeJSONEarly = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2)
  * ska ligga pa kundkortet, inte en hog gamla revisioner.
  */
 const BEHALL_PER_FIL = 1;   // bara senaste versionen av varje fil
+
+/**
+ * Filnamn → identitet. Konfiguratorns dokument bar en tidsstampel i namnet
+ * ("trakonstruktion-2026-08-20T11-59-28.html"), sa varje export blev ett NYTT
+ * filnamn och regeln "behall senaste per filnamn" bet aldrig — 237 PDF-poster
+ * dar de flesta ar samma tre dokument om och om igen. Stampeln raknas darfor
+ * inte som en del av namnet.
+ */
+function filnamnsNyckel(filename) {
+  return String(filename || '')
+    .replace(/[-_]\d{4}-\d{2}-\d{2}T[\d-]{6,}(?=\.[A-Za-z0-9]+$|$)/, '')
+    .toLowerCase();
+}
 function beskarRegister(index, projectId, filename) {
   const sammaFil = index
     .map((rad, i) => ({ rad, i }))
-    .filter(({ rad }) => rad.projectId === projectId && rad.filename === filename)
+    .filter(({ rad }) => rad.projectId === projectId && filnamnsNyckel(rad.filename) === filnamnsNyckel(filename))
     .sort((a, b) => String(b.rad.skapad).localeCompare(String(a.rad.skapad)));
   const attSlanga = new Set(sammaFil.slice(BEHALL_PER_FIL).map(({ i }) => i));
   for (const i of attSlanga) {
@@ -67,7 +80,7 @@ function stadaRegisterVidStart() {
       const index = _readJSONEarly(fil, []);
       const behall = new Map();
       for (const rad of index) {
-        const nyckel = `${rad.projectId}|${rad.filename}`;
+        const nyckel = `${rad.projectId}|${filnamnsNyckel(rad.filename)}`;
         const lista = behall.get(nyckel) || [];
         lista.push(rad);
         behall.set(nyckel, lista);
