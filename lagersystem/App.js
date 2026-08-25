@@ -88,8 +88,20 @@ function sammaFarg(a, b) {
   if (ka && kb) return ka === kb;
   const na = fargNyckel(a);
   const nb = fargNyckel(b);
+  if (!na && !nb) return true;   // två ofärgade rader hör ihop
   if (!na || !nb) return false;
   return na === nb || na.startsWith(nb) || nb.startsWith(na);
+}
+
+/**
+ * Får kundens färg tas ur den här lagerraden? De flesta profiler ligger i
+ * lagret UTAN färg — bara ett totalantal. En sådan rad är färgneutral och
+ * duger till vilken kund som helst; annars skulle kapningen aldrig komma
+ * igång förrän varenda artikel färgregistrerats för hand.
+ */
+function matcharFarg(radFarg, kundFarg) {
+  if (!String(radFarg || '').trim() || !String(kundFarg || '').trim()) return true;
+  return sammaFarg(radFarg, kundFarg);
 }
 
 /** Vid ihopslagning: behåll det mest informativa namnet (det med RAL/NCS-kod). */
@@ -152,19 +164,23 @@ function taUtLangd(farger, produkt, farg, langdMm, antal) {
     antal: parseInt(f.antal) || 0,
   }));
   const handelser = [];
+  // Exakt färgträff går före en färglös rad: har man registrerat Antracit ska
+  // den tömmas innan man rör det ofärgade restlagret.
+  const traff = (r) => (sammaFarg(r.farg, farg) ? 2 : matcharFarg(r.farg, farg) ? 1 : 0);
   let kvar = Math.max(0, parseInt(antal) || 0);
   while (kvar > 0) {
     let bast = -1;
     rader.forEach((r, i) => {
-      if (!sammaFarg(r.farg, farg) || r.antal <= 0 || r.mm < langdMm) return;
-      if (bast < 0 || r.mm < rader[bast].mm) bast = i;
+      if (!traff(r) || r.antal <= 0 || r.mm < langdMm) return;
+      if (bast < 0 || traff(r) > traff(rader[bast])
+        || (traff(r) === traff(rader[bast]) && r.mm < rader[bast].mm)) bast = i;
     });
     if (bast < 0) { handelser.push({ typ: 'slut', antal: kvar }); break; }
     const kalla = rader[bast];
     kalla.antal -= 1;
     const rest = Math.round((kalla.mm - langdMm - KAP_FORLUST_MM) * 10) / 10;
     if (rest >= KAP_MIN_SPAR_MM) {
-      const i = rader.findIndex(r => sammaFarg(r.farg, farg) && r.mm === rest);
+      const i = rader.findIndex(r => sammaFarg(r.farg, kalla.farg) && r.mm === rest);
       if (i >= 0) rader[i].antal += 1;
       else rader.push({ farg: kalla.farg, mm: rest, antal: 1 });
       handelser.push({ typ: 'kapbit', ur: kalla.mm, rest });
@@ -195,7 +211,7 @@ function fargDiff(fore, efter, prod, farg) {
   const delta = new Map();
   const rakna = (lista, tecken) => {
     for (const r of farglistaRader({ ...prod, farger: lista })) {
-      if (!sammaFarg(r.farg, farg)) continue;
+      if (!matcharFarg(r.farg, farg)) continue;
       delta.set(r.mm, (delta.get(r.mm) || 0) + tecken * r.antal);
     }
   };
@@ -235,10 +251,16 @@ function simuleraKlart(produkter, rader, kundFarg) {
     if (!prod || st <= 0) return;
     const nu = hamta(prod);
     const langd = tillMm(rad.langdMm);
-    const harFarg = !!kundFarg
-      && farglistaRader({ ...prod, farger: nu.farger }).some(r => sammaFarg(r.farg, kundFarg));
+    // Saknar artikeln färgrader helt (vanligast — de flesta profiler ligger som
+    // bara ett antal) räknas hela saldot som stänger utan färg. Kapningen
+    // handlar om LÄNGD; färgen är bara en extra uppdelning när den finns.
+    if (langd > 0 && farglistaRader({ ...prod, farger: nu.farger }).length === 0 && nu.antal > 0) {
+      nu.farger = [{ farg: '', langd: stangLangdMm(prod), antal: nu.antal }];
+      nu.rord = true;
+    }
+    const kapbar = farglistaRader({ ...prod, farger: nu.farger }).some(r => matcharFarg(r.farg, kundFarg));
 
-    if (langd > 0 && harFarg) {
+    if (langd > 0 && kapbar) {
       const fore = nu.farger;
       const r = taUtLangd(fore, prod, kundFarg, langd, st);
       const d = fargDiff(fore, r.farger, prod, kundFarg);
@@ -259,14 +281,16 @@ function simuleraKlart(produkter, rader, kundFarg) {
         .filter(h => h.typ !== 'slut')
         .map(h => h.typ === 'kapbit' ? `${fmtMm(langd)} ur ${fmtMm(h.ur)} → kapbit ${fmtMm(h.rest)}` : `${fmtMm(langd)} ur ${fmtMm(h.ur)} → spill ${fmtMm(h.rest)}`));
     } else {
-      nu.delta += st;
-      const harNagonFarg = farglistaRader({ ...prod, farger: nu.farger }).length > 0;
+      // Beslag och tätningar (ingen längd) dras rakt av. En PROFIL som inte gick
+      // att kapa lämnas orörd — att dra den från totalen skulle spreta mot
+      // färgraderna och dölja att materialet faktiskt saknas.
+      if (langd <= 0) nu.delta += st;
+      const tomt = farglistaRader({ ...prod, farger: nu.farger }).length === 0;
       texter.set(i, {
         text: langd > 0 ? `${st} st à ${fmtMm(langd)} mm — dras som ${st} hela bitar` : `${st} ${rad.enhet || 'st'} dras från antalet`,
         varning: langd <= 0 ? ''
-          : !kundFarg ? '⚠️ kunden saknar färg — kapas ej'
-          : !harNagonFarg ? '⚠️ artikeln har inga färgrader i lagret — kapas ej'
-          : `⚠️ ingen ${kundFarg} på artikeln — kapas ej`,
+          : tomt ? '⚠️ saldo 0 — inget att kapa ur'
+          : `⚠️ ingen ${kundFarg} i lager på artikeln — kapas ej`,
       });
     }
   });
@@ -4052,7 +4076,7 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
       {/* Färger — en rad per färg OCH längd, aldrig två rader som ser lika ut */}
       {fargRader.length > 0 && (
         <View style={{ marginTop: 24 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: c.textRubrik, marginBottom: 12 }}>Färger &amp; längder</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: c.textRubrik, marginBottom: 12 }}>Längder i lager</Text>
           <View style={{ flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 6, backgroundColor: c.tabellHuvud, borderTopLeftRadius: 8, borderTopRightRadius: 8 }}>
             <Text style={{ flex: 1, color: c.textMuted, fontSize: 11, fontWeight: '700' }}>FÄRG</Text>
             <Text style={{ width: 70, color: c.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'right' }}>ANTAL</Text>
@@ -4062,7 +4086,9 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
           {fargRader.map((r, i) => (
             <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: c.kort, borderBottomWidth: 1, borderColor: c.kortBorder }}>
               <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{r.farg}</Text>
+                <Text style={{ color: r.farg ? c.textRubrik : c.textMuted, fontWeight: '700', fontSize: 14 }}>
+                  {r.farg || 'Ej färgsatt'}
+                </Text>
                 {r.kapbit && (
                   <View style={{ backgroundColor: '#f59e0b22', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 }}>
                     <Text style={{ color: '#b45309', fontSize: 10, fontWeight: '700' }}>KAPBIT</Text>
@@ -4086,7 +4112,7 @@ function ProduktDetalj({ produkt, onTillbaka, onRedigera, inloggad }) {
             </Text>
           )}
           <Text style={{ color: c.textMuted, fontSize: 11, marginTop: 4 }}>
-            Kapas en bit ur en stång försvinner hela stången ur saldot och resten läggs in som kapbit. Kapbitar används före nya stänger. Rester under {KAP_MIN_SPAR_MM} mm är spill och sparas inte.
+            Kapas en bit ur en stång försvinner hela stången ur saldot och resten läggs in som kapbit. Kapbitar används före nya stänger. Rester under {KAP_MIN_SPAR_MM} mm är spill och sparas inte. "Ej färgsatt" är stänger utan registrerad färg — de kan tas till vilken kund som helst.
           </Text>
         </View>
       )}
@@ -5042,9 +5068,13 @@ export default function App() {
         // t.ex. 487850A = lagrets 487850), helst med rätt längd i dimension-fältet
         const profilArt = String(p.artikel).trim();
         const profilArtNum = profilArt.replace(/[A-Za-z]+$/, '');
+        // Bokstavssuffix kan sitta pa endera hallet: materiallistan sager
+        // "487850A" och lagret "487850", eller tvartom. Jamfor pa sifferdelen.
         const kandidater = produkter.filter(x => {
           const xa = (x.artikel || '').trim();
-          return xa === profilArt || (profilArtNum && xa === profilArtNum);
+          if (xa === profilArt) return true;
+          const xaNum = xa.replace(/[A-Za-z]+$/, '');
+          return !!profilArtNum && !!xaNum && xaNum === profilArtNum;
         });
         // Finns artikeln som flera lagerposter: välj den som faktiskt går att
         // kapa ur. Tidigare jämfördes KAPLÄNGDEN mot produktens stocklängd
