@@ -2732,9 +2732,12 @@ function LagerforslagVy({ kunder, produkter, c }) {
     const p = produktByArtikel.get(String(artikel).trim());
     if (!p) return null;
     if (p.farger && p.farger.length > 0) {
-      const nf = normFarg(farg);
-      const hit = p.farger.find(f => normFarg(f.farg) === nf);
-      return hit ? (parseInt(hit.antal) || 0) : 0;
+      // Samma färgjämförelse som kapavdraget: "Antracit" träffar
+      // "Antracitgrå/RAL7016", och en ofärgad rad duger till vilken färg som
+      // helst. normFarg tog bara första ordet och missade båda fallen.
+      const traffar = p.farger.filter(f => matcharFarg(f.farg, farg));
+      if (!traffar.length) return 0;
+      return traffar.reduce((sum, f) => sum + (parseInt(f.antal) || 0), 0);
     }
     return p.antal;
   };
@@ -2743,7 +2746,11 @@ function LagerforslagVy({ kunder, produkter, c }) {
     const map = new Map();
     for (const k of (kunder || [])) {
       const paket = (k.paket || '').trim() || 'Ospecificerat paket';
-      const farg = (k.farg || '').trim() || 'Ospecificerad färg';
+      // Kundkortens färg är fritext: "Antracit", "Antracitgrå/RAL7016", "Svart",
+      // "Svart / RAL 9005" blev fyra grupper av två färger. Fäll ihop till de
+      // tre standardfärgerna (samma jämförelse som lagrets kapavdrag använder).
+      const farg = FORINSTALLDA_FARGER.find(std => sammaFarg(std, k.farg))
+        || (k.farg || '').trim() || 'Ospecificerad färg';
       const key = paket + '||' + farg;
       const g = map.get(key) || { paket, farg, antalKunder: 0, medMaterial: 0, artikelSum: new Map() };
       g.antalKunder++;
@@ -2775,7 +2782,15 @@ function LagerforslagVy({ kunder, produkter, c }) {
       const flaskhals = medRackvidd.length ? Math.min(...medRackvidd.map(r => r.rackerTill)) : null;
       out.push({ ...g, rader, flaskhals });
     }
-    return out.sort((a, b) => a.paket.localeCompare(b.paket, 'sv') || a.farg.localeCompare(b.farg, 'sv'));
+    // Paketen i sin egen ordning (Bostandard → Vinter), inte bokstavsordning,
+    // och färgerna i standardfärgernas ordning.
+    const paketNr = (x) => { const i = PAKET_OPTIONS.indexOf(x); return i < 0 ? 99 : i; };
+    const fargNr = (x) => { const i = FORINSTALLDA_FARGER.indexOf(x); return i < 0 ? 99 : i; };
+    return out.sort((a, b) =>
+      paketNr(a.paket) - paketNr(b.paket)
+      || a.paket.localeCompare(b.paket, 'sv')
+      || fargNr(a.farg) - fargNr(b.farg)
+      || a.farg.localeCompare(b.farg, 'sv'));
   }, [kunder, produktByArtikel]);
 
   const fmt = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)).replace('.', ',');
@@ -2871,7 +2886,14 @@ function LagerforslagVy({ kunder, produkter, c }) {
         <View key={g.paket + g.farg} style={[styles.kort, { backgroundColor: c.kort, borderColor: c.kortBorder, marginBottom: 16, padding: 14 }]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
             <View>
-              <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>{g.paket} · {g.farg}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 16 }}>{g.paket} · {g.farg}</Text>
+                {paketTillSystem(g.paket) && (
+                  <View style={{ backgroundColor: '#2563eb22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 }}>
+                    <Text style={{ color: '#2563eb', fontSize: 11, fontWeight: '700' }}>{paketTillSystem(g.paket)}</Text>
+                  </View>
+                )}
+              </View>
               <Text style={{ color: c.textMuted, fontSize: 11 }}>
                 {g.antalKunder} kund{g.antalKunder === 1 ? '' : 'er'} · {g.medMaterial} med materiallista (medel-underlag)
               </Text>
