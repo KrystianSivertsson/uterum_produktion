@@ -36,6 +36,7 @@ function urlBase64ToUint8Array(base64String) {
 const STORAGE_KEY = 'lagersystem_produkter';
 const ORDRAR_KEY = 'lagersystem_ordrar';
 const FARG_MM_KEY = 'lagersystem_farger_mm_v1';
+const DUBBLETT_KEY = 'lagersystem_dubbletter_v1';
 const TOKEN_KEY = 'lagersystem_token';
 const TEMA_KEY = 'lagersystem_tema';
 const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Trä balkar', 'Osorterat'];
@@ -234,6 +235,90 @@ function fargDiff(fore, efter, prod, farg) {
     nya: [...delta.entries()].filter(([mm, d]) => mm !== stang && d > 0).sort((a, b) => b[0] - a[0]),
     forbrukade: [...delta.entries()].filter(([mm, d]) => mm !== stang && d < 0).sort((a, b) => b[0] - a[0]),
   };
+}
+
+/**
+ * Slår ihop produkter som delar artikelnummer. Katalogen har 20 artikelnr på
+ * två (ibland tre) rader: dels "(extra)"/"(komp)"-rader som en orderinläsning
+ * skapade i stället för att fylla på befintlig post, dels AOC 50-listan som
+ * la in artiklar som redan fanns under ASE60/ASS32/Osorterat. Följden är att
+ * saldot står på en rad medan avdraget hittar den andra.
+ *
+ * SALDOT SUMMERAS — 22 + 22 blir 44, inget kastas. Färg- och längdrader slås
+ * ihop med samma regel som produktsidan använder.
+ *
+ * Vilken rad som överlever:
+ *   1. Schueco AOC 50 om den finns (AOC-listan är den riktiga hemvisten för de
+ *      artiklarna — Krystians beslut för 161460, samma sak gäller de övriga)
+ *   2. annars den som INTE ligger i Osorterat
+ *   3. annars den med störst saldo
+ */
+function slaIhopDubbletter(lista) {
+  // Katalogen har 14 produktpar som delar id (AOC 50-listan och ASE60:s
+  // 82 mm-tillägg numrerades bada 5001-5014). Tva OLIKA artiklar med samma id
+  // betyder att en redigering trafffar bada och att sammanslagningen nedan
+  // skulle rakna samma saldo tva ganger. Ge dubbletterna nya id forst.
+  const sedda = new Set();
+  lista = lista.map((p) => {
+    const id = String(p.id);
+    if (!sedda.has(id)) { sedda.add(id); return p; }
+    let nyttId = `${id}-${String(p.artikel || 'x').trim()}`;
+    let n = 2;
+    while (sedda.has(nyttId)) nyttId = `${id}-${String(p.artikel || 'x').trim()}-${n++}`;
+    sedda.add(nyttId);
+    return { ...p, id: nyttId };
+  });
+
+  const per = new Map();
+  for (const p of lista) {
+    const a = String(p.artikel || '').trim();
+    if (!a) continue;
+    if (!per.has(a)) per.set(a, []);
+    per.get(a).push(p);
+  }
+  const bortIds = new Set();
+  const logg = [];
+  const sammanslagna = new Map();
+
+  for (const [artikel, rader] of per) {
+    if (rader.length < 2) continue;
+    const antalAv = (p) => parseInt(p.antal) || 0;
+    const vinnare = rader.find(p => p.kategori === 'Schueco AOC 50')
+      || [...rader].filter(p => p.kategori !== 'Osorterat').sort((a, b) => antalAv(b) - antalAv(a))[0]
+      || [...rader].sort((a, b) => antalAv(b) - antalAv(a))[0];
+
+    const summa = rader.reduce((s, p) => s + antalAv(p), 0);
+    // Enheten tas från raden som faktiskt har saldo — annars kunde "15 st"
+    // bli "15 m" bara för att den tomma AOC-raden råkade vara i meter.
+    const medSaldo = [...rader].sort((a, b) => antalAv(b) - antalAv(a))[0];
+    const enhet = medSaldo.enhet || vinnare.enhet || 'st';
+    const forsta = (falt) => rader.map(p => p[falt]).find(v => v !== undefined && v !== null && v !== '');
+
+    const slagen = {
+      ...vinnare,
+      namn: String(vinnare.namn || '').replace(/\s*\((extra|komp)\)\s*$/i, '').trim() || vinnare.namn,
+      antal: summa,
+      enhet,
+      dimension: forsta('dimension') || '',
+      bild: forsta('bild') || null,
+      minAntal: rader.reduce((m, p) => Math.max(m, parseInt(p.minAntal) || 0), 0) || 5,
+      farger: rader.flatMap(p => Array.isArray(p.farger) ? p.farger : []),
+      langder: rader.flatMap(p => Array.isArray(p.langder) ? p.langder : []),
+      ihopslagenFran: rader.filter(p => p.id !== vinnare.id).map(p => p.id),
+    };
+    slagen.farger = farglistaRader(slagen).map(r => ({ farg: r.farg, langd: r.mm, antal: r.antal }));
+
+    for (const p of rader) if (p.id !== vinnare.id) bortIds.add(p.id);
+    sammanslagna.set(vinnare.id, slagen);
+    logg.push(`${artikel}: ${rader.map(p => `${antalAv(p)}${p.enhet || 'st'} (${p.kategori})`).join(' + ')}`
+      + ` = ${summa}${enhet} i ${vinnare.kategori}`);
+  }
+
+  if (!bortIds.size) return { lista, logg: [] };
+  const ny = lista
+    .filter(p => !bortIds.has(p.id))
+    .map(p => sammanslagna.get(p.id) || p);
+  return { lista: ny, logg };
 }
 
 /**
@@ -4688,6 +4773,18 @@ export default function App() {
         await AsyncStorage.setItem(invKey, '1');
         console.log(`Inventering ${INVENTERING_DATUM}: ${resultat.uppdaterade} uppdaterade, ${resultat.skapade.length} nya, ${resultat.nollade.length} dubbletter nollade`);
       }
+      // Slå ihop produkter som delar artikelnummer (saldot summeras).
+      if (!(await AsyncStorage.getItem(DUBBLETT_KEY))) {
+        const res = slaIhopDubbletter(lista);
+        if (res.logg.length) {
+          lista = res.lista;
+          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
+          console.log(`Dubbletter sammanslagna (${res.logg.length} artiklar):`);
+          res.logg.forEach(r => console.log('  ' + r));
+        }
+        await AsyncStorage.setItem(DUBBLETT_KEY, '1');
+      }
+
       // Färglängder till mm + slå ihop rader som såg identiska ut ("Svart 8st"
       // och "Svart 9st" var samma hela stänger, bara inlagda vid olika
       // tillfällen). Körs en gång per webbläsare, samma mönster som ovan.
