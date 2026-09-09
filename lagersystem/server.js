@@ -225,8 +225,19 @@ app.post('/api/step-filer/intern', (req, res) => {
 const _KUNDER_FILE_EARLY = path.join(__dirname, 'data', 'kunder.json');
 app.post('/api/kund-sync/intern', (req, res) => {
   if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
-  const { projectId, projectName, farg, kalla, paket } = req.body || {};
+  const { projectId, projectName, farg, kalla, paket, glas } = req.body || {};
   if (!projectId || !projectName?.trim()) return res.status(400).json({ error: 'projectId och projectName krävs' });
+  // Glasrader ur konfiguratorns glasberedning (takglas + ASE60 + ASS32 +
+  // fasta partier, Krystian 2026-09-09 "excel på alla glasmått") — hela
+  // listan byts vid varje AKTIVERA; utelämnad = befintliga rader rörs inte.
+  const glasRader = Array.isArray(glas) ? glas.slice(0, 1000).map(g => ({
+    typ: String(g?.typ || '').slice(0, 80),
+    ref: String(g?.ref || '').slice(0, 400),
+    bredd: Number(g?.bredd),
+    hojd: Number(g?.hojd),
+    antal: Math.max(1, Math.round(Number(g?.antal) || 1)),
+    tjocklek: (g?.tjocklek == null || !Number.isFinite(Number(g.tjocklek))) ? null : Number(g.tjocklek),
+  })).filter(g => g.bredd > 0 && g.hojd > 0) : null;
   const kunder = _readJSONEarly(_KUNDER_FILE_EARLY, []);
   let idx = kunder.findIndex(k => k.ase60ProjectId === projectId);
   if (idx === -1) idx = kunder.findIndex(k => (k.namn || '').toLowerCase() === projectName.trim().toLowerCase());
@@ -240,12 +251,15 @@ app.post('/api/kund-sync/intern', (req, res) => {
       ase60ProjectId: projectId,
       matt: [],
       paket: paket || null,
+      glas: glasRader || [],
+      glasUppdaterad: glasRader ? new Date().toISOString() : null,
     });
   } else {
     kunder[idx].namn = projectName.trim();
     if (farg) kunder[idx].farg = farg;
     kunder[idx].ase60ProjectId = projectId;
     if (paket) kunder[idx].paket = paket;
+    if (glasRader) { kunder[idx].glas = glasRader; kunder[idx].glasUppdaterad = new Date().toISOString(); }
   }
   _writeJSONEarly(_KUNDER_FILE_EARLY, kunder);
   res.json({ ok: true });

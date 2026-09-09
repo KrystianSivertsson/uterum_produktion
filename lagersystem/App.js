@@ -646,6 +646,8 @@ function kundFranAse60Projekt(proj, sparad) {
   return {
     id: proj.id, namn: proj.name, farg: proj.color, ase60ProjectId: proj.id,
     matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+    // alla glasmått (tak + partier) från konfiguratorns AKTIVERA — se exporteraGlasmatt
+    glas: sparad?.glas || [],
     material: sparad?.material || {}, klart: sparad?.klart || {}, paket: sparad?.paket || proj.paket || null,
   };
 }
@@ -1836,10 +1838,18 @@ function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund
               <TouchableOpacity onPress={() => setVisaBeredning(false)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 500 }}>
-              {kategori === 'Glas' && (valdKund.matt?.length > 0) && (
+              {kategori === 'Glas' && (valdKund.glas?.length > 0 || valdKund.matt?.length > 0) && (
                 <View style={{ marginBottom: 14 }}>
-                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>GLASMÅTT</Text>
-                  {valdKund.matt.map((m, i) => (
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>
+                    GLASMÅTT{valdKund.glas?.length > 0 ? ' — ur konfiguratorns glasberedning' : ''}
+                  </Text>
+                  {/* Alla glas (tak + partier) när konfiguratorn skickat dem; annars partimåtten som förut. */}
+                  {valdKund.glas?.length > 0 ? valdKund.glas.map((g, i) => (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 3, flexWrap: 'wrap' }}>
+                      <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>{g.antal} × {g.bredd} × {g.hojd} mm</Text>
+                      <Text style={{ color: c.textMuted, fontSize: 12 }}>· {g.typ}{g.tjocklek ? ` · ${g.tjocklek} mm` : ''} · {g.ref}</Text>
+                    </View>
+                  )) : valdKund.matt.map((m, i) => (
                     <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
                       <Text style={{ color: c.textMuted, fontSize: 12 }}>Enhet {i + 1}:</Text>
                       <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>{m.widthMm} × {m.heightMm} mm</Text>
@@ -5635,11 +5645,15 @@ export default function App() {
 
   // Alla kunder (ASE60-projekt + manuellt tillagda) med sina glasmått, för export.
   const alleKunderMedMatt = [
-    ...ase60Projekt.map(proj => ({
-      id: proj.id, namn: proj.name,
-      matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
-    })),
-    ...kunder.filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id)).map(k => ({ id: k.id, namn: k.namn, matt: k.matt || [] })),
+    ...ase60Projekt.map(proj => {
+      const sparad = kunder.find(k => k.id === proj.id || k.ase60ProjectId === proj.id);
+      return {
+        id: proj.id, namn: proj.name,
+        matt: proj.units?.map(u => ({ widthMm: u.widthMm, heightMm: u.heightMm, leaves: u.leaves })) || [],
+        glas: sparad?.glas || [],
+      };
+    }),
+    ...kunder.filter(k => !ase60Projekt.some(p => p.id === k.ase60ProjectId || p.id === k.id)).map(k => ({ id: k.id, namn: k.namn, matt: k.matt || [], glas: k.glas || [] })),
   ];
 
   const vaxlaKundExport = (id) => {
@@ -5650,6 +5664,18 @@ export default function App() {
     });
   };
 
+  // Typernas ordning i Excel-exporten (samma som konfiguratorns glasberedning).
+  const GLAS_TYP_ORDNING = ['Takglas', 'Takglas trapets (efter ritning)', 'ASE60 skjutdörr', 'ASS32 Vår & höst', 'Fast parti'];
+  const glasTypIndex = (typ) => { const i = GLAS_TYP_ORDNING.indexOf(typ); return i === -1 ? GLAS_TYP_ORDNING.length : i; };
+  const meddela = (titel, text) => (Platform.OS === 'web' ? window.alert(`${titel}\n${text}`) : Alert.alert(titel, text));
+
+  // Excel (.xlsx) med ALLA glasmått (Krystian 2026-09-09 "excel på alla
+  // glasmått … fint ordnat"): takglas, ASE60, ASS32 och fasta partier ur
+  // konfiguratorns glasberedning (kund.glas, följer med vid AKTIVERA). Kunder
+  // utan glasrader (aktiverade före funktionen) får partimåtten som förut,
+  // tydligt märkta så ingen beställer glas på dem.
+  // Blad: Glasmått (alla rader, filter) · Sammanställning (samma mått +
+  // tjocklek ihop över kunder, totalsumma) · Per kund (antal + yta).
   const exporteraGlasmatt = async () => {
     try {
       const valda = alleKunderMedMatt
@@ -5657,27 +5683,77 @@ export default function App() {
         .slice()
         .sort((a, b) => a.namn.localeCompare(b.namn, 'sv'));
       const rader = [];
-      valda.forEach(k => {
-        (k.matt || []).forEach((m, i) => {
-          rader.push({
-            Kund: k.namn,
-            Enhet: i + 1,
-            'Bredd (mm)': m.widthMm,
-            'Höjd (mm)': m.heightMm,
-            Bågar: m.leaves || '',
-          });
-        });
+      for (const k of valda) {
+        const glas = (k.glas || []).slice()
+          .sort((a, b) => (glasTypIndex(a.typ) - glasTypIndex(b.typ)) || (b.hojd - a.hojd) || (b.bredd - a.bredd));
+        if (glas.length) {
+          for (const g of glas) rader.push({ kund: k.namn, typ: g.typ, ref: g.ref, bredd: g.bredd, hojd: g.hojd, antal: g.antal, tjocklek: g.tjocklek ?? null, glas: true });
+        } else {
+          (k.matt || []).forEach((m, i) => rader.push({
+            kund: k.namn, typ: 'Partimått (ej glasmått — aktivera om i konfiguratorn)',
+            ref: `Enhet ${i + 1}${m.leaves ? ` · ${m.leaves} bågar` : ''}`,
+            bredd: m.widthMm, hojd: m.heightMm, antal: 1, tjocklek: null, glas: false,
+          }));
+        }
+      }
+      if (rader.length === 0) { meddela('Inget att exportera', 'Inga glasmått hittades för de valda kunderna.'); return; }
+
+      const ws1 = utils.aoa_to_sheet([
+        ['Kund', 'Typ', 'Referens', 'Bredd (mm)', 'Höjd/Längd (mm)', 'Antal', 'Tjocklek (mm)'],
+        ...rader.map(r => [r.kund, r.typ, r.ref, r.bredd, r.hojd, r.antal, r.tjocklek ?? '']),
+      ]);
+      ws1['!cols'] = [{ wch: 28 }, { wch: 30 }, { wch: 46 }, { wch: 12 }, { wch: 17 }, { wch: 8 }, { wch: 14 }];
+      ws1['!autofilter'] = { ref: `A1:G${rader.length + 1}` };
+
+      const glasRader = rader.filter(r => r.glas);
+      const grupp = new Map();
+      for (const r of glasRader) {
+        const key = `${r.bredd}x${r.hojd}x${r.tjocklek ?? ''}`;
+        const g = grupp.get(key) || { bredd: r.bredd, hojd: r.hojd, tjocklek: r.tjocklek, antal: 0, typer: [], refs: [] };
+        g.antal += r.antal;
+        if (!g.typer.includes(r.typ)) g.typer.push(r.typ);
+        g.refs.push(`${r.kund}: ${r.ref}${r.antal > 1 ? ` (${r.antal} st)` : ''}`);
+        grupp.set(key, g);
+      }
+      const grupper = [...grupp.values()].sort((a, b) => (b.hojd - a.hojd) || (b.bredd - a.bredd));
+      const totalt = grupper.reduce((a, g) => a + g.antal, 0);
+      const ws2 = utils.aoa_to_sheet([
+        ['Bredd (mm)', 'Höjd/Längd (mm)', 'Tjocklek (mm)', 'Antal', 'Typ', 'Kund / referens'],
+        ...grupper.map(g => [g.bredd, g.hojd, g.tjocklek ?? '', g.antal, g.typer.join(', '), g.refs.join('; ')]),
+        ['Totalt', '', '', totalt, '', ''],
+      ]);
+      ws2['!cols'] = [{ wch: 12 }, { wch: 17 }, { wch: 14 }, { wch: 8 }, { wch: 32 }, { wch: 80 }];
+
+      const perKund = valda.map(k => {
+        const egna = glasRader.filter(r => r.kund === k.namn);
+        return [k.namn, egna.reduce((a, r) => a + r.antal, 0),
+          Math.round(egna.reduce((a, r) => a + (r.bredd / 1000) * (r.hojd / 1000) * r.antal, 0) * 100) / 100];
       });
-      if (rader.length === 0) { Alert.alert('Inget att exportera', 'Inga glasmått hittades för de valda kunderna.'); return; }
-      const ws = utils.json_to_sheet(rader);
-      ws['!cols'] = [{ wch: 30 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 8 }];
+      const ws3 = utils.aoa_to_sheet([['Kund', 'Antal glas', 'Yta (m²)'], ...perKund]);
+      ws3['!cols'] = [{ wch: 28 }, { wch: 12 }, { wch: 12 }];
+
       const wb = utils.book_new();
-      utils.book_append_sheet(wb, ws, 'Glasmått');
-      const csv = write(wb, { type: 'string', bookType: 'csv' });
-      const filePath = FileSystem.documentDirectory + 'glasmatt.csv';
-      await FileSystem.writeAsStringAsync(filePath, csv);
-      await Sharing.shareAsync(filePath);
-    } catch { Alert.alert('Fel', 'Kunde inte exportera'); }
+      utils.book_append_sheet(wb, ws1, 'Glasmått');
+      utils.book_append_sheet(wb, ws2, 'Sammanställning');
+      utils.book_append_sheet(wb, ws3, 'Per kund');
+      const datum = new Date().toISOString().slice(0, 10);
+      const filnamn = valda.length === 1
+        ? `glasmatt-${valda[0].namn.replace(/[^\wåäöÅÄÖ-]+/g, '_')}-${datum}.xlsx`
+        : `glasmatt-${valda.length}-kunder-${datum}.xlsx`;
+      if (Platform.OS === 'web') {
+        const buf = write(wb, { type: 'array', bookType: 'xlsx' });
+        const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = filnamn;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      } else {
+        const b64 = write(wb, { type: 'base64', bookType: 'xlsx' });
+        const filePath = FileSystem.documentDirectory + filnamn;
+        await FileSystem.writeAsStringAsync(filePath, b64, { encoding: 'base64' });
+        await Sharing.shareAsync(filePath);
+      }
+    } catch (e) { meddela('Fel', 'Kunde inte exportera: ' + (e?.message || e)); }
   };
 
   const sortera = (kolumn) => {
@@ -6364,7 +6440,7 @@ export default function App() {
                       {valdaKunderExport.size > 0 && (
                         <>
                           <TouchableOpacity onPress={exporteraGlasmatt} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 }}>
-                            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📊 Exportera glasmått ({valdaKunderExport.size})</Text>
+                            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📊 Excel – alla glasmått ({valdaKunderExport.size})</Text>
                           </TouchableOpacity>
                           <TouchableOpacity onPress={() => setValdaKunderExport(new Set())} style={{ paddingHorizontal: 8, paddingVertical: 7 }}>
                             <Text style={{ color: c.textMuted, fontSize: 12 }}>Rensa val</Text>
