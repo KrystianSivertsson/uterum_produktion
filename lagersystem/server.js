@@ -233,6 +233,7 @@ app.post('/api/kund-sync/intern', (req, res) => {
   const glasRader = Array.isArray(glas) ? glas.slice(0, 1000).map(g => ({
     typ: String(g?.typ || '').slice(0, 80),
     ref: String(g?.ref || '').slice(0, 400),
+    detalj: String(g?.detalj || '').slice(0, 200),        // "2 bågar" / "3 dörrar" / "70HI, 2 fält …"
     bredd: Number(g?.bredd),
     hojd: Number(g?.hojd),
     antal: Math.max(1, Math.round(Number(g?.antal) || 1)),

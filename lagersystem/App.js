@@ -1847,7 +1847,7 @@ function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund
                   {valdKund.glas?.length > 0 ? valdKund.glas.map((g, i) => (
                     <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 3, flexWrap: 'wrap' }}>
                       <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>{g.antal} × {g.bredd} × {g.hojd} mm</Text>
-                      <Text style={{ color: c.textMuted, fontSize: 12 }}>· {g.typ}{g.tjocklek ? ` · ${g.tjocklek} mm` : ''} · {g.ref}</Text>
+                      <Text style={{ color: c.textMuted, fontSize: 12 }}>· {g.typ}{g.detalj ? ` · ${g.detalj}` : ''}{g.tjocklek ? ` · ${g.tjocklek} mm` : ''} · {g.ref}</Text>
                     </View>
                   )) : valdKund.matt.map((m, i) => (
                     <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
@@ -5665,72 +5665,97 @@ export default function App() {
   };
 
   // Typernas ordning i Excel-exporten (samma som konfiguratorns glasberedning).
-  const GLAS_TYP_ORDNING = ['Takglas', 'Takglas trapets (efter ritning)', 'ASE60 skjutdörr', 'ASS32 Vår & höst', 'Fast parti'];
+  const GLAS_TYP_ORDNING = ['ASE60 skjutdörr', 'ASS32 Vår & höst', 'Fast parti', 'Takglas', 'Takglas trapets (efter ritning)'];
   const glasTypIndex = (typ) => { const i = GLAS_TYP_ORDNING.indexOf(typ); return i === -1 ? GLAS_TYP_ORDNING.length : i; };
   const meddela = (titel, text) => (Platform.OS === 'web' ? window.alert(`${titel}\n${text}`) : Alert.alert(titel, text));
 
   // Excel (.xlsx) med ALLA glasmått (Krystian 2026-09-09 "excel på alla
-  // glasmått … fint ordnat"): takglas, ASE60, ASS32 och fasta partier ur
-  // konfiguratorns glasberedning (kund.glas, följer med vid AKTIVERA). Kunder
-  // utan glasrader (aktiverade före funktionen) får partimåtten som förut,
-  // tydligt märkta så ingen beställer glas på dem.
-  // Blad: Glasmått (alla rader, filter) · Sammanställning (samma mått +
-  // tjocklek ihop över kunder, totalsumma) · Per kund (antal + yta).
+  // glasmått … fint ordnat", sedan "inga andra mått än glasmått, men
+  // separera parti och tak då de är olika glas"): takglas, ASE60, ASS32 och
+  // fasta partier ur konfiguratorns glasberedning (kund.glas, följer med vid
+  // AKTIVERA). Per kund två avsnitt — PARTIER (en rad per parti, i
+  // konfiguratorns ordning, som beredningens glaslista P1…Pn) och TAKGLAS
+  // (störst först). Kunder utan glasrader (aktiverade före funktionen) får
+  // partimåtten, tydligt märkta så ingen beställer glas på dem.
+  // Blad: Glasmått · Sammanställning (samma mått + tjocklek ihop över
+  // kunder, per avsnitt) · Per kund (antal + yta, partier och tak var för sig).
   const exporteraGlasmatt = async () => {
     try {
       const valda = alleKunderMedMatt
         .filter(k => valdaKunderExport.has(k.id))
         .slice()
         .sort((a, b) => a.namn.localeCompare(b.namn, 'sv'));
-      const rader = [];
+      const arTak = (t) => String(t || '').startsWith('Takglas');
+      const yta = (r) => Math.round((r.bredd / 1000) * (r.hojd / 1000) * 100) / 100;
+      const typText = (g) => (g.detalj ? `${g.typ} · ${g.detalj}` : g.typ);
+      const RUBRIK_P = ['Parti', 'Typ', 'Bredd (mm)', 'Höjd (mm)', 'Antal', 'Tjocklek (mm)', 'Yta (m²/glas)'];
+      const RUBRIK_T = ['Fack', 'Typ', 'Bredd (mm)', 'Längd (mm)', 'Antal', 'Tjocklek (mm)', 'Yta (m²/glas)'];
+      const blad1 = [];
+      const allaPartier = [], allaTak = [];
+      let antalRader = 0;
       for (const k of valda) {
-        const glas = (k.glas || []).slice()
-          .sort((a, b) => (glasTypIndex(a.typ) - glasTypIndex(b.typ)) || (b.hojd - a.hojd) || (b.bredd - a.bredd));
-        if (glas.length) {
-          for (const g of glas) rader.push({ kund: k.namn, typ: g.typ, ref: g.ref, bredd: g.bredd, hojd: g.hojd, antal: g.antal, tjocklek: g.tjocklek ?? null, glas: true });
-        } else {
-          (k.matt || []).forEach((m, i) => rader.push({
-            kund: k.namn, typ: 'Partimått (ej glasmått — aktivera om i konfiguratorn)',
-            ref: `Enhet ${i + 1}${m.leaves ? ` · ${m.leaves} bågar` : ''}`,
-            bredd: m.widthMm, hojd: m.heightMm, antal: 1, tjocklek: null, glas: false,
-          }));
+        const glas = (k.glas || []).map((g, i) => ({ ...g, _i: i }))
+          .sort((a, b) => (glasTypIndex(a.typ) - glasTypIndex(b.typ))
+            || (arTak(a.typ) ? ((b.hojd - a.hojd) || (b.bredd - a.bredd)) : (a._i - b._i)));
+        const partier = glas.filter(g => !arTak(g.typ));
+        const tak = glas.filter(g => arTak(g.typ));
+        blad1.push([`KUND: ${k.namn}`]);
+        if (partier.length) {
+          blad1.push(['PARTIER (skjutdörrar & fasta partier)']);
+          blad1.push(RUBRIK_P);
+          for (const g of partier) { blad1.push([g.ref, typText(g), g.bredd, g.hojd, g.antal, g.tjocklek ?? '', yta(g)]); allaPartier.push({ ...g, kund: k.namn }); }
+          antalRader += partier.length;
         }
+        if (tak.length) {
+          if (partier.length) blad1.push([]);
+          blad1.push(['TAKGLAS']);
+          blad1.push(RUBRIK_T);
+          for (const g of tak) { blad1.push([g.ref, g.typ, g.bredd, g.hojd, g.antal, g.tjocklek ?? '', yta(g)]); allaTak.push({ ...g, kund: k.namn }); }
+          antalRader += tak.length;
+        }
+        if (!glas.length) {
+          blad1.push(['Inga glasmått från konfiguratorn — aktivera om projektet. Partimått (EJ glasmått):']);
+          (k.matt || []).forEach((m, i) => blad1.push([`Enhet ${i + 1}`, m.leaves ? `${m.leaves} bågar` : '', m.widthMm, m.heightMm, 1, '', '']));
+          antalRader += (k.matt || []).length;
+        }
+        blad1.push([]);
       }
-      if (rader.length === 0) { meddela('Inget att exportera', 'Inga glasmått hittades för de valda kunderna.'); return; }
+      if (antalRader === 0) { meddela('Inget att exportera', 'Inga glasmått hittades för de valda kunderna.'); return; }
+      const ws1 = utils.aoa_to_sheet(blad1);
+      ws1['!cols'] = [{ wch: 28 }, { wch: 34 }, { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 14 }, { wch: 13 }];
 
-      const ws1 = utils.aoa_to_sheet([
-        ['Kund', 'Typ', 'Referens', 'Bredd (mm)', 'Höjd/Längd (mm)', 'Antal', 'Tjocklek (mm)'],
-        ...rader.map(r => [r.kund, r.typ, r.ref, r.bredd, r.hojd, r.antal, r.tjocklek ?? '']),
-      ]);
-      ws1['!cols'] = [{ wch: 28 }, { wch: 30 }, { wch: 46 }, { wch: 12 }, { wch: 17 }, { wch: 8 }, { wch: 14 }];
-      ws1['!autofilter'] = { ref: `A1:G${rader.length + 1}` };
+      const blad2 = [];
+      const avsnitt = (titel, list, langdRubrik) => {
+        if (!list.length) return;
+        const grupp = new Map();
+        for (const r of list) {
+          const key = `${r.bredd}x${r.hojd}x${r.tjocklek ?? ''}`;
+          const g = grupp.get(key) || { bredd: r.bredd, hojd: r.hojd, tjocklek: r.tjocklek, antal: 0, refs: [] };
+          g.antal += r.antal;
+          g.refs.push(`${r.kund}: ${r.ref}${r.antal > 1 ? ` (${r.antal} st)` : ''}`);
+          grupp.set(key, g);
+        }
+        const grupper = [...grupp.values()].sort((a, b) => (b.hojd - a.hojd) || (b.bredd - a.bredd));
+        blad2.push([titel]);
+        blad2.push(['Bredd (mm)', langdRubrik, 'Tjocklek (mm)', 'Antal', 'Kund / referens']);
+        for (const g of grupper) blad2.push([g.bredd, g.hojd, g.tjocklek ?? '', g.antal, g.refs.join('; ')]);
+        blad2.push(['Totalt', '', '', grupper.reduce((a, g) => a + g.antal, 0), '']);
+        blad2.push([]);
+      };
+      avsnitt('PARTIER (skjutdörrar & fasta partier)', allaPartier, 'Höjd (mm)');
+      avsnitt('TAKGLAS', allaTak, 'Längd (mm)');
+      const ws2 = utils.aoa_to_sheet(blad2.length ? blad2 : [['Inga glasrader från konfiguratorn']]);
+      ws2['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 80 }];
 
-      const glasRader = rader.filter(r => r.glas);
-      const grupp = new Map();
-      for (const r of glasRader) {
-        const key = `${r.bredd}x${r.hojd}x${r.tjocklek ?? ''}`;
-        const g = grupp.get(key) || { bredd: r.bredd, hojd: r.hojd, tjocklek: r.tjocklek, antal: 0, typer: [], refs: [] };
-        g.antal += r.antal;
-        if (!g.typer.includes(r.typ)) g.typer.push(r.typ);
-        g.refs.push(`${r.kund}: ${r.ref}${r.antal > 1 ? ` (${r.antal} st)` : ''}`);
-        grupp.set(key, g);
+      const summa = (list, k) => list.filter(r => r.kund === k.namn)
+        .reduce((a, r) => ({ st: a.st + r.antal, m2: a.m2 + yta(r) * r.antal }), { st: 0, m2: 0 });
+      const blad3 = [['Kund', 'Partiglas (st)', 'Partiglas (m²)', 'Takglas (st)', 'Takglas (m²)']];
+      for (const k of valda) {
+        const pp = summa(allaPartier, k), tt = summa(allaTak, k);
+        blad3.push([k.namn, pp.st, Math.round(pp.m2 * 100) / 100, tt.st, Math.round(tt.m2 * 100) / 100]);
       }
-      const grupper = [...grupp.values()].sort((a, b) => (b.hojd - a.hojd) || (b.bredd - a.bredd));
-      const totalt = grupper.reduce((a, g) => a + g.antal, 0);
-      const ws2 = utils.aoa_to_sheet([
-        ['Bredd (mm)', 'Höjd/Längd (mm)', 'Tjocklek (mm)', 'Antal', 'Typ', 'Kund / referens'],
-        ...grupper.map(g => [g.bredd, g.hojd, g.tjocklek ?? '', g.antal, g.typer.join(', '), g.refs.join('; ')]),
-        ['Totalt', '', '', totalt, '', ''],
-      ]);
-      ws2['!cols'] = [{ wch: 12 }, { wch: 17 }, { wch: 14 }, { wch: 8 }, { wch: 32 }, { wch: 80 }];
-
-      const perKund = valda.map(k => {
-        const egna = glasRader.filter(r => r.kund === k.namn);
-        return [k.namn, egna.reduce((a, r) => a + r.antal, 0),
-          Math.round(egna.reduce((a, r) => a + (r.bredd / 1000) * (r.hojd / 1000) * r.antal, 0) * 100) / 100];
-      });
-      const ws3 = utils.aoa_to_sheet([['Kund', 'Antal glas', 'Yta (m²)'], ...perKund]);
-      ws3['!cols'] = [{ wch: 28 }, { wch: 12 }, { wch: 12 }];
+      const ws3 = utils.aoa_to_sheet(blad3);
+      ws3['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }];
 
       const wb = utils.book_new();
       utils.book_append_sheet(wb, ws1, 'Glasmått');
