@@ -892,7 +892,9 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
         const r = await ase60Fetch(vag, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ units }),
+          // Kulören avgör ASS32:s vita/mörka täcklock, dränagekåpa och lås
+          // (generatorns beredningAss32.ts, SchüCal 2026-09-11).
+          body: JSON.stringify({ units, projectColor: proj.color }),
         });
         if (!r.ok) continue;
         const data = await r.json();
