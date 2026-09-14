@@ -37,6 +37,11 @@ const STORAGE_KEY = 'lagersystem_produkter';
 const ORDRAR_KEY = 'lagersystem_ordrar';
 const FARG_MM_KEY = 'lagersystem_farger_mm_v1';
 const DUBBLETT_KEY = 'lagersystem_dubbletter_v1';
+// Lagernollning (Krystian 2026-09-14 "nolla vårt lager, skriv allt till 0"):
+// hela saldot sätts till 0 inför ny räkning. Datumet i nyckeln gör att en ny
+// nollning senare bara är ett nytt datum här.
+const NOLLNING_DATUM = '2026-09-14';
+const NOLLNING_KEY = `lagersystem_nollning_${NOLLNING_DATUM}`;
 const TOKEN_KEY = 'lagersystem_token';
 const TEMA_KEY = 'lagersystem_tema';
 const FLIKAR = ['Alla produkter', 'Schueco ASE 60', 'Schueco ASS 32', 'Schueco AWS/ADS 70 HI', 'Schueco AOC 50', 'Trä balkar', 'Osorterat'];
@@ -4834,6 +4839,29 @@ export default function App() {
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
         await AsyncStorage.setItem(FARG_MM_KEY, '1');
         console.log(`Färglängder normaliserade till mm: ${rorda} produkter`);
+      }
+
+      // NOLLNING av hela lagersaldot (Krystian 2026-09-14): antal 0 på varje
+      // produkt och 0 på varje färg-/längdrad (raderna behålls så kulörerna
+      // och längderna finns kvar att räkna på). EN gång per webbläsare med
+      // samma flagg-mönster som migreringarna ovan, och SIST i kedjan så även
+      // en helt ny webbläsare (seed + inventering) landar på 0. Ordrar och
+      // minAntal rörs inte.
+      if (!(await AsyncStorage.getItem(NOLLNING_KEY))) {
+        let nollade = 0;
+        lista = lista.map(p => {
+          const harSaldo = (Number(p.antal) || 0) !== 0
+            || (Array.isArray(p.farger) && p.farger.some(f => (parseInt(f.antal) || 0) !== 0));
+          if (harSaldo) nollade++;
+          return {
+            ...p,
+            antal: 0,
+            ...(Array.isArray(p.farger) ? { farger: p.farger.map(f => ({ ...f, antal: 0 })) } : {}),
+          };
+        });
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
+        await AsyncStorage.setItem(NOLLNING_KEY, '1');
+        console.log(`Lagernollning ${NOLLNING_DATUM}: ${nollade} produkter nollade`);
       }
       setProdukter(lista);
       try { const od = await AsyncStorage.getItem(ORDRAR_KEY); setOrdrar(od ? JSON.parse(od) : []); } catch {}
