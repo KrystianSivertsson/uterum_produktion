@@ -443,6 +443,16 @@ app.patch('/api/me/avatar', authMiddleware, (req, res) => {
 // --- STÄMPLING (kiosk-läge: en delad inloggning, alla användare syns och
 // stämplar in/ut med egen PIN) ---
 const STAMPLING_OMRADEN = ['Träfräs', 'Alufräs', 'Beslag'];
+// Sjukdag = automatiskt pass 07:00–16:00 märkt "Sjukdag" (Krystian 2026-09-21).
+const STAMPLING_SJUKDAG = 'Sjukdag';
+
+// Klockslag i Europe/Stockholm → ISO, oberoende av serverns egen tidszon.
+function stockholmTillIso(datum, timme) {
+  const gissning = new Date(`${datum}T${String(timme).padStart(2, '0')}:00:00Z`);
+  const somUtc = new Date(gissning.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const somSthlm = new Date(gissning.toLocaleString('en-US', { timeZone: 'Europe/Stockholm' }));
+  return new Date(gissning.getTime() - (somSthlm - somUtc)).toISOString();
+}
 
 app.get('/api/stampling/anvandare', authMiddleware, (req, res) => {
   const users = readJSON(USERS_FILE, []);
@@ -525,7 +535,7 @@ app.get('/api/stampling/logg', authMiddleware, (req, res) => {
 function validateStamplingFalt(body, user) {
   const { typ, omrade, tid } = body;
   if (typ !== 'in' && typ !== 'ut') return 'typ måste vara "in" eller "ut"';
-  if (typ === 'in' && !STAMPLING_OMRADEN.includes(omrade)) return 'Välj vad som kördes: Träfräs, Alufräs eller Beslag';
+  if (typ === 'in' && !STAMPLING_OMRADEN.includes(omrade) && omrade !== STAMPLING_SJUKDAG) return 'Välj vad som kördes: Träfräs, Alufräs eller Beslag';
   if (!tid || isNaN(new Date(tid).getTime())) return 'Ogiltig tid';
   if (!user) return 'Användare hittades ej';
   return null;
@@ -552,6 +562,31 @@ app.post('/api/stampling/logg', authMiddleware, (req, res) => {
   stampling.push(event);
   writeJSON(STAMPLING_FILE, stampling);
   res.json({ ok: true, event });
+});
+
+// Admin: sjukdag för en person och ett datum. Skrivs som ett vanligt in/ut-par
+// 07:00–16:00 (Stockholm-tid) med område/kund "Sjukdag", så att timräkning,
+// lunchavdrag (1 h) och Excel fungerar utan specialfall → 8 h per sjukdag.
+app.post('/api/stampling/sjukdag', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const { userId, datum } = req.body;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datum || '') || isNaN(new Date(datum).getTime())) return res.status(400).json({ error: 'Datum måste vara ÅÅÅÅ-MM-DD' });
+  const users = readJSON(USERS_FILE, []);
+  const user = users.find(u => u.id === userId);
+  if (!user) return res.status(404).json({ error: 'Användare hittades ej' });
+  const stampling = readJSON(STAMPLING_FILE, []);
+  const dagStart = stockholmTillIso(datum, 0);
+  const dagSlut = new Date(new Date(dagStart).getTime() + 24 * 3600000).toISOString();
+  if (stampling.some(e => e.userId === userId && e.tid >= dagStart && e.tid < dagSlut)) {
+    return res.status(400).json({ error: `${user.namn} har redan stämplingar ${datum} — ta bort dem först` });
+  }
+  const bas = { userId, namn: user.namn, manuell: true, sjukdag: true, andradAv: req.user.namn || req.user.username };
+  const nyttId = () => Date.now().toString() + Math.random().toString(36).slice(2, 6);
+  const inE = { ...bas, id: nyttId(), typ: 'in', omrade: STAMPLING_SJUKDAG, kundId: null, kundNamn: STAMPLING_SJUKDAG, tid: stockholmTillIso(datum, 7) };
+  const utE = { ...bas, id: nyttId(), typ: 'ut', omrade: null, kundId: null, kundNamn: null, tid: stockholmTillIso(datum, 16) };
+  stampling.push(inE, utE);
+  writeJSON(STAMPLING_FILE, stampling);
+  res.json({ ok: true, events: [inE, utE] });
 });
 
 app.patch('/api/stampling/logg/:id', authMiddleware, (req, res) => {

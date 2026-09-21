@@ -1214,6 +1214,61 @@ async function sparaArbetsbok(wb, filnamn) {
   }
 }
 
+const STAMPLING_SJUKDAG = 'Sjukdag';
+
+// Timsammanställning: parar ihop kronologiska in/ut-par per användare och
+// drar av 1 h lunch per ARBETSDAG (Krystian 2026-09-21: "dra auto av 1 timme
+// lunch varje dag som jobbas"). En dag kortare än en timme dras bara ner till
+// noll. Sjukdagar är vanliga 07–16-par märkta "Sjukdag" och räknas likadant
+// (8 h). Datum räknas i lokal tid. Används av både vyn och Excel-exporten.
+const LUNCH_MS = 3600000;
+function sammanstallStampling(events) {
+  const perAnvandare = new Map();
+  for (const e of events) {
+    const lista = perAnvandare.get(e.userId) || [];
+    lista.push(e);
+    perAnvandare.set(e.userId, lista);
+  }
+  const resultat = [];
+  for (const [userId, lista] of perAnvandare) {
+    const sorterad = [...lista].sort((a, b) => a.tid < b.tid ? -1 : 1);
+    const perDag = new Map(); // datum → { ms, forstaIn, sistaUt, omraden, kunder }
+    let inE = null;
+    for (const e of sorterad) {
+      if (e.typ === 'in') inE = e;
+      else if (e.typ === 'ut' && inE) {
+        const datum = formatDatum(inE.tid);
+        const d = perDag.get(datum) || { datum, ms: 0, forstaIn: inE.tid, sistaUt: e.tid, omraden: new Set(), kunder: new Set() };
+        d.ms += new Date(e.tid) - new Date(inE.tid);
+        if (inE.tid < d.forstaIn) d.forstaIn = inE.tid;
+        if (e.tid > d.sistaUt) d.sistaUt = e.tid;
+        if (inE.omrade) d.omraden.add(inE.omrade);
+        if (inE.kundNamn && inE.kundNamn !== inE.omrade) d.kunder.add(inE.kundNamn);
+        perDag.set(datum, d);
+        inE = null;
+      }
+    }
+    const dagar = [...perDag.values()].sort((a, b) => a.forstaIn < b.forstaIn ? -1 : 1)
+      .map(d => ({ ...d, sjuk: d.omraden.has(STAMPLING_SJUKDAG), lunchMs: Math.min(LUNCH_MS, d.ms), nettoMs: d.ms - Math.min(LUNCH_MS, d.ms) }));
+    const bruttoMs = dagar.reduce((a, d) => a + d.ms, 0);
+    const lunchMs = dagar.reduce((a, d) => a + d.lunchMs, 0);
+    resultat.push({
+      userId, namn: sorterad[0]?.namn || '?', dagar, sjukdagar: dagar.filter(d => d.sjuk).length,
+      brutto: bruttoMs / 3600000, lunch: lunchMs / 3600000, timmar: (bruttoMs - lunchMs) / 3600000,
+    });
+  }
+  return resultat.sort((a, b) => b.timmar - a.timmar);
+}
+
+// Excel-bladnamn: max 31 tecken, inga [ ] : * ? / \ och unikt i arbetsboken.
+function excelBladNamn(namn, upptagna) {
+  const bas = String(namn || 'Blad').replace(/[\[\]:*?\/\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 28) || 'Blad';
+  let kandidat = bas; let n = 2;
+  while (upptagna.has(kandidat)) kandidat = `${bas} ${n++}`;
+  upptagna.add(kandidat);
+  return kandidat;
+}
+
 const STAMPLING_INTERNT = { id: null, namn: 'Internt / övrigt' };
 
 function StamplingVy({ token, inloggad }) {
@@ -1492,6 +1547,21 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
     if (!formUserId) { setFormFel('Välj användare'); return; }
     if (formTyp === 'in' && !formOmrade) { setFormFel('Välj vad som kördes'); return; }
     if (formTyp === 'in' && !formKund) { setFormFel('Välj kund, eller Internt / övrigt'); return; }
+    // Sjukdag: servern skriver själv in 07:00 + ut 16:00 märkta "Sjukdag" (= 8 h efter lunch).
+    if (formTyp === 'sjuk') {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(formDatum)) { setFormFel('Ange datum (ÅÅÅÅ-MM-DD)'); return; }
+      setFormSkickar(true);
+      const res = await fetch(`${API}/api/stampling/sjukdag`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId: formUserId, datum: formDatum }),
+      });
+      const data = await res.json();
+      setFormSkickar(false);
+      if (!res.ok) { setFormFel(data.error || 'Något gick fel'); return; }
+      setVisaForm(false);
+      hamta();
+      return;
+    }
     if (!formDatum || !formKlocka) { setFormFel('Ange datum och tid'); return; }
     const tid = new Date(`${formDatum}T${formKlocka}:00`);
     if (isNaN(tid.getTime())) { setFormFel('Ogiltigt datum/tid'); return; }
@@ -1529,129 +1599,88 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
 
   useEffect(() => { hamta(); }, [hamta]);
 
-  // Timsammanställning: parar ihop kronologiska in/ut-par per användare inom
-  // den filtrerade perioden och drar av 1 h lunch per ARBETSDAG (Krystian
-  // 2026-09-21: "dra auto av 1 timme lunch varje dag som jobbas"). En dag
-  // kortare än en timme dras bara ner till noll. Datum räknas i lokal tid.
-  const timmarPerAnvandare = React.useMemo(() => {
-    const LUNCH_MS = 3600000;
-    const perAnvandare = new Map();
-    for (const e of events) {
-      const lista = perAnvandare.get(e.userId) || [];
-      lista.push(e);
-      perAnvandare.set(e.userId, lista);
-    }
-    const resultat = [];
-    for (const [userId, lista] of perAnvandare) {
-      const sorterad = [...lista].sort((a, b) => a.tid < b.tid ? -1 : 1);
-      const perDag = new Map(); // datum → { ms, forstaIn, sistaUt }
-      let inTid = null;
-      for (const e of sorterad) {
-        if (e.typ === 'in') inTid = e.tid;
-        else if (e.typ === 'ut' && inTid) {
-          const datum = formatDatum(inTid);
-          const d = perDag.get(datum) || { datum, ms: 0, forstaIn: inTid, sistaUt: e.tid };
-          d.ms += new Date(e.tid) - new Date(inTid);
-          if (inTid < d.forstaIn) d.forstaIn = inTid;
-          if (e.tid > d.sistaUt) d.sistaUt = e.tid;
-          perDag.set(datum, d);
-          inTid = null;
-        }
-      }
-      const dagar = [...perDag.values()].sort((a, b) => a.forstaIn < b.forstaIn ? -1 : 1)
-        .map(d => ({ ...d, lunchMs: Math.min(LUNCH_MS, d.ms), nettoMs: d.ms - Math.min(LUNCH_MS, d.ms) }));
-      const bruttoMs = dagar.reduce((a, d) => a + d.ms, 0);
-      const lunchMs = dagar.reduce((a, d) => a + d.lunchMs, 0);
-      resultat.push({
-        userId, namn: sorterad[0]?.namn || '?', dagar,
-        brutto: bruttoMs / 3600000, lunch: lunchMs / 3600000, timmar: (bruttoMs - lunchMs) / 3600000,
-      });
-    }
-    return resultat.sort((a, b) => b.timmar - a.timmar);
-  }, [events]);
+  const timmarPerAnvandare = React.useMemo(() => sammanstallStampling(events), [events]);
 
-  // Excel av det som är filtrerat (person + från/till), Krystian 2026-09-21:
-  // "stämplingen vill jag kunna få ut i excel, väljer vilka datum och vilken
-  // person". Tre blad: alla stämplingar, ihopparade pass (in→ut med timmar)
-  // och en summering per person. Samma in/ut-parning som sammanställningen.
+  // Excel-export (Krystian 2026-09-21): tryck Excel → dialog där man bockar i
+  // vilka personer och anger datum, och filen får ETT BLAD PER PERSON (dagar
+  // med första in, sista ut, brutto, lunch, timmar) plus ett Summering-blad
+  // först. Hämtar loggen på nytt för valt intervall, oberoende av listfiltret.
+  const [visaExport, setVisaExport] = useState(false);
+  const [exportValda, setExportValda] = useState(() => new Set());
+  const [exportFran, setExportFran] = useState('');
+  const [exportTill, setExportTill] = useState('');
+  const [exporterar, setExporterar] = useState(false);
+  const [exportFel, setExportFel] = useState('');
+
+  const oppnaExport = () => {
+    setExportValda(new Set(filterUserId ? [filterUserId] : anvandare.map(a => a.id)));
+    setExportFran(fran); setExportTill(till); setExportFel(''); setVisaExport(true);
+  };
+  const vaxlaExportPerson = (id) => setExportValda(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
   const exporteraStamplingExcel = async () => {
+    setExportFel('');
+    if (exportValda.size === 0) { setExportFel('Välj minst en person'); return; }
+    for (const [namn, v] of [['Från', exportFran], ['Till', exportTill]]) {
+      if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) { setExportFel(`${namn}: skriv ÅÅÅÅ-MM-DD`); return; }
+    }
+    setExporterar(true);
     try {
-      if (events.length === 0) { if (Platform.OS === 'web') window.alert('Inga stämplingar i urvalet.'); else Alert.alert('Inga stämplingar', 'Inget att exportera i urvalet.'); return; }
+      const qs = new URLSearchParams();
+      if (exportFran) qs.set('fran', exportFran);
+      if (exportTill) qs.set('till', exportTill);
+      const res = await fetch(`${API}/api/stampling/logg?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+      const alla = await res.json();
+      if (!res.ok) throw new Error(alla?.error || 'Kunde inte hämta stämplingar');
+      const valdaEvents = (Array.isArray(alla) ? alla : []).filter(e => exportValda.has(e.userId));
+      const summering = sammanstallStampling(valdaEvents);
+      const valdaPersoner = anvandare.filter(a => exportValda.has(a.id));
+
       const klocka = (iso) => new Date(iso).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
-      const kronologiskt = [...events].sort((a, b) => a.tid < b.tid ? -1 : 1);
-
-      const radStamplingar = kronologiskt.map(e => ({
-        'Person': e.namn,
-        'Typ': e.typ === 'in' ? 'IN' : 'UT',
-        'Område': e.omrade || '',
-        'Kund': e.kundNamn || '',
-        'Datum': formatDatum(e.tid),
-        'Klockslag': klocka(e.tid),
-        'Manuell': e.manuell ? 'Ja' : '',
-        'Ändrad av': e.andradAv || '',
-      }));
-
-      // Pass: kronologiska in→ut-par per person. Öppet pass (in utan ut) tas med utan sluttid.
-      const pass = [];
-      const oppen = new Map();
-      for (const e of kronologiskt) {
-        if (e.typ === 'in') { oppen.set(e.userId, e); continue; }
-        const inE = oppen.get(e.userId);
-        if (!inE) continue;
-        oppen.delete(e.userId);
-        pass.push({ namn: inE.namn, inE, utE: e });
-      }
-      for (const inE of oppen.values()) pass.push({ namn: inE.namn, inE, utE: null });
-      pass.sort((a, b) => (a.namn.localeCompare(b.namn, 'sv')) || (a.inE.tid < b.inE.tid ? -1 : 1));
-      const radPass = pass.map(({ namn, inE, utE }) => ({
-        'Person': namn,
-        'Datum': formatDatum(inE.tid),
-        'In': klocka(inE.tid),
-        'Ut': utE ? klocka(utE.tid) : '(pågår)',
-        'Timmar': utE ? Math.round((new Date(utE.tid) - new Date(inE.tid)) / 36000) / 100 : '',
-        'Område': inE.omrade || '',
-        'Kund': inE.kundNamn || '',
-      }));
-
+      const veckodag = (iso) => new Date(iso).toLocaleDateString('sv-SE', { weekday: 'short' });
       const h2 = (ms) => Math.round(ms / 36000) / 100;
-      const radDag = timmarPerAnvandare.flatMap(t => t.dagar.map(d => ({
-        'Person': t.namn,
-        'Datum': d.datum,
-        'Första in': klocka(d.forstaIn),
-        'Sista ut': klocka(d.sistaUt),
-        'Brutto': h2(d.ms),
-        'Lunch': h2(d.lunchMs),
-        'Timmar': h2(d.nettoMs),
-      })));
-      const radSumma = timmarPerAnvandare.map(t => ({
-        'Person': t.namn,
-        'Arbetsdagar': t.dagar.length,
-        'Brutto': Math.round(t.brutto * 100) / 100,
-        'Lunch': Math.round(t.lunch * 100) / 100,
-        'Timmar': Math.round(t.timmar * 100) / 100,
-      }));
+      const r2 = (h) => Math.round(h * 100) / 100;
+      const period = `${exportFran || 'start'} – ${exportTill || 'idag'}`;
 
-      const ws1 = utils.json_to_sheet(radStamplingar);
-      ws1['!cols'] = [{ wch: 22 }, { wch: 6 }, { wch: 10 }, { wch: 28 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 18 }];
-      const ws2 = utils.json_to_sheet(radPass);
-      ws2['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 28 }];
-      const ws3 = utils.json_to_sheet(radDag);
-      ws3['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
-      const ws4 = utils.json_to_sheet(radSumma);
-      ws4['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
       const wb = utils.book_new();
-      utils.book_append_sheet(wb, ws1, 'Stämplingar');
-      utils.book_append_sheet(wb, ws2, 'Pass');
-      utils.book_append_sheet(wb, ws3, 'Per dag');
-      utils.book_append_sheet(wb, ws4, 'Per person');
+      const upptagna = new Set();
+      const wsS = utils.json_to_sheet(valdaPersoner.map(p => {
+        const t = summering.find(x => x.userId === p.id);
+        return { 'Person': p.namn, 'Period': period, 'Arbetsdagar': t ? t.dagar.length : 0, 'Sjukdagar': t ? t.sjukdagar : 0,
+          'Brutto': t ? r2(t.brutto) : 0, 'Lunch': t ? r2(t.lunch) : 0, 'Timmar': t ? r2(t.timmar) : 0 };
+      }));
+      wsS['!cols'] = [{ wch: 22 }, { wch: 24 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
+      utils.book_append_sheet(wb, wsS, excelBladNamn('Summering', upptagna));
 
-      const person = filterUserId ? (anvandare.find(a => a.id === filterUserId)?.namn || 'person') : 'alla';
-      const period = (fran || till) ? `${fran || 'start'}_${till || 'idag'}` : new Date().toISOString().slice(0, 10);
-      const filnamn = `stampling-${person.replace(/[^\wåäöÅÄÖ-]+/g, '_')}-${period}.xlsx`;
-      await sparaArbetsbok(wb, filnamn);
+      for (const p of valdaPersoner) {
+        const t = summering.find(x => x.userId === p.id);
+        const rader = [
+          ['Person', p.namn], ['Period', period], ['Lunch', '1 h dras per arbetsdag'], ['Sjukdagar', t ? t.sjukdagar : 0], [],
+          ['Datum', 'Veckodag', 'Första in', 'Sista ut', 'Brutto', 'Lunch', 'Timmar', 'Område', 'Kund'],
+        ];
+        if (t && t.dagar.length) {
+          for (const d of t.dagar) {
+            rader.push([d.datum, veckodag(d.forstaIn), klocka(d.forstaIn), klocka(d.sistaUt),
+              h2(d.ms), h2(d.lunchMs), h2(d.nettoMs), d.sjuk ? STAMPLING_SJUKDAG : [...d.omraden].join(', '), d.sjuk ? '' : [...d.kunder].join(', ')]);
+          }
+        } else {
+          rader.push(['Inga stämplingar i perioden']);
+        }
+        rader.push([]);
+        rader.push(['Summa', t ? `${t.dagar.length} dagar` : '0 dagar', '', '', t ? r2(t.brutto) : 0, t ? r2(t.lunch) : 0, t ? r2(t.timmar) : 0]);
+        const ws = utils.aoa_to_sheet(rader);
+        ws['!cols'] = [{ wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 16 }, { wch: 28 }];
+        utils.book_append_sheet(wb, ws, excelBladNamn(p.namn, upptagna));
+      }
+
+      const vem = valdaPersoner.length === 1 ? valdaPersoner[0].namn.replace(/[^\wåäöÅÄÖ-]+/g, '_') : `${valdaPersoner.length}-personer`;
+      const per = (exportFran || exportTill) ? `${exportFran || 'start'}_${exportTill || 'idag'}` : new Date().toISOString().slice(0, 10);
+      await sparaArbetsbok(wb, `stampling-${vem}-${per}.xlsx`);
+      setVisaExport(false);
     } catch (e) {
-      const msg = 'Kunde inte exportera: ' + (e?.message || e);
-      if (Platform.OS === 'web') window.alert(msg); else Alert.alert('Fel', msg);
+      setExportFel('Kunde inte exportera: ' + (e?.message || e));
+    } finally {
+      setExporterar(false);
     }
   };
 
@@ -1683,9 +1712,9 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
         <TouchableOpacity onPress={oppnaNyttFormular} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' }}>
           <Text style={{ color: '#fff', fontWeight: '600' }}>+ Lägg till stämpling</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={exporteraStamplingExcel} disabled={laddar || events.length === 0}
-          style={{ backgroundColor: '#0f766e', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', opacity: (laddar || events.length === 0) ? 0.5 : 1 }}>
-          <Text style={{ color: '#fff', fontWeight: '600' }}>📊 Excel ({events.length})</Text>
+        <TouchableOpacity onPress={oppnaExport}
+          style={{ backgroundColor: '#0f766e', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' }}>
+          <Text style={{ color: '#fff', fontWeight: '600' }}>📊 Excel</Text>
         </TouchableOpacity>
       </View>
 
@@ -1696,7 +1725,7 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
             <View key={t.userId} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
               <Text style={{ color: c.text }}>{t.namn}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Text style={{ color: c.textMuted, fontSize: 12 }}>{t.dagar.length} dagar · {t.brutto.toFixed(1)} h − {t.lunch.toFixed(1)} h lunch</Text>
+                <Text style={{ color: c.textMuted, fontSize: 12 }}>{t.dagar.length} dagar{t.sjukdagar ? ` (${t.sjukdagar} sjuk)` : ''} · {t.brutto.toFixed(1)} h − {t.lunch.toFixed(1)} h lunch</Text>
                 <Text style={{ color: c.textRubrik, fontWeight: '600' }}>{t.timmar.toFixed(1)} h</Text>
               </View>
             </View>
@@ -1711,8 +1740,8 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
             <View key={e.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.kortBorder }}>
               <Text style={{ color: c.text, flex: 1 }}>{e.namn}{e.manuell ? ' ✎' : ''}</Text>
               <Text style={{ color: e.typ === 'in' ? '#16a34a' : '#ef4444', fontWeight: '600', width: 40 }}>{e.typ === 'in' ? 'IN' : 'UT'}</Text>
-              <Text style={{ color: c.textMuted, width: 70 }}>{e.omrade || ''}</Text>
-              <Text style={{ color: c.textMuted, width: 100 }} numberOfLines={1}>{e.kundNamn || ''}</Text>
+              <Text style={{ color: e.omrade === STAMPLING_SJUKDAG ? '#f59e0b' : c.textMuted, width: 70 }}>{e.omrade || ''}</Text>
+              <Text style={{ color: c.textMuted, width: 100 }} numberOfLines={1}>{e.kundNamn === STAMPLING_SJUKDAG ? '' : (e.kundNamn || '')}</Text>
               <Text style={{ color: c.textMuted, width: 120 }}>{formatDatum(e.tid)} {new Date(e.tid).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</Text>
               <TouchableOpacity onPress={() => oppnaRedigera(e)} style={{ paddingHorizontal: 6 }}>
                 <Text style={{ color: '#2563eb', fontSize: 13 }}>✎</Text>
@@ -1746,7 +1775,7 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
 
               <Text style={{ color: c.textMuted, marginBottom: 6 }}>Typ</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-                {[['in', 'Stämpla IN'], ['ut', 'Stämpla UT']].map(([v, label]) => (
+                {[['in', 'Stämpla IN'], ['ut', 'Stämpla UT'], ['sjuk', 'Sjukdag']].map(([v, label]) => (
                   <TouchableOpacity key={v} onPress={() => setFormTyp(v)}
                     style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1,
                       backgroundColor: formTyp === v ? '#2563eb' : c.input, borderColor: formTyp === v ? '#2563eb' : c.inputBorder }}>
@@ -1796,19 +1825,69 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
                 </>
               )}
 
-              <Text style={{ color: c.textMuted, marginBottom: 6 }}>Datum och tid</Text>
+              <Text style={{ color: c.textMuted, marginBottom: 6 }}>{formTyp === 'sjuk' ? 'Datum' : 'Datum och tid'}</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
                 <TextInput
                   style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
                   placeholder="ÅÅÅÅ-MM-DD" placeholderTextColor={c.textMuted} value={formDatum} onChangeText={setFormDatum} />
-                <TextInput
+                {formTyp !== 'sjuk' && <TextInput
                   style={[um.input, { width: 90, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
-                  placeholder="TT:MM" placeholderTextColor={c.textMuted} value={formKlocka} onChangeText={setFormKlocka} />
+                  placeholder="TT:MM" placeholderTextColor={c.textMuted} value={formKlocka} onChangeText={setFormKlocka} />}
               </View>
+              {formTyp === 'sjuk' && <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 12 }}>Sjukdag läggs in som 07:00–16:00 med 1 h lunch = 8 h, och visas som "Sjukdag".</Text>}
 
               {formFel ? <Text style={{ color: '#ef4444', marginBottom: 8 }}>{formFel}</Text> : null}
               <TouchableOpacity style={[um.laggKnapp, formSkickar && { opacity: 0.6 }]} disabled={formSkickar} onPress={sparaFormular}>
                 <Text style={um.laggText}>{formSkickar ? 'Sparar...' : (redigerarId ? 'Spara ändringar' : 'Lägg till')}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={visaExport} animationType="fade" transparent onRequestClose={() => setVisaExport(false)}>
+        <View style={um.bakgrund}>
+          <View style={[um.panel, { backgroundColor: c.modal, width: 420 }]}>
+            <View style={um.rubrikRad}>
+              <Text style={[um.rubrik, { color: c.textRubrik }]}>Excel – stämpling</Text>
+              <TouchableOpacity onPress={() => setVisaExport(false)}><Text style={[um.stang, { color: c.textMuted }]}>✕</Text></TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 460 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={{ color: c.textMuted }}>Personer – ett blad per person</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={() => setExportValda(new Set(anvandare.map(a => a.id)))}><Text style={{ color: '#2563eb', fontSize: 12, fontWeight: '600' }}>Alla</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => setExportValda(new Set())}><Text style={{ color: '#2563eb', fontSize: 12, fontWeight: '600' }}>Ingen</Text></TouchableOpacity>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {anvandare.map(a => {
+                  const vald = exportValda.has(a.id);
+                  return (
+                    <TouchableOpacity key={a.id} onPress={() => vaxlaExportPerson(a.id)}
+                      style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1,
+                        backgroundColor: vald ? '#2563eb' : c.input, borderColor: vald ? '#2563eb' : c.inputBorder }}>
+                      <Text style={{ color: vald ? '#fff' : c.text, fontSize: 12, fontWeight: '600' }}>{vald ? '☑ ' : '☐ '}{a.namn}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={{ color: c.textMuted, marginBottom: 6 }}>Datum (tomt = ingen gräns)</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                <TextInput
+                  style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  placeholder="Från ÅÅÅÅ-MM-DD" placeholderTextColor={c.textMuted} value={exportFran} onChangeText={setExportFran} />
+                <TextInput
+                  style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  placeholder="Till ÅÅÅÅ-MM-DD" placeholderTextColor={c.textMuted} value={exportTill} onChangeText={setExportTill} />
+              </View>
+              <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 12 }}>
+                Varje blad: en rad per arbetsdag med första in, sista ut, brutto, lunch (1 h) och timmar, samt summa. Sjukdagar visas som "Sjukdag". Bladet Summering först.
+              </Text>
+              {!!exportFel && <Text style={{ color: '#ef4444', marginBottom: 10 }}>{exportFel}</Text>}
+              <TouchableOpacity style={[um.laggKnapp, { backgroundColor: '#0f766e' }, exporterar && { opacity: 0.6 }]} disabled={exporterar} onPress={exporteraStamplingExcel}>
+                <Text style={um.laggText}>{exporterar ? 'Skapar fil...' : `📊 Exportera (${exportValda.size} ${exportValda.size === 1 ? 'person' : 'personer'})`}</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
