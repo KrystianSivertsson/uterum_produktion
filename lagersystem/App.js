@@ -1195,6 +1195,25 @@ function formatDatum(iso) {
 
 const STAMPLING_OMRADEN = ['Träfräs', 'Alufräs', 'Beslag'];
 
+// Spara en xlsx-arbetsbok: webb → nedladdning, app → dela-ark. Samma
+// mekanik som glasmåtts-Excelen (exporteraGlasExcel) men fristående så att
+// stämplingsvyn kan använda den utan att gå via lagerkomponenten.
+async function sparaArbetsbok(wb, filnamn) {
+  if (Platform.OS === 'web') {
+    const buf = write(wb, { type: 'array', bookType: 'xlsx' });
+    const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = filnamn;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } else {
+    const b64 = write(wb, { type: 'base64', bookType: 'xlsx' });
+    const filePath = FileSystem.documentDirectory + filnamn;
+    await FileSystem.writeAsStringAsync(filePath, b64, { encoding: 'base64' });
+    await Sharing.shareAsync(filePath);
+  }
+}
+
 const STAMPLING_INTERNT = { id: null, namn: 'Internt / övrigt' };
 
 function StamplingVy({ token, inloggad }) {
@@ -1510,9 +1529,12 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
 
   useEffect(() => { hamta(); }, [hamta]);
 
-  // Enkel timsammanställning: parar ihop kronologiska in/ut-par per användare
-  // inom den filtrerade perioden.
+  // Timsammanställning: parar ihop kronologiska in/ut-par per användare inom
+  // den filtrerade perioden och drar av 1 h lunch per ARBETSDAG (Krystian
+  // 2026-09-21: "dra auto av 1 timme lunch varje dag som jobbas"). En dag
+  // kortare än en timme dras bara ner till noll. Datum räknas i lokal tid.
   const timmarPerAnvandare = React.useMemo(() => {
+    const LUNCH_MS = 3600000;
     const perAnvandare = new Map();
     for (const e of events) {
       const lista = perAnvandare.get(e.userId) || [];
@@ -1522,16 +1544,116 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
     const resultat = [];
     for (const [userId, lista] of perAnvandare) {
       const sorterad = [...lista].sort((a, b) => a.tid < b.tid ? -1 : 1);
-      let totalMs = 0;
+      const perDag = new Map(); // datum → { ms, forstaIn, sistaUt }
       let inTid = null;
       for (const e of sorterad) {
         if (e.typ === 'in') inTid = e.tid;
-        else if (e.typ === 'ut' && inTid) { totalMs += new Date(e.tid) - new Date(inTid); inTid = null; }
+        else if (e.typ === 'ut' && inTid) {
+          const datum = formatDatum(inTid);
+          const d = perDag.get(datum) || { datum, ms: 0, forstaIn: inTid, sistaUt: e.tid };
+          d.ms += new Date(e.tid) - new Date(inTid);
+          if (inTid < d.forstaIn) d.forstaIn = inTid;
+          if (e.tid > d.sistaUt) d.sistaUt = e.tid;
+          perDag.set(datum, d);
+          inTid = null;
+        }
       }
-      resultat.push({ userId, namn: sorterad[0]?.namn || '?', timmar: totalMs / 3600000 });
+      const dagar = [...perDag.values()].sort((a, b) => a.forstaIn < b.forstaIn ? -1 : 1)
+        .map(d => ({ ...d, lunchMs: Math.min(LUNCH_MS, d.ms), nettoMs: d.ms - Math.min(LUNCH_MS, d.ms) }));
+      const bruttoMs = dagar.reduce((a, d) => a + d.ms, 0);
+      const lunchMs = dagar.reduce((a, d) => a + d.lunchMs, 0);
+      resultat.push({
+        userId, namn: sorterad[0]?.namn || '?', dagar,
+        brutto: bruttoMs / 3600000, lunch: lunchMs / 3600000, timmar: (bruttoMs - lunchMs) / 3600000,
+      });
     }
     return resultat.sort((a, b) => b.timmar - a.timmar);
   }, [events]);
+
+  // Excel av det som är filtrerat (person + från/till), Krystian 2026-09-21:
+  // "stämplingen vill jag kunna få ut i excel, väljer vilka datum och vilken
+  // person". Tre blad: alla stämplingar, ihopparade pass (in→ut med timmar)
+  // och en summering per person. Samma in/ut-parning som sammanställningen.
+  const exporteraStamplingExcel = async () => {
+    try {
+      if (events.length === 0) { if (Platform.OS === 'web') window.alert('Inga stämplingar i urvalet.'); else Alert.alert('Inga stämplingar', 'Inget att exportera i urvalet.'); return; }
+      const klocka = (iso) => new Date(iso).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+      const kronologiskt = [...events].sort((a, b) => a.tid < b.tid ? -1 : 1);
+
+      const radStamplingar = kronologiskt.map(e => ({
+        'Person': e.namn,
+        'Typ': e.typ === 'in' ? 'IN' : 'UT',
+        'Område': e.omrade || '',
+        'Kund': e.kundNamn || '',
+        'Datum': formatDatum(e.tid),
+        'Klockslag': klocka(e.tid),
+        'Manuell': e.manuell ? 'Ja' : '',
+        'Ändrad av': e.andradAv || '',
+      }));
+
+      // Pass: kronologiska in→ut-par per person. Öppet pass (in utan ut) tas med utan sluttid.
+      const pass = [];
+      const oppen = new Map();
+      for (const e of kronologiskt) {
+        if (e.typ === 'in') { oppen.set(e.userId, e); continue; }
+        const inE = oppen.get(e.userId);
+        if (!inE) continue;
+        oppen.delete(e.userId);
+        pass.push({ namn: inE.namn, inE, utE: e });
+      }
+      for (const inE of oppen.values()) pass.push({ namn: inE.namn, inE, utE: null });
+      pass.sort((a, b) => (a.namn.localeCompare(b.namn, 'sv')) || (a.inE.tid < b.inE.tid ? -1 : 1));
+      const radPass = pass.map(({ namn, inE, utE }) => ({
+        'Person': namn,
+        'Datum': formatDatum(inE.tid),
+        'In': klocka(inE.tid),
+        'Ut': utE ? klocka(utE.tid) : '(pågår)',
+        'Timmar': utE ? Math.round((new Date(utE.tid) - new Date(inE.tid)) / 36000) / 100 : '',
+        'Område': inE.omrade || '',
+        'Kund': inE.kundNamn || '',
+      }));
+
+      const h2 = (ms) => Math.round(ms / 36000) / 100;
+      const radDag = timmarPerAnvandare.flatMap(t => t.dagar.map(d => ({
+        'Person': t.namn,
+        'Datum': d.datum,
+        'Första in': klocka(d.forstaIn),
+        'Sista ut': klocka(d.sistaUt),
+        'Brutto': h2(d.ms),
+        'Lunch': h2(d.lunchMs),
+        'Timmar': h2(d.nettoMs),
+      })));
+      const radSumma = timmarPerAnvandare.map(t => ({
+        'Person': t.namn,
+        'Arbetsdagar': t.dagar.length,
+        'Brutto': Math.round(t.brutto * 100) / 100,
+        'Lunch': Math.round(t.lunch * 100) / 100,
+        'Timmar': Math.round(t.timmar * 100) / 100,
+      }));
+
+      const ws1 = utils.json_to_sheet(radStamplingar);
+      ws1['!cols'] = [{ wch: 22 }, { wch: 6 }, { wch: 10 }, { wch: 28 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 18 }];
+      const ws2 = utils.json_to_sheet(radPass);
+      ws2['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 28 }];
+      const ws3 = utils.json_to_sheet(radDag);
+      ws3['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
+      const ws4 = utils.json_to_sheet(radSumma);
+      ws4['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, ws1, 'Stämplingar');
+      utils.book_append_sheet(wb, ws2, 'Pass');
+      utils.book_append_sheet(wb, ws3, 'Per dag');
+      utils.book_append_sheet(wb, ws4, 'Per person');
+
+      const person = filterUserId ? (anvandare.find(a => a.id === filterUserId)?.namn || 'person') : 'alla';
+      const period = (fran || till) ? `${fran || 'start'}_${till || 'idag'}` : new Date().toISOString().slice(0, 10);
+      const filnamn = `stampling-${person.replace(/[^\wåäöÅÄÖ-]+/g, '_')}-${period}.xlsx`;
+      await sparaArbetsbok(wb, filnamn);
+    } catch (e) {
+      const msg = 'Kunde inte exportera: ' + (e?.message || e);
+      if (Platform.OS === 'web') window.alert(msg); else Alert.alert('Fel', msg);
+    }
+  };
 
   return (
     <View>
@@ -1561,15 +1683,22 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
         <TouchableOpacity onPress={oppnaNyttFormular} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' }}>
           <Text style={{ color: '#fff', fontWeight: '600' }}>+ Lägg till stämpling</Text>
         </TouchableOpacity>
+        <TouchableOpacity onPress={exporteraStamplingExcel} disabled={laddar || events.length === 0}
+          style={{ backgroundColor: '#0f766e', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', opacity: (laddar || events.length === 0) ? 0.5 : 1 }}>
+          <Text style={{ color: '#fff', fontWeight: '600' }}>📊 Excel ({events.length})</Text>
+        </TouchableOpacity>
       </View>
 
       {timmarPerAnvandare.length > 0 && (
         <View style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 10, padding: 14, marginBottom: 16 }}>
-          <Text style={{ color: c.textRubrik, fontWeight: '700', marginBottom: 8 }}>Sammanställning (avslutade pass i perioden)</Text>
+          <Text style={{ color: c.textRubrik, fontWeight: '700', marginBottom: 8 }}>Sammanställning (avslutade pass i perioden, −1 h lunch per arbetsdag)</Text>
           {timmarPerAnvandare.map(t => (
-            <View key={t.userId} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+            <View key={t.userId} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
               <Text style={{ color: c.text }}>{t.namn}</Text>
-              <Text style={{ color: c.textRubrik, fontWeight: '600' }}>{t.timmar.toFixed(1)} h</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Text style={{ color: c.textMuted, fontSize: 12 }}>{t.dagar.length} dagar · {t.brutto.toFixed(1)} h − {t.lunch.toFixed(1)} h lunch</Text>
+                <Text style={{ color: c.textRubrik, fontWeight: '600' }}>{t.timmar.toFixed(1)} h</Text>
+              </View>
             </View>
           ))}
         </View>
