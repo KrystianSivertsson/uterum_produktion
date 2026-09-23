@@ -445,6 +445,10 @@ app.patch('/api/me/avatar', authMiddleware, (req, res) => {
 const STAMPLING_OMRADEN = ['Träfräs', 'Alufräs', 'Beslag'];
 // Sjukdag = automatiskt pass 07:00–16:00 märkt "Sjukdag" (Krystian 2026-09-21).
 const STAMPLING_SJUKDAG = 'Sjukdag';
+// Frånvarotyper (Krystian 2026-09-23: "måste kunna lägga till vab och semester"):
+// alla läggs in som 07–16-pass märkta med typen, precis som sjukdagar.
+const STAMPLING_FRANVARO = ['Sjukdag', 'VAB', 'Semester'];
+const { arHelg, dagarMellan } = require('./helgdagar');
 
 // Klockslag i Europe/Stockholm → ISO, oberoende av serverns egen tidszon.
 function stockholmTillIso(datum, timme) {
@@ -535,7 +539,7 @@ app.get('/api/stampling/logg', authMiddleware, (req, res) => {
 function validateStamplingFalt(body, user) {
   const { typ, omrade, tid } = body;
   if (typ !== 'in' && typ !== 'ut') return 'typ måste vara "in" eller "ut"';
-  if (typ === 'in' && !STAMPLING_OMRADEN.includes(omrade) && omrade !== STAMPLING_SJUKDAG) return 'Välj vad som kördes: Träfräs, Alufräs eller Beslag';
+  if (typ === 'in' && !STAMPLING_OMRADEN.includes(omrade) && !STAMPLING_FRANVARO.includes(omrade)) return 'Välj vad som kördes: Träfräs, Alufräs eller Beslag';
   if (!tid || isNaN(new Date(tid).getTime())) return 'Ogiltig tid';
   if (!user) return 'Användare hittades ej';
   return null;
@@ -564,30 +568,48 @@ app.post('/api/stampling/logg', authMiddleware, (req, res) => {
   res.json({ ok: true, event });
 });
 
-// Admin: sjukdag för en person och ett datum. Skrivs som ett vanligt in/ut-par
-// 07:00–16:00 (Stockholm-tid) med område/kund "Sjukdag", så att timräkning,
-// lunchavdrag (1 h) och Excel fungerar utan specialfall → 8 h per sjukdag.
-app.post('/api/stampling/sjukdag', authMiddleware, (req, res) => {
+// Admin: frånvaro (Sjukdag/VAB/Semester) för en person, en dag eller en period.
+// Skrivs som vanliga in/ut-par 07:00–16:00 (Stockholm-tid) med område/kund =
+// typen, så att timräkning, lunchavdrag (1 h) och Excel fungerar utan
+// specialfall → 8 h per dag. Med tillDatum hoppas helger och röda dagar över
+// (en enstaka dag läggs in även om den är helg). Dagar som redan har
+// stämplingar stoppar hela begäran, inget skrivs då.
+function laggTillFranvaro(req, res, typ) {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
-  const { userId, datum } = req.body;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(datum || '') || isNaN(new Date(datum).getTime())) return res.status(400).json({ error: 'Datum måste vara ÅÅÅÅ-MM-DD' });
+  const { userId, datum, tillDatum } = req.body;
+  if (!STAMPLING_FRANVARO.includes(typ)) return res.status(400).json({ error: 'Typ måste vara Sjukdag, VAB eller Semester' });
+  const okDatum = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && !isNaN(new Date(d).getTime());
+  if (!okDatum(datum)) return res.status(400).json({ error: 'Datum måste vara ÅÅÅÅ-MM-DD' });
+  if (tillDatum && !okDatum(tillDatum)) return res.status(400).json({ error: 'Till-datum måste vara ÅÅÅÅ-MM-DD' });
+  if (tillDatum && tillDatum < datum) return res.status(400).json({ error: 'Till-datum ligger före datum' });
   const users = readJSON(USERS_FILE, []);
   const user = users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ error: 'Användare hittades ej' });
+  const alla = dagarMellan(datum, tillDatum || datum);
+  if (alla.length > 92) return res.status(400).json({ error: 'Max 92 dagar åt gången' });
+  const dagar = tillDatum ? alla.filter(d => !arHelg(d)) : alla;
+  if (dagar.length === 0) return res.status(400).json({ error: 'Perioden innehåller bara helger och röda dagar' });
   const stampling = readJSON(STAMPLING_FILE, []);
-  const dagStart = stockholmTillIso(datum, 0);
-  const dagSlut = new Date(new Date(dagStart).getTime() + 24 * 3600000).toISOString();
-  if (stampling.some(e => e.userId === userId && e.tid >= dagStart && e.tid < dagSlut)) {
-    return res.status(400).json({ error: `${user.namn} har redan stämplingar ${datum} — ta bort dem först` });
-  }
-  const bas = { userId, namn: user.namn, manuell: true, sjukdag: true, andradAv: req.user.namn || req.user.username };
+  const upptagna = dagar.filter(d => {
+    const dagStart = stockholmTillIso(d, 0);
+    const dagSlut = new Date(new Date(dagStart).getTime() + 24 * 3600000).toISOString();
+    return stampling.some(e => e.userId === userId && e.tid >= dagStart && e.tid < dagSlut);
+  });
+  if (upptagna.length) return res.status(400).json({ error: `${user.namn} har redan stämplingar ${upptagna.join(', ')} — ta bort dem först` });
+  const bas = { userId, namn: user.namn, manuell: true, franvaro: typ, sjukdag: typ === STAMPLING_SJUKDAG, andradAv: req.user.namn || req.user.username };
   const nyttId = () => Date.now().toString() + Math.random().toString(36).slice(2, 6);
-  const inE = { ...bas, id: nyttId(), typ: 'in', omrade: STAMPLING_SJUKDAG, kundId: null, kundNamn: STAMPLING_SJUKDAG, tid: stockholmTillIso(datum, 7) };
-  const utE = { ...bas, id: nyttId(), typ: 'ut', omrade: null, kundId: null, kundNamn: null, tid: stockholmTillIso(datum, 16) };
-  stampling.push(inE, utE);
+  const nya = [];
+  for (const d of dagar) {
+    nya.push({ ...bas, id: nyttId(), typ: 'in', omrade: typ, kundId: null, kundNamn: typ, tid: stockholmTillIso(d, 7) });
+    nya.push({ ...bas, id: nyttId(), typ: 'ut', omrade: null, kundId: null, kundNamn: null, tid: stockholmTillIso(d, 16) });
+  }
+  stampling.push(...nya);
   writeJSON(STAMPLING_FILE, stampling);
-  res.json({ ok: true, events: [inE, utE] });
-});
+  res.json({ ok: true, typ, dagar, events: nya });
+}
+app.post('/api/stampling/franvaro', authMiddleware, (req, res) => laggTillFranvaro(req, res, req.body.typ));
+// Bakåtkompatibel väg för sjukdag (äldre klienter).
+app.post('/api/stampling/sjukdag', authMiddleware, (req, res) => laggTillFranvaro(req, res, STAMPLING_SJUKDAG));
 
 app.patch('/api/stampling/logg/:id', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });

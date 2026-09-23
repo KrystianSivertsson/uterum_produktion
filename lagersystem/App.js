@@ -10,7 +10,8 @@ import { INVENTERING_DATUM, appliceraInventering } from './inventeringsData';
 import { LEVERANS_NYA_2026 } from './leveransArtiklar2026';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
-import { utils, write, read } from 'xlsx';
+import { utils, write, read } from 'xlsx-js-style';   // SheetJS med cellstilar (röda helger i stämplings-Excelen)
+import { byggStamplingArbetsbok, FRANVARO_TYPER } from './stamplingExcel';
 
 const API = typeof window !== 'undefined'
   ? (window.location.pathname.startsWith('/UterumLager')
@@ -1215,12 +1216,16 @@ async function sparaArbetsbok(wb, filnamn) {
 }
 
 const STAMPLING_SJUKDAG = 'Sjukdag';
+// Formulärets frånvaroknappar → serverns typnamn (Krystian 2026-09-23: "måste
+// kunna lägga till vab och semester").
+const FRANVARO_FORMTYP = { sjuk: 'Sjukdag', vab: 'VAB', semester: 'Semester' };
 
 // Timsammanställning: parar ihop kronologiska in/ut-par per användare och
 // drar av 1 h lunch per ARBETSDAG (Krystian 2026-09-21: "dra auto av 1 timme
 // lunch varje dag som jobbas"). En dag kortare än en timme dras bara ner till
-// noll. Sjukdagar är vanliga 07–16-par märkta "Sjukdag" och räknas likadant
-// (8 h). Datum räknas i lokal tid. Används av både vyn och Excel-exporten.
+// noll. Sjukdag/VAB/Semester är vanliga 07–16-par märkta med typen och räknas
+// likadant (8 h); dagens `typ` säger vilket. Datum räknas i lokal tid.
+// Används av både vyn och Excel-exporten.
 const LUNCH_MS = 3600000;
 function sammanstallStampling(events) {
   const perAnvandare = new Map();
@@ -1249,24 +1254,26 @@ function sammanstallStampling(events) {
       }
     }
     const dagar = [...perDag.values()].sort((a, b) => a.forstaIn < b.forstaIn ? -1 : 1)
-      .map(d => ({ ...d, sjuk: d.omraden.has(STAMPLING_SJUKDAG), lunchMs: Math.min(LUNCH_MS, d.ms), nettoMs: d.ms - Math.min(LUNCH_MS, d.ms) }));
+      .map(d => {
+        const typ = FRANVARO_TYPER.find(x => d.omraden.has(x)) || null;   // Sjukdag / VAB / Semester, annars arbete
+        return { ...d, typ, sjuk: typ === STAMPLING_SJUKDAG, lunchMs: Math.min(LUNCH_MS, d.ms), nettoMs: d.ms - Math.min(LUNCH_MS, d.ms) };
+      });
     const bruttoMs = dagar.reduce((a, d) => a + d.ms, 0);
     const lunchMs = dagar.reduce((a, d) => a + d.lunchMs, 0);
+    const antal = typ => dagar.filter(d => d.typ === typ).length;
     resultat.push({
-      userId, namn: sorterad[0]?.namn || '?', dagar, sjukdagar: dagar.filter(d => d.sjuk).length,
+      userId, namn: sorterad[0]?.namn || '?', dagar,
+      arbetsdagar: dagar.filter(d => !d.typ).length, sjukdagar: antal('Sjukdag'), vabdagar: antal('VAB'), semesterdagar: antal('Semester'),
       brutto: bruttoMs / 3600000, lunch: lunchMs / 3600000, timmar: (bruttoMs - lunchMs) / 3600000,
     });
   }
   return resultat.sort((a, b) => b.timmar - a.timmar);
 }
 
-// Excel-bladnamn: max 31 tecken, inga [ ] : * ? / \ och unikt i arbetsboken.
-function excelBladNamn(namn, upptagna) {
-  const bas = String(namn || 'Blad').replace(/[\[\]:*?\/\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 28) || 'Blad';
-  let kandidat = bas; let n = 2;
-  while (upptagna.has(kandidat)) kandidat = `${bas} ${n++}`;
-  upptagna.add(kandidat);
-  return kandidat;
+// Kort frånvarotext till sammanställningen: " (1 sjuk, 2 VAB)".
+function franvaroText(t) {
+  const delar = [[t.sjukdagar, 'sjuk'], [t.vabdagar, 'VAB'], [t.semesterdagar, 'semester']].filter(([n]) => n > 0).map(([n, l]) => `${n} ${l}`);
+  return delar.length ? ` (${delar.join(', ')})` : '';
 }
 
 const STAMPLING_INTERNT = { id: null, namn: 'Internt / övrigt' };
@@ -1509,6 +1516,7 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
   const [formKundSok, setFormKundSok] = useState('');
   const [formDatum, setFormDatum] = useState('');
   const [formKlocka, setFormKlocka] = useState('');
+  const [formTillDatum, setFormTillDatum] = useState('');   // frånvaro över en period
   const [formFel, setFormFel] = useState('');
   const [formSkickar, setFormSkickar] = useState(false);
 
@@ -1516,7 +1524,7 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
     const { datum, klocka } = tidTillDatumOchKlocka();
     setRedigerarId(null); setFormUserId(anvandare[0]?.id || ''); setFormTyp('in');
     setFormOmrade(null); setFormKund(null); setFormKundSok('');
-    setFormDatum(datum); setFormKlocka(klocka); setFormFel(''); setVisaForm(true);
+    setFormDatum(datum); setFormKlocka(klocka); setFormTillDatum(''); setFormFel(''); setVisaForm(true);
   };
 
   const oppnaRedigera = (e) => {
@@ -1525,7 +1533,7 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
     setFormOmrade(e.omrade || null);
     setFormKund(e.kundNamn ? { id: e.kundId || null, namn: e.kundNamn } : null);
     setFormKundSok(e.kundNamn || '');
-    setFormDatum(datum); setFormKlocka(klocka); setFormFel(''); setVisaForm(true);
+    setFormDatum(datum); setFormKlocka(klocka); setFormTillDatum(''); setFormFel(''); setVisaForm(true);
   };
 
   const taBortEvent = async (e) => {
@@ -1547,13 +1555,15 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
     if (!formUserId) { setFormFel('Välj användare'); return; }
     if (formTyp === 'in' && !formOmrade) { setFormFel('Välj vad som kördes'); return; }
     if (formTyp === 'in' && !formKund) { setFormFel('Välj kund, eller Internt / övrigt'); return; }
-    // Sjukdag: servern skriver själv in 07:00 + ut 16:00 märkta "Sjukdag" (= 8 h efter lunch).
-    if (formTyp === 'sjuk') {
+    // Frånvaro (Sjukdag/VAB/Semester): servern skriver själv in 07:00 + ut 16:00
+    // märkta med typen (= 8 h efter lunch), för en dag eller en period (Till-datum).
+    if (FRANVARO_FORMTYP[formTyp]) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(formDatum)) { setFormFel('Ange datum (ÅÅÅÅ-MM-DD)'); return; }
+      if (formTillDatum && !/^\d{4}-\d{2}-\d{2}$/.test(formTillDatum)) { setFormFel('Till-datum: skriv ÅÅÅÅ-MM-DD'); return; }
       setFormSkickar(true);
-      const res = await fetch(`${API}/api/stampling/sjukdag`, {
+      const res = await fetch(`${API}/api/stampling/franvaro`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId: formUserId, datum: formDatum }),
+        body: JSON.stringify({ userId: formUserId, datum: formDatum, tillDatum: formTillDatum || undefined, typ: FRANVARO_FORMTYP[formTyp] }),
       });
       const data = await res.json();
       setFormSkickar(false);
@@ -1601,10 +1611,11 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
 
   const timmarPerAnvandare = React.useMemo(() => sammanstallStampling(events), [events]);
 
-  // Excel-export (Krystian 2026-09-21): tryck Excel → dialog där man bockar i
-  // vilka personer och anger datum, och filen får ETT BLAD PER PERSON (dagar
-  // med första in, sista ut, brutto, lunch, timmar) plus ett Summering-blad
-  // först. Hämtar loggen på nytt för valt intervall, oberoende av listfiltret.
+  // Excel-export (Krystian 2026-09-21/23): tryck Excel → dialog där man bockar i
+  // vilka personer och anger datum, och filen får ETT BLAD PER PERSON med alla
+  // kalenderdagar i perioden (helger rödmarkerade, Sjukdag/VAB/Semester gula,
+  // sammanfattning sist) plus ett Summering-blad först. Hämtar loggen på nytt
+  // för valt intervall, oberoende av listfiltret.
   const [visaExport, setVisaExport] = useState(false);
   const [exportValda, setExportValda] = useState(() => new Set());
   const [exportFran, setExportFran] = useState('');
@@ -1636,46 +1647,10 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
       const summering = sammanstallStampling(valdaEvents);
       const valdaPersoner = anvandare.filter(a => exportValda.has(a.id));
 
-      const klocka = (iso) => new Date(iso).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
-      const veckodag = (iso) => new Date(iso).toLocaleDateString('sv-SE', { weekday: 'short' });
-      const h2 = (ms) => Math.round(ms / 36000) / 100;
-      const r2 = (h) => Math.round(h * 100) / 100;
-      const period = `${exportFran || 'start'} – ${exportTill || 'idag'}`;
-
-      const wb = utils.book_new();
-      const upptagna = new Set();
-      const wsS = utils.json_to_sheet(valdaPersoner.map(p => {
-        const t = summering.find(x => x.userId === p.id);
-        return { 'Person': p.namn, 'Period': period, 'Arbetsdagar': t ? t.dagar.length : 0, 'Sjukdagar': t ? t.sjukdagar : 0,
-          'Brutto': t ? r2(t.brutto) : 0, 'Lunch': t ? r2(t.lunch) : 0, 'Timmar': t ? r2(t.timmar) : 0 };
-      }));
-      wsS['!cols'] = [{ wch: 22 }, { wch: 24 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
-      utils.book_append_sheet(wb, wsS, excelBladNamn('Summering', upptagna));
-
-      for (const p of valdaPersoner) {
-        const t = summering.find(x => x.userId === p.id);
-        const rader = [
-          ['Person', p.namn], ['Period', period], ['Lunch', '1 h dras per arbetsdag'], ['Sjukdagar', t ? t.sjukdagar : 0], [],
-          ['Datum', 'Veckodag', 'Första in', 'Sista ut', 'Brutto', 'Lunch', 'Timmar', 'Område', 'Kund'],
-        ];
-        if (t && t.dagar.length) {
-          for (const d of t.dagar) {
-            rader.push([d.datum, veckodag(d.forstaIn), klocka(d.forstaIn), klocka(d.sistaUt),
-              h2(d.ms), h2(d.lunchMs), h2(d.nettoMs), d.sjuk ? STAMPLING_SJUKDAG : [...d.omraden].join(', '), d.sjuk ? '' : [...d.kunder].join(', ')]);
-          }
-        } else {
-          rader.push(['Inga stämplingar i perioden']);
-        }
-        rader.push([]);
-        rader.push(['Summa', t ? `${t.dagar.length} dagar` : '0 dagar', '', '', t ? r2(t.brutto) : 0, t ? r2(t.lunch) : 0, t ? r2(t.timmar) : 0]);
-        const ws = utils.aoa_to_sheet(rader);
-        ws['!cols'] = [{ wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 16 }, { wch: 28 }];
-        utils.book_append_sheet(wb, ws, excelBladNamn(p.namn, upptagna));
-      }
-
+      // Alla kalenderdagar i perioden, helger röda, frånvaro gul, sammanfattning sist (stamplingExcel.js).
+      const { wb, franEff, tillEff } = byggStamplingArbetsbok({ personer: valdaPersoner, summering, fran: exportFran, till: exportTill });
       const vem = valdaPersoner.length === 1 ? valdaPersoner[0].namn.replace(/[^\wåäöÅÄÖ-]+/g, '_') : `${valdaPersoner.length}-personer`;
-      const per = (exportFran || exportTill) ? `${exportFran || 'start'}_${exportTill || 'idag'}` : new Date().toISOString().slice(0, 10);
-      await sparaArbetsbok(wb, `stampling-${vem}-${per}.xlsx`);
+      await sparaArbetsbok(wb, `stampling-${vem}-${franEff}_${tillEff}.xlsx`);
       setVisaExport(false);
     } catch (e) {
       setExportFel('Kunde inte exportera: ' + (e?.message || e));
@@ -1725,7 +1700,7 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
             <View key={t.userId} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
               <Text style={{ color: c.text }}>{t.namn}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Text style={{ color: c.textMuted, fontSize: 12 }}>{t.dagar.length} dagar{t.sjukdagar ? ` (${t.sjukdagar} sjuk)` : ''} · {t.brutto.toFixed(1)} h − {t.lunch.toFixed(1)} h lunch</Text>
+                <Text style={{ color: c.textMuted, fontSize: 12 }}>{t.arbetsdagar} arbetsdagar{franvaroText(t)} · {t.brutto.toFixed(1)} h − {t.lunch.toFixed(1)} h lunch</Text>
                 <Text style={{ color: c.textRubrik, fontWeight: '600' }}>{t.timmar.toFixed(1)} h</Text>
               </View>
             </View>
@@ -1774,10 +1749,10 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
               </View>
 
               <Text style={{ color: c.textMuted, marginBottom: 6 }}>Typ</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-                {[['in', 'Stämpla IN'], ['ut', 'Stämpla UT'], ['sjuk', 'Sjukdag']].map(([v, label]) => (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                {[['in', 'Stämpla IN'], ['ut', 'Stämpla UT'], ['sjuk', 'Sjukdag'], ['vab', 'VAB'], ['semester', 'Semester']].map(([v, label]) => (
                   <TouchableOpacity key={v} onPress={() => setFormTyp(v)}
-                    style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1,
+                    style={{ flexGrow: 1, flexBasis: '30%', paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1,
                       backgroundColor: formTyp === v ? '#2563eb' : c.input, borderColor: formTyp === v ? '#2563eb' : c.inputBorder }}>
                     <Text style={{ color: formTyp === v ? '#fff' : c.text, fontWeight: '600', fontSize: 12 }}>{label}</Text>
                   </TouchableOpacity>
@@ -1825,16 +1800,19 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
                 </>
               )}
 
-              <Text style={{ color: c.textMuted, marginBottom: 6 }}>{formTyp === 'sjuk' ? 'Datum' : 'Datum och tid'}</Text>
+              <Text style={{ color: c.textMuted, marginBottom: 6 }}>{FRANVARO_FORMTYP[formTyp] ? 'Datum (och Till-datum för en hel period)' : 'Datum och tid'}</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
                 <TextInput
                   style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
                   placeholder="ÅÅÅÅ-MM-DD" placeholderTextColor={c.textMuted} value={formDatum} onChangeText={setFormDatum} />
-                {formTyp !== 'sjuk' && <TextInput
+                {FRANVARO_FORMTYP[formTyp] ? <TextInput
+                  style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  placeholder="Till ÅÅÅÅ-MM-DD (valfritt)" placeholderTextColor={c.textMuted} value={formTillDatum} onChangeText={setFormTillDatum} />
+                : <TextInput
                   style={[um.input, { width: 90, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
                   placeholder="TT:MM" placeholderTextColor={c.textMuted} value={formKlocka} onChangeText={setFormKlocka} />}
               </View>
-              {formTyp === 'sjuk' && <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 12 }}>Sjukdag läggs in som 07:00–16:00 med 1 h lunch = 8 h, och visas som "Sjukdag".</Text>}
+              {!!FRANVARO_FORMTYP[formTyp] && <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 12 }}>{FRANVARO_FORMTYP[formTyp]} läggs in som 07:00–16:00 med 1 h lunch = 8 h per dag och visas som "{FRANVARO_FORMTYP[formTyp]}". Med Till-datum läggs hela perioden in och helger/röda dagar hoppas över.</Text>}
 
               {formFel ? <Text style={{ color: '#ef4444', marginBottom: 8 }}>{formFel}</Text> : null}
               <TouchableOpacity style={[um.laggKnapp, formSkickar && { opacity: 0.6 }]} disabled={formSkickar} onPress={sparaFormular}>
@@ -1883,7 +1861,7 @@ function StamplingLogg({ token, anvandare, kunder, c }) {
                   placeholder="Till ÅÅÅÅ-MM-DD" placeholderTextColor={c.textMuted} value={exportTill} onChangeText={setExportTill} />
               </View>
               <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 12 }}>
-                Varje blad: en rad per arbetsdag med första in, sista ut, brutto, lunch (1 h) och timmar, samt summa. Sjukdagar visas som "Sjukdag". Bladet Summering först.
+                Varje blad: alla dagar i perioden (helger och röda dagar rödmarkerade) med första in, sista ut, brutto, lunch (1 h) och timmar, sammanfattning sist. Sjukdag, VAB och Semester visas med gul bakgrund. Bladet Summering först.
               </Text>
               {!!exportFel && <Text style={{ color: '#ef4444', marginBottom: 10 }}>{exportFel}</Text>}
               <TouchableOpacity style={[um.laggKnapp, { backgroundColor: '#0f766e' }, exporterar && { opacity: 0.6 }]} disabled={exporterar} onPress={exporteraStamplingExcel}>
