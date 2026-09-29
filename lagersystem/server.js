@@ -133,6 +133,31 @@ app.post('/api/ecw-filer/intern', (req, res) => {
   _writeJSONEarly(_ECW_INDEX_EARLY, index);
   res.json({ ok: true });
 });
+// ASE60-generatorn stryker en INAKTUELL fil fran kundkortet: den nastade
+// ytterkarmen (487850A_..._NEST_*.ECW) nar en ny export inte gav nagon NEST-fil
+// (varning/utan sagkap) — annars ligger den gamla NEST-filen med gamla matt
+// kvar bredvid den nya vanliga filen, och U-synken speglar den.
+app.post('/api/ecw-filer/intern/ta-bort', (req, res) => {
+  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
+  const { projectId, filenames } = req.body || {};
+  // Bara NEST-filer kan strykas den här vägen — inget annat på kundkortet.
+  const nest = Array.isArray(filenames) ? filenames.map(String).filter((f) => /_NEST(?:[_.]|$)/i.test(f)) : [];
+  if (!projectId || nest.length === 0) return res.status(400).json({ error: 'Saknar data' });
+  const nycklar = new Set(nest.map((f) => filnamnsNyckel(f.replace(/[^a-z0-9._-]/gi, '_'))));
+  const index = _readJSONEarly(_ECW_INDEX_EARLY, []);
+  const kvar = [];
+  let borttagna = 0;
+  for (const rad of index) {
+    if (rad.projectId === projectId && /_NEST(?:[_.]|$)/i.test(rad.filename || '') && nycklar.has(filnamnsNyckel(rad.filename))) {
+      try { if (rad.filePath && fs.existsSync(rad.filePath)) fs.rmSync(rad.filePath, { force: true }); } catch {}
+      borttagna++;
+    } else {
+      kvar.push(rad);
+    }
+  }
+  if (borttagna > 0) _writeJSONEarly(_ECW_INDEX_EARLY, kvar);
+  res.json({ ok: true, borttagna });
+});
 
 // PDF-dokument (ritningar/beredning från ASE60 och Uterum-Konfiguratorn) per
 // kund/projekt. Två format tas emot:

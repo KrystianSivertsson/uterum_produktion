@@ -59,4 +59,5 @@ data/stampling.json
 /ios
 /android
 tools/sync-u.config.json
+tools/sync-u-manifest.json
 tools/sync-u-live.log
