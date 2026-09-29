@@ -400,6 +400,29 @@ app.delete('/api/users/:id', authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin byter en användares visningsnamn (Krystian 2026-09-29: "Emil L ska
+// heta Emil Lundstedt"). Följer med i inloggade sessioner och i användarens
+// stämplingar — de sparar namnet vid stämplingen, och listor/Excel visar det.
+app.patch('/api/users/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const namn = String(req.body?.namn || '').trim();
+  if (!namn) return res.status(400).json({ error: 'Visningsnamn saknas' });
+  const users = readJSON(USERS_FILE, []);
+  const idx = users.findIndex(u => u.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Hittades ej' });
+  users[idx].namn = namn;
+  writeJSON(USERS_FILE, users);
+  const tokens = readJSON(TOKENS_FILE, {});
+  let tokAndrad = false;
+  Object.keys(tokens).forEach(t => { if (tokens[t].id === req.params.id) { tokens[t].namn = namn; tokAndrad = true; } });
+  if (tokAndrad) writeJSON(TOKENS_FILE, tokens);
+  const stamplingar = readJSON(STAMPLING_FILE, []);
+  let antal = 0;
+  for (const s of stamplingar) if (s.userId === req.params.id && s.namn !== namn) { s.namn = namn; antal++; }
+  if (antal) writeJSON(STAMPLING_FILE, stamplingar);
+  res.json({ ok: true, namn, stamplingar: antal });
+});
+
 // Admin sätter/återställer en användares 4-siffriga stämplings-PIN.
 app.patch('/api/users/:id/pin', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });

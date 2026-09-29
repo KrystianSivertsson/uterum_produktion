@@ -1051,6 +1051,9 @@ function AnvandarHantering({ token, onStang }) {
   const [pinRedigerarId, setPinRedigerarId] = useState(null);
   const [pinVarde, setPinVarde] = useState('');
   const [pinFel, setPinFel] = useState('');
+  const [namnRedigerarId, setNamnRedigerarId] = useState(null);
+  const [namnVarde, setNamnVarde] = useState('');
+  const [namnFel, setNamnFel] = useState('');
 
   useEffect(() => { hamtaAnvandare(); }, []);
 
@@ -1069,6 +1072,20 @@ function AnvandarHantering({ token, onStang }) {
     const data = await res.json();
     if (!res.ok) { setPinFel(data.error); return; }
     setPinRedigerarId(null); setPinVarde(''); setPinFel('');
+    hamtaAnvandare();
+  };
+
+  const sparaNamn = async (id) => {
+    const namn = namnVarde.trim();
+    if (!namn) { setNamnFel('Skriv ett visningsnamn'); return; }
+    const res = await fetch(`${API}/api/users/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ namn }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setNamnFel(data.error); return; }
+    setNamnRedigerarId(null); setNamnVarde(''); setNamnFel('');
     hamtaAnvandare();
   };
 
@@ -1112,7 +1129,12 @@ function AnvandarHantering({ token, onStang }) {
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity
                       style={[um.taBortKnapp, { backgroundColor: '#dbeafe' }]}
-                      onPress={() => { setPinRedigerarId(pinRedigerarId === item.id ? null : item.id); setPinVarde(''); setPinFel(''); }}>
+                      onPress={() => { setNamnRedigerarId(namnRedigerarId === item.id ? null : item.id); setNamnVarde(item.namn || ''); setNamnFel(''); setPinRedigerarId(null); }}>
+                      <Text style={[um.taBortText, { color: '#2563eb' }]}>Byt namn</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[um.taBortKnapp, { backgroundColor: '#dbeafe' }]}
+                      onPress={() => { setPinRedigerarId(pinRedigerarId === item.id ? null : item.id); setPinVarde(''); setPinFel(''); setNamnRedigerarId(null); }}>
                       <Text style={[um.taBortText, { color: '#2563eb' }]}>{item.harPin ? 'Byt PIN' : 'Sätt PIN'}</Text>
                     </TouchableOpacity>
                     {item.username !== 'admin' &&
@@ -1134,6 +1156,19 @@ function AnvandarHantering({ token, onStang }) {
                   </View>
                 )}
                 {pinRedigerarId === item.id && pinFel ? <Text style={{ color: '#ef4444', marginTop: 6, fontSize: 12 }}>{pinFel}</Text> : null}
+                {namnRedigerarId === item.id && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[um.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                      placeholder="Visningsnamn" placeholderTextColor={c.textMuted}
+                      value={namnVarde} onChangeText={setNamnVarde}
+                      onSubmitEditing={() => sparaNamn(item.id)} autoFocus />
+                    <TouchableOpacity style={[um.laggKnapp, { paddingHorizontal: 14 }]} onPress={() => sparaNamn(item.id)}>
+                      <Text style={um.laggText}>Spara</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {namnRedigerarId === item.id && namnFel ? <Text style={{ color: '#ef4444', marginTop: 6, fontSize: 12 }}>{namnFel}</Text> : null}
               </View>
             )}
           />
