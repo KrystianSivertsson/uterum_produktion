@@ -1102,8 +1102,21 @@ function AnvandarHantering({ token, onStang }) {
     hamtaAnvandare();
   };
 
-  const taBort = async (id) => {
-    await fetch(`${API}/api/users/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+  // Radering kräver raderingskoden (Krystian 2026-10-09) — tidigare raderades
+  // användaren direkt på ett klick, utan fråga.
+  const taBort = async (item) => {
+    const kod = window.prompt(`Ta bort ${item.namn} (@${item.username})?\n\nSkriv raderingskoden:`);
+    if (kod == null) return;
+    const res = await fetch(`${API}/api/users/${item.id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ kod }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      window.alert(data.error || 'Kunde inte ta bort användaren');
+      return;
+    }
     hamtaAnvandare();
   };
 
@@ -1124,7 +1137,7 @@ function AnvandarHantering({ token, onStang }) {
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View>
                     <Text style={[um.radNamn, { color: c.textRubrik }]}>{item.namn}</Text>
-                    <Text style={[um.radUser, { color: c.textMuted }]}>@{item.username} · {item.roll} · PIN: {item.harPin ? '✓ satt' : '— ej satt'}</Text>
+                    <Text style={[um.radUser, { color: c.textMuted }]}>@{item.username} · {item.roll} · PIN: {item.harPin ? '✓ satt' : '— ej satt'}{item.doljIStampling ? ' · dold i stämpling' : ''}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity
@@ -1138,7 +1151,7 @@ function AnvandarHantering({ token, onStang }) {
                       <Text style={[um.taBortText, { color: '#2563eb' }]}>{item.harPin ? 'Byt PIN' : 'Sätt PIN'}</Text>
                     </TouchableOpacity>
                     {item.username !== 'admin' &&
-                      <TouchableOpacity style={um.taBortKnapp} onPress={() => taBort(item.id)}>
+                      <TouchableOpacity style={um.taBortKnapp} onPress={() => taBort(item)}>
                         <Text style={um.taBortText}>Ta bort</Text>
                       </TouchableOpacity>}
                   </View>

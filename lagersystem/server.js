@@ -401,7 +401,8 @@ app.get('/api/me', authMiddleware, (req, res) => res.json(req.user));
 app.get('/api/users', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
   const users = readJSON(USERS_FILE, []);
-  res.json(users.map(u => ({ id: u.id, username: u.username, roll: u.role, namn: u.namn, harPin: !!u.pinHash })));
+  res.json(users.map(u => ({ id: u.id, username: u.username, roll: u.role, namn: u.namn, harPin: !!u.pinHash,
+    doljIStampling: !!u.doljIStampling })));
 });
 
 app.post('/api/users', authMiddleware, (req, res) => {
@@ -421,8 +422,30 @@ app.post('/api/users', authMiddleware, (req, res) => {
   res.json({ id: newUser.id, username: newUser.username, roll: newUser.role, namn: newUser.namn });
 });
 
+// Raderingskod (Krystian 2026-10-09 "för att radera någon behövs lösen 1170
+// och det ska vara satt"): att ta bort en användare kräver koden. Den ligger
+// hashad i data/installningar.json (inte i koden); utan satt kod går det
+// inte att radera alls. Sätts/byts med PUT /api/installningar/raderakod.
+const INSTALLNINGAR_FILE = path.join(DATA_DIR, 'installningar.json');
+const raderaKodOk = (kod) => {
+  const inst = readJSON(INSTALLNINGAR_FILE, {});
+  return !!inst.raderaKodHash && kod != null && hash(String(kod)) === inst.raderaKodHash;
+};
+app.put('/api/installningar/raderakod', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const { kod, nuvarandeKod } = req.body || {};
+  if (!String(kod || '').trim()) return res.status(400).json({ error: 'Ange en kod' });
+  const inst = readJSON(INSTALLNINGAR_FILE, {});
+  if (inst.raderaKodHash && !raderaKodOk(nuvarandeKod)) return res.status(401).json({ error: 'Fel nuvarande kod' });
+  inst.raderaKodHash = hash(String(kod).trim());
+  writeJSON(INSTALLNINGAR_FILE, inst);
+  res.json({ ok: true });
+});
+
 app.delete('/api/users/:id', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  if (!readJSON(INSTALLNINGAR_FILE, {}).raderaKodHash) return res.status(403).json({ error: 'Ingen raderingskod satt — radering är spärrad' });
+  if (!raderaKodOk(req.body?.kod)) return res.status(401).json({ error: 'Fel raderingskod' });
   const users = readJSON(USERS_FILE, []);
   const kvar = users.filter(u => u.id !== req.params.id);
   if (kvar.length === users.length) return res.status(404).json({ error: 'Hittades ej' });
@@ -451,6 +474,32 @@ app.patch('/api/users/:id', authMiddleware, (req, res) => {
   for (const s of stamplingar) if (s.userId === req.params.id && s.namn !== namn) { s.namn = namn; antal++; }
   if (antal) writeJSON(STAMPLING_FILE, stamplingar);
   res.json({ ok: true, namn, stamplingar: antal });
+});
+
+// Admin sätter en användares inloggningslösenord (Krystian 2026-10-09 "byt
+// det lösen på krystian") — /api/me/password kräver det gamla lösenordet.
+app.patch('/api/users/:id/losen', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const losen = String(req.body?.losen || '');
+  if (!losen) return res.status(400).json({ error: 'Lösenord saknas' });
+  const users = readJSON(USERS_FILE, []);
+  const idx = users.findIndex(u => u.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Hittades ej' });
+  users[idx].password = hash(losen);
+  writeJSON(USERS_FILE, users);
+  res.json({ ok: true });
+});
+
+// Dölj/visa en användare i stämplingen (Krystian 2026-10-09 "visa inte honom
+// i stämpling") — kontot finns kvar, men syns inte i stämplingens listor.
+app.patch('/api/users/:id/stampling', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
+  const users = readJSON(USERS_FILE, []);
+  const idx = users.findIndex(u => u.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Hittades ej' });
+  users[idx].doljIStampling = req.body?.dold === true;
+  writeJSON(USERS_FILE, users);
+  res.json({ ok: true, doljIStampling: users[idx].doljIStampling });
 });
 
 // Admin sätter/återställer en användares 4-siffriga stämplings-PIN.
@@ -519,7 +568,7 @@ app.get('/api/stampling/anvandare', authMiddleware, (req, res) => {
     const prev = senaste.get(e.userId);
     if (!prev || e.tid > prev.tid) senaste.set(e.userId, e);
   }
-  res.json(users.filter(u => u.username !== 'admin').map(u => {
+  res.json(users.filter(u => u.username !== 'admin' && !u.doljIStampling).map(u => {
     const sisteEvent = senaste.get(u.id) || null;
     const arInne = sisteEvent && sisteEvent.typ === 'in';
     return {
