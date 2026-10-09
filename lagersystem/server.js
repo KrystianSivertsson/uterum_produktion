@@ -406,11 +406,16 @@ app.get('/api/users', authMiddleware, (req, res) => {
 
 app.post('/api/users', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
-  const { username, password, roll, namn } = req.body;
+  const { username, password, roll, namn, id } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Användarnamn och lösenord krävs' });
   const users = readJSON(USERS_FILE, []);
   if (users.find(u => u.username === username)) return res.status(400).json({ error: 'Användarnamn finns redan' });
-  const newUser = { id: Date.now().toString(), username, password: hash(password), role: roll || 'user', namn: namn || username };
+  // Återställ en borttagen användare med SAMMA id (Krystian 2026-10-09,
+  // Marcin): stämplingarna pekar på userId, ett nytt id tappar kopplingen.
+  if (id != null && (!/^\d+$/.test(String(id)) || users.some(u => u.id === String(id)))) {
+    return res.status(400).json({ error: 'Ogiltigt eller upptaget id' });
+  }
+  const newUser = { id: id != null ? String(id) : Date.now().toString(), username, password: hash(password), role: roll || 'user', namn: namn || username };
   users.push(newUser);
   writeJSON(USERS_FILE, users);
   res.json({ id: newUser.id, username: newUser.username, roll: newUser.role, namn: newUser.namn });
