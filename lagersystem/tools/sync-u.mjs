@@ -10,6 +10,7 @@
  * utan v2/v3-suffix, så revisioner av samma kund hamnar i SAMMA mapp.
  *
  * Kör:  node tools/sync-u.mjs            (eller dubbelklicka sync-u.bat)
+ *       node tools/sync-u.mjs --kund Forssell   bara kundmappar som innehåller texten
  *       node tools/sync-u.mjs --torr     visar vad som skulle hämtas
  *
  * Inloggning läses ur miljövariabler eller tools/sync-u.config.json:
@@ -24,6 +25,12 @@ import { fileURLToPath } from 'node:url';
 
 const HAR = path.dirname(fileURLToPath(import.meta.url));
 const TORR = process.argv.includes('--torr');
+// --kund "<del av namnet>": synka bara den/de kundmappar vars namn innehåller
+// texten (Krystian 2026-10-12, en kunds tömda mapp utan att röra andra).
+const KUND = (() => {
+  const i = process.argv.indexOf('--kund');
+  return i >= 0 && process.argv[i + 1] ? String(process.argv[i + 1]).toLowerCase() : null;
+})();
 
 // Vissa dokument (ASS32-profilbladet, träkonstruktionen) skickas till lagret
 // som HTML — de är byggda för webbläsarens "Spara som PDF". I kundmappen vill
@@ -318,6 +325,7 @@ export async function synkaEnGang({ tyst = false } = {}) {
 
   let nya = 0, fanns = 0, mappar = 0, borttagna = 0;
   for (const [mapp, kort] of perMapp) {
+    if (KUND && !mapp.toLowerCase().includes(KUND)) continue;
     if (skyddade.has(mapp.toLowerCase())) {
       if (!tyst) console.log(`  ${mapp}: skyddad mapp — rörs inte`);
       continue;
