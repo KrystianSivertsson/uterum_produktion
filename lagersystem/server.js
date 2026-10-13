@@ -1072,6 +1072,28 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
       } catch { /* faller tillbaka pa bitlistan nedan */ }
     }
 
+    // Glaskilar (Schüco AWS 70.HI, fasta trapetspartier i gavlarna) — följer
+    // med ASE60 vid AKTIVERA och sparas per projekt i generatorn, så avdraget
+    // räknar av dem från kunden direkt (Krystian 2026-10-13 "i alla system så
+    // det räknas av från kunden direkt"): 358170-stänger + lister, tätningar,
+    // tillbehör och glas (GLAS-raderna hamnar under Glas-fliken).
+    try {
+      const kr = await ase60Fetch(`/api/aws70kil/lager-atgang/${encodeURIComponent(req.params.projectId)}`);
+      if (kr.ok) {
+        const kd = await kr.json();
+        if (Array.isArray(kd.stanger)) stanger.push(...kd.stanger.filter(s => s.antalStanger > 0));
+        if (Array.isArray(kd.ovrigt)) {
+          profiler.push(...kd.ovrigt.map(o => ({
+            artikel: o.artikel,
+            beskrivning: o.benamning,
+            langdMm: o.langdMm || null,
+            antal: o.antal,
+            enhet: o.enhet || 'st',
+          })));
+        }
+      }
+    } catch { /* generatorn utan glaskil-stöd — inget att lägga till */ }
+
     const serier = [...new Set(proj.units.map(u => u && u.series).filter(Boolean))];
     res.json({ projekt: proj.name || '', serier, profiler, stanger, bomWarnings });
   } catch {
