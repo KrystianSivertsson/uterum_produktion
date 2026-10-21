@@ -4593,6 +4593,11 @@ export default function App() {
   // Langd per bit/rulle. "9 rullar a 40 m" ska bli 9 st och 360 m i lagret —
   // inte 40. Samma falt anvands for profiler ("12 stanger a 6000 mm").
   const [formLangdPerBit, setFormLangdPerBit] = useState('');
+  // Enhet 'pkt' = "18 pkt a 100 st": saldot ar kvar i paketets innehall (1800
+  // st), som ar st ELLER m (viss plast ar styckvara, inte metervara). Antal per
+  // paket sparas pa produkten (perPaket) och fylls i nasta gang.
+  const [formPerPaket, setFormPerPaket] = useState('');
+  const [formPaketEnhet, setFormPaketEnhet] = useState('st');
   const [visaAnvandare, setVisaAnvandare] = useState(false);
   const [visaChat, setVisaChat] = useState(false);
   const [andringslogg, setAndringslogg] = useState([]);
@@ -5733,6 +5738,7 @@ export default function App() {
     setFormKategori(aktivFlik === 'Alla produkter' || arRitning || arAndringslogg || arStampling || arAse60 || arSimulering || arSammanstallning || arLagerforslag || arPlanering || arBeredning ? '' : aktivFlik);
     setFormMinAntal('5'); setFormEnhet('st');
     setFormBild(null); setFormFarger([]); setFormLangder([]); setFormLangdPerBit('');
+    setFormPerPaket(''); setFormPaketEnhet('st');
     setModalVisible(true);
   };
 
@@ -5749,19 +5755,36 @@ export default function App() {
     setFormFarger([]);
     setFormLangder([]);
     setFormLangdPerBit('');
+    setFormPerPaket(produkt.perPaket ? String(produkt.perPaket) : '');
+    setFormPaketEnhet(produkt.enhet === 'm' ? 'm' : 'st');
     setModalVisible(true);
   };
 
   const sparaProdukt = () => {
     if (!formNamn.trim()) { Alert.alert('Fel', 'Namn krävs'); return; }
+    // Paket: antalet (och färgradernas antal) är paket. Saldot räknas i
+    // paketets innehåll, st eller m, och det blir produktens enhet — därefter
+    // går allt som om innehållet hade skrivits in direkt.
+    const arPaket = formEnhet === 'pkt';
+    const enhet = arPaket ? formPaketEnhet : formEnhet;
+    const perPaket = parseFloat(String(formPerPaket).replace(',', '.')) || 0;
+    if (arPaket && perPaket <= 0) { Alert.alert('Fel', `Ange hur många ${enhet} det är per paket`); return; }
+    const gange = arPaket ? perPaket : 1;
     const fargerMedAntal = formFarger.filter(f => f.farg.trim() && parseInt(f.antal) > 0);
+    // Färgradernas antal är bitar/rullar på en längd — paket med meter i går
+    // inte att räkna om till sådana rader.
+    if (arPaket && enhet === 'm' && fargerMedAntal.length > 0) { Alert.alert('Fel', 'Paket med meter kan inte fördelas på färgrader — skriv antal paket i toppfältet'); return; }
     const antalFranFarger = fargerMedAntal.length > 0
-      ? fargerMedAntal.reduce((s, f) => s + (parseInt(f.antal) || 0), 0)
+      ? fargerMedAntal.reduce((s, f) => s + (parseInt(f.antal) || 0) * gange, 0)
       : null;
     // Metervara kan tas ut i decimaler ("2,5 m") — parseInt hade gjort 2 av det.
     const antalText = String(formAntal).replace(',', '.');
+    const antalPaket = arPaket ? (parseInt(antalText) || 0) : 0;
     const uttag = antalFranFarger !== null ? antalFranFarger
+      : arPaket ? antalPaket * perPaket
       : (formEnhet === 'm' ? (parseFloat(antalText) || 0) : (parseInt(antalText) || 0));
+    const paketText = arPaket ? ` = ${antalFranFarger !== null ? antalFranFarger / perPaket : antalPaket} pkt à ${fmtMm(perPaket)} ${enhet}` : '';
+    const paketFalt = arPaket ? { perPaket } : (redigeraProdukt?.perPaket ? { perPaket: redigeraProdukt.perPaket } : {});
     const arPafyllning = formRiktning === 'pafyllning';
     const antal = redigeraProdukt
       ? (arPafyllning
@@ -5770,7 +5793,7 @@ export default function App() {
       : uttag;
     const minAntal = parseInt(formMinAntal) || 5;
     const genomfor = () => {
-      const fargerUttag = formFarger.filter(f => f.farg.trim()).map(f => ({ farg: f.farg.trim(), langd: tillMm(f.langd), antal: parseInt(f.antal) || 0 }));
+      const fargerUttag = formFarger.filter(f => f.farg.trim()).map(f => ({ farg: f.farg.trim(), langd: tillMm(f.langd), antal: (parseInt(f.antal) || 0) * gange }));
       const langder = formLangder.filter(l => l.langd).map(l => ({ langd: parseFloat(l.langd) || 0, antal: parseInt(l.antal) || 0 }));
       let nyLista;
       if (redigeraProdukt) {
@@ -5782,13 +5805,13 @@ export default function App() {
 
         // "9 rullar a 40 m" / "12 stanger a 6000 mm": langden galler antalet i
         // toppfaltet och blir en langdrad utan farg, inte bara en siffra.
-        const bitLangd = tillMm(formLangdPerBit);
+        const bitLangd = arPaket ? 0 : tillMm(formLangdPerBit);
         const harRullar = farglistaRader(redigeraProdukt).length > 0;
 
         // METERUTTAG ur rulle: "ta ut 2,5 m" ska kapa den PABORJADE rullen, inte
         // dra 2 rullar ur saldot. Basta passning tar minsta rulle som racker, sa
         // en oppnad rulle tommas innan en ny brytes.
-        if (!bitLangd && formEnhet === 'm' && harRullar && !arPafyllning && uttag > 0 && fargerUttag.length === 0) {
+        if (!bitLangd && enhet === 'm' && harRullar && !arPafyllning && uttag > 0 && fargerUttag.length === 0) {
           const meterMm = Math.round(uttag * 1000);
           const r = taUtLangd(nyFarger, redigeraProdukt, '', meterMm, 1);
           nyFarger = r.farger;
@@ -5836,12 +5859,12 @@ export default function App() {
         // lämnar en kapbit tar bort en stång och lägger till en bit, så antalet
         // bitar kan stå still medan löpmetern sjunker.
         const antalEfter = nyFarger.length > 0 ? nyFarger.reduce((sum, f) => sum + (parseInt(f.antal) || 0), 0) : antal;
-        if (uttag > 0) andringar.push({ falt: arPafyllning ? 'Påfyllning' : 'Uttag', fran: `${gammal.antal}${gammal.enhet||'st'}`, till: `${antalEfter}${formEnhet} (${arPafyllning ? '+' : '-'}${uttag})` });
-        if ((gammal.enhet||'st') !== formEnhet) andringar.push({ falt: 'Enhet', fran: gammal.enhet||'st', till: formEnhet });
+        if (uttag > 0) andringar.push({ falt: arPafyllning ? 'Påfyllning' : 'Uttag', fran: `${gammal.antal}${gammal.enhet||'st'}`, till: `${antalEfter}${enhet} (${arPafyllning ? '+' : '-'}${uttag}${paketText})` });
+        if ((gammal.enhet||'st') !== enhet) andringar.push({ falt: 'Enhet', fran: gammal.enhet||'st', till: enhet });
         if (gammal.kategori !== formKategori.trim()) andringar.push({ falt: 'Kategori', fran: gammal.kategori, till: formKategori.trim() });
         if (gammal.minAntal !== minAntal) andringar.push({ falt: 'Varningsgräns', fran: String(gammal.minAntal), till: String(minAntal) });
         if (kapLogg.length > 0) andringar.push({ falt: 'Kapbitar', fran: '', till: kapLogg.join(' · ') });
-        const uppdaterad = { ...redigeraProdukt, namn: formNamn.trim(), artikel: formArtikel.trim(), antal: antalEfter, kategori: formKategori.trim(), minAntal, enhet: formEnhet, bild: formBild, farger: nyFarger, langder };
+        const uppdaterad = { ...redigeraProdukt, namn: formNamn.trim(), artikel: formArtikel.trim(), antal: antalEfter, kategori: formKategori.trim(), minAntal, enhet, ...paketFalt, bild: formBild, farger: nyFarger, langder };
         nyLista = produkter.map(p => p.id === redigeraProdukt.id ? uppdaterad : p);
         if (valdProdukt?.id === redigeraProdukt.id) setValdProdukt(uppdaterad);
         if (andringar.length > 0 && token) {
@@ -5855,7 +5878,7 @@ export default function App() {
         nyLista = [...produkter, {
           id: Date.now().toString(),
           namn: formNamn.trim(), artikel: formArtikel.trim(), antal,
-          kategori: formKategori.trim(), minAntal, enhet: formEnhet,
+          kategori: formKategori.trim(), minAntal, enhet, ...paketFalt,
           bild: formBild, farger: fargerUttag, langder,
         }];
       }
@@ -7278,7 +7301,14 @@ export default function App() {
               ))}
             </View>
 
-            <Text style={[styles.inputLabel, { color: c.textMuted }]}>{redigeraProdukt ? (formRiktning === 'pafyllning' ? `Antal att fylla på (i lager nu: ${redigeraProdukt.antal ?? 0}${redigeraProdukt.enhet || 'st'})` : `Antal att ta ut (i lager nu: ${redigeraProdukt.antal ?? 0}${redigeraProdukt.enhet || 'st'})`) : 'Antal i lager'}</Text>
+            {(() => {
+              // "i lager nu: 1800st ≈ 18 pkt" när paketstorleken är känd
+              const iLager = redigeraProdukt ? `${redigeraProdukt.antal ?? 0}${redigeraProdukt.enhet || 'st'}${redigeraProdukt.perPaket ? ` ≈ ${fmtMm((redigeraProdukt.antal || 0) / redigeraProdukt.perPaket)} pkt à ${fmtMm(redigeraProdukt.perPaket)}` : ''}` : '';
+              const vad = formEnhet === 'pkt' ? 'Antal paket' : 'Antal';
+              return (
+                <Text style={[styles.inputLabel, { color: c.textMuted }]}>{redigeraProdukt ? (formRiktning === 'pafyllning' ? `${vad} att fylla på (i lager nu: ${iLager})` : `${vad} att ta ut (i lager nu: ${iLager})`) : `${vad} i lager`}</Text>
+              );
+            })()}
             {(() => {
               const fargSumma = formFarger.filter(f => f.farg.trim() && parseInt(f.antal) > 0).reduce((s, f) => s + (parseInt(f.antal) || 0), 0);
               const harFargAntal = formFarger.some(f => f.farg.trim() && parseInt(f.antal) > 0);
@@ -7290,11 +7320,11 @@ export default function App() {
                           {fargSumma} <Text style={{ fontSize: 12 }}>(summa färger)</Text>
                         </Text>
                       </View>
-                    : <TextInput style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]} placeholder="Antal" placeholderTextColor={c.textMuted}
+                    : <TextInput style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]} placeholder={formEnhet === 'pkt' ? 'Antal paket' : 'Antal'} placeholderTextColor={c.textMuted}
                         value={formAntal} onChangeText={setFormAntal} keyboardType="numeric" />
                   }
                   <View style={{ flexDirection: 'row', gap: 6 }}>
-                    {['st', 'm'].map(e => (
+                    {['st', 'm', 'pkt'].map(e => (
                       <TouchableOpacity key={e}
                         style={[styles.kategoriKnapp, { backgroundColor: c.input, paddingHorizontal: 18 }, formEnhet === e && styles.kategoriKnappAktiv]}
                         onPress={() => setFormEnhet(e)}>
@@ -7306,19 +7336,54 @@ export default function App() {
               );
             })()}
 
-            {/* Längd per bit/rulle — "9 rullar à 40 m" i stället för bara 40 */}
-            <Text style={[styles.inputLabel, { color: c.textMuted }]}>
-              {formEnhet === 'm' ? 'Längd per rulle (m) — valfritt' : 'Längd per bit (mm) — valfritt'}
-            </Text>
-            <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
-              placeholder={formEnhet === 'm' ? 'T.ex. 40 → antalet ovan blir antal rullar' : 'T.ex. 6000 → antalet ovan blir antal stänger'}
-              placeholderTextColor={c.textMuted} keyboardType="numeric"
-              value={formLangdPerBit} onChangeText={setFormLangdPerBit} />
-            {!!formLangdPerBit && (parseInt(formAntal) || 0) > 0 && (
-              <Text style={{ color: c.textMuted, fontSize: 12, marginTop: -8, marginBottom: 12 }}>
-                = {parseInt(formAntal)} st à {formLangdPerBit} {formEnhet === 'm' ? 'm' : 'mm'}
-                {' '}({((tillMm(formLangdPerBit) * (parseInt(formAntal) || 0)) / 1000).toFixed(1)} m totalt)
-              </Text>
+            {formEnhet === 'pkt' ? (
+              <>
+                {/* Paket — "18 pkt à 100 st"; innehållet är st (styckvara) eller m */}
+                <Text style={[styles.inputLabel, { color: c.textMuted }]}>Innehåll per paket</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                  <TextInput style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                    placeholder={formPaketEnhet === 'm' ? 'T.ex. 25 → meter per paket' : 'T.ex. 100 → styck per paket'}
+                    placeholderTextColor={c.textMuted} keyboardType="numeric"
+                    value={formPerPaket} onChangeText={setFormPerPaket} />
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    {['st', 'm'].map(e => (
+                      <TouchableOpacity key={e}
+                        style={[styles.kategoriKnapp, { backgroundColor: c.input, paddingHorizontal: 18 }, formPaketEnhet === e && styles.kategoriKnappAktiv]}
+                        onPress={() => setFormPaketEnhet(e)}>
+                        <Text style={[styles.kategoriText, { color: c.text }, formPaketEnhet === e && styles.kategoriTextAktiv]}>{e}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+                {(() => {
+                  const per = parseFloat(String(formPerPaket).replace(',', '.')) || 0;
+                  const pkt = formFarger.some(f => f.farg.trim() && parseInt(f.antal) > 0)
+                    ? formFarger.filter(f => f.farg.trim() && parseInt(f.antal) > 0).reduce((s, f) => s + (parseInt(f.antal) || 0), 0)
+                    : (parseInt(formAntal) || 0);
+                  return per > 0 && pkt > 0 ? (
+                    <Text style={{ color: c.textMuted, fontSize: 12, marginTop: -4, marginBottom: 12 }}>
+                      = {pkt} pkt à {fmtMm(per)} {formPaketEnhet} ({fmtMm(pkt * per)} {formPaketEnhet} totalt)
+                    </Text>
+                  ) : null;
+                })()}
+              </>
+            ) : (
+              <>
+                {/* Längd per bit/rulle — "9 rullar à 40 m" i stället för bara 40 */}
+                <Text style={[styles.inputLabel, { color: c.textMuted }]}>
+                  {formEnhet === 'm' ? 'Längd per rulle (m) — valfritt' : 'Längd per bit (mm) — valfritt'}
+                </Text>
+                <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
+                  placeholder={formEnhet === 'm' ? 'T.ex. 40 → antalet ovan blir antal rullar' : 'T.ex. 6000 → antalet ovan blir antal stänger'}
+                  placeholderTextColor={c.textMuted} keyboardType="numeric"
+                  value={formLangdPerBit} onChangeText={setFormLangdPerBit} />
+                {!!formLangdPerBit && (parseInt(formAntal) || 0) > 0 && (
+                  <Text style={{ color: c.textMuted, fontSize: 12, marginTop: -8, marginBottom: 12 }}>
+                    = {parseInt(formAntal)} st à {formLangdPerBit} {formEnhet === 'm' ? 'm' : 'mm'}
+                    {' '}({((tillMm(formLangdPerBit) * (parseInt(formAntal) || 0)) / 1000).toFixed(1)} m totalt)
+                  </Text>
+                )}
+              </>
             )}
 
             {inloggad.roll === 'admin' && (
@@ -7367,7 +7432,9 @@ export default function App() {
               </View>
               {redigeraProdukt && (
                 <Text style={{ color: c.textMuted, fontSize: 11, marginBottom: 8, lineHeight: 16 }}>
-                  {formRiktning === 'pafyllning'
+                  {formEnhet === 'pkt'
+                    ? `Antalet på färgraden är PAKET. Saldot räknas i ${formPaketEnhet} (paket × innehåll).`
+                    : formRiktning === 'pafyllning'
                     ? `Längd = bitarnas längd i mm. Lämnas den tom räknas de som hela stänger (${stangLangdMm(redigeraProdukt)} mm).`
                     : formEnhet === 'm'
                       ? `Antalet är METER att ta ut. Uttaget fortsätter på den påbörjade rullen tills den är slut; rester under ${RULL_MIN_SPAR_MM / 1000} m är spill.`
@@ -7385,7 +7452,7 @@ export default function App() {
                       placeholder="Längd (mm)" placeholderTextColor={c.textMuted} keyboardType="numeric"
                       value={f.langd} onChangeText={v => setFormFarger(prev => prev.map((x, j) => j === i ? { ...x, langd: v } : x))} />
                     <TextInput style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: c.input, borderColor: c.inputBorder, color: c.inputText }]}
-                      placeholder="Antal st" placeholderTextColor={c.textMuted} keyboardType="numeric"
+                      placeholder={formEnhet === 'pkt' ? 'Antal pkt' : 'Antal st'} placeholderTextColor={c.textMuted} keyboardType="numeric"
                       value={f.antal} onChangeText={v => setFormFarger(prev => prev.map((x, j) => j === i ? { ...x, antal: v } : x))} />
                     <TouchableOpacity onPress={() => setFormFarger(prev => prev.filter((_, j) => j !== i))}>
                       <Text style={{ color: '#ef4444', fontSize: 18, paddingHorizontal: 4 }}>✕</Text>
