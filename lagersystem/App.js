@@ -5744,7 +5744,8 @@ export default function App() {
 
   const oppnaRedigera = (produkt) => {
     setRedigeraProdukt(produkt);
-    setFormRiktning('uttag');
+    // Tomt lager: inget att ta ut, så rutan öppnar på Påfyllning.
+    setFormRiktning((produkt.antal || 0) > 0 ? 'uttag' : 'pafyllning');
     setFormNamn(produkt.namn);
     setFormArtikel(produkt.artikel || '');
     setFormAntal('');
@@ -5762,18 +5763,20 @@ export default function App() {
 
   const sparaProdukt = () => {
     if (!formNamn.trim()) { Alert.alert('Fel', 'Namn krävs'); return; }
+    // Alert.alert gör ingenting i webbläsaren (react-native-web) — där behövs window.alert.
+    const meddela = (titel, text) => { if (Platform.OS === 'web') window.alert(text); else Alert.alert(titel, text); };
     // Paket: antalet (och färgradernas antal) är paket. Saldot räknas i
     // paketets innehåll, st eller m, och det blir produktens enhet — därefter
     // går allt som om innehållet hade skrivits in direkt.
     const arPaket = formEnhet === 'pkt';
     const enhet = arPaket ? formPaketEnhet : formEnhet;
     const perPaket = parseFloat(String(formPerPaket).replace(',', '.')) || 0;
-    if (arPaket && perPaket <= 0) { Alert.alert('Fel', `Ange hur många ${enhet} det är per paket`); return; }
+    if (arPaket && perPaket <= 0) { meddela('Fel', `Ange hur många ${enhet} det är per paket`); return; }
     const gange = arPaket ? perPaket : 1;
     const fargerMedAntal = formFarger.filter(f => f.farg.trim() && parseInt(f.antal) > 0);
     // Färgradernas antal är bitar/rullar på en längd — paket med meter i går
     // inte att räkna om till sådana rader.
-    if (arPaket && enhet === 'm' && fargerMedAntal.length > 0) { Alert.alert('Fel', 'Paket med meter kan inte fördelas på färgrader — skriv antal paket i toppfältet'); return; }
+    if (arPaket && enhet === 'm' && fargerMedAntal.length > 0) { meddela('Fel', 'Paket med meter kan inte fördelas på färgrader — skriv antal paket i toppfältet'); return; }
     const antalFranFarger = fargerMedAntal.length > 0
       ? fargerMedAntal.reduce((s, f) => s + (parseInt(f.antal) || 0) * gange, 0)
       : null;
@@ -5786,6 +5789,12 @@ export default function App() {
     const paketText = arPaket ? ` = ${antalFranFarger !== null ? antalFranFarger / perPaket : antalPaket} pkt à ${fmtMm(perPaket)} ${enhet}` : '';
     const paketFalt = arPaket ? { perPaket } : (redigeraProdukt?.perPaket ? { perPaket: redigeraProdukt.perPaket } : {});
     const arPafyllning = formRiktning === 'pafyllning';
+    // Uttag ur tomt lager blev tyst 0 (Krystian 21/10: 18 pkt "kommer inte in
+    // i systemet" — rutan stod på Uttag).
+    if (redigeraProdukt && !arPafyllning && uttag > 0 && (redigeraProdukt.antal || 0) <= 0) {
+      meddela('Inget i lager', `Det finns 0 ${redigeraProdukt.enhet || 'st'} att ta ut.\nVälj ➕ Påfyllning för att lägga in i lagret.`);
+      return;
+    }
     const antal = redigeraProdukt
       ? (arPafyllning
           ? (redigeraProdukt.antal || 0) + uttag
