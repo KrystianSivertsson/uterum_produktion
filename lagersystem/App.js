@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SEED_PRODUKTER, SEED_AWS70HI, SEED_AOC50, SEED_TRABALKAR, SEED_ASE60_82MM_NYA } from './seedData';
 import { INVENTERING_DATUM, appliceraInventering } from './inventeringsData';
 import { LEVERANS_NYA_2026 } from './leveransArtiklar2026';
+import { LAGER_TILLAGG, appliceraTillagg } from './lagerTillagg';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { utils, write, read } from 'xlsx-js-style';   // SheetJS med cellstilar (röda helger i stämplings-Excelen)
@@ -5101,6 +5102,16 @@ export default function App() {
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
         await AsyncStorage.setItem(NOLLNING_KEY, '1');
         console.log(`Lagernollning ${NOLLNING_DATUM}: ${nollade} produkter nollade`);
+      }
+      // Tillägg med räknat saldo (lagerTillagg.js) — EN gång per webbläsare och
+      // post, efter nollningen så att även en ny webbläsare får saldot.
+      for (const t of LAGER_TILLAGG) {
+        const key = `lagersystem_${t.id}`;
+        if (await AsyncStorage.getItem(key)) continue;
+        lista = appliceraTillagg(lista, t);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
+        await AsyncStorage.setItem(key, '1');
+        console.log(`Tillägg ${t.artikel} ${t.namn}: ${t.antal} ${t.enhet}`);
       }
       setProdukter(lista);
       try { const od = await AsyncStorage.getItem(ORDRAR_KEY); setOrdrar(od ? JSON.parse(od) : []); } catch {}
