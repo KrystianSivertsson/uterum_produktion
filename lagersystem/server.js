@@ -1043,9 +1043,9 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
     const pr = await ase60Fetch(`/api/projects/${encodeURIComponent(req.params.projectId)}`);
     if (!pr.ok) return res.status(404).json({ error: 'Projektet hittades inte i ASE60-generatorn' });
     const proj = await pr.json();
-    if (!Array.isArray(proj.units) || proj.units.length === 0) {
-      return res.json({ projekt: proj.name || '', serier: [], profiler: [] });
-    }
+    // Inga skjutpartier betyder inte inget att dra: AWS 70.HI-partierna (fasta
+    // partier/glaskilar) hämtas längre ner per projekt (2026-10-22).
+    if (!Array.isArray(proj.units)) proj.units = [];
     // ASE60 och ASS32 har HELT olika materiallistor. Kors ASE60:s /api/bom pa
     // ASS32-partier svarar den anda — med ASE60-artiklar (487000, 504010 ...)
     // som inte ingar i jobbet. Varje system maste darfor fraga sin egen kalla.
