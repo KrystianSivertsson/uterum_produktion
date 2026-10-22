@@ -137,18 +137,22 @@ app.post('/api/ecw-filer/intern', (req, res) => {
 // ytterkarmen (487850A_..._NEST_*.ECW) nar en ny export inte gav nagon NEST-fil
 // (varning/utan sagkap) — annars ligger den gamla NEST-filen med gamla matt
 // kvar bredvid den nya vanliga filen, och U-synken speglar den.
+// Även AWS 70.HI-filerna (glaskilar/fasta partier, *_AWS70HI_*.ECW): sedan
+// 2026-10-22 en fil per profil döpt som skjutpartiernas, och den gamla
+// gemensamma 358170A_AWS70HI_GLASKIL.ECW ska bort när de nya kommer.
+const ECW_STRYKBAR = /_NEST(?:[_.]|$)|_AWS70HI_/i;
 app.post('/api/ecw-filer/intern/ta-bort', (req, res) => {
   if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
   const { projectId, filenames } = req.body || {};
-  // Bara NEST-filer kan strykas den här vägen — inget annat på kundkortet.
-  const nest = Array.isArray(filenames) ? filenames.map(String).filter((f) => /_NEST(?:[_.]|$)/i.test(f)) : [];
+  // Bara NEST- och AWS 70.HI-filer kan strykas den här vägen — inget annat på kundkortet.
+  const nest = Array.isArray(filenames) ? filenames.map(String).filter((f) => ECW_STRYKBAR.test(f)) : [];
   if (!projectId || nest.length === 0) return res.status(400).json({ error: 'Saknar data' });
   const nycklar = new Set(nest.map((f) => filnamnsNyckel(f.replace(/[^a-z0-9._-]/gi, '_'))));
   const index = _readJSONEarly(_ECW_INDEX_EARLY, []);
   const kvar = [];
   let borttagna = 0;
   for (const rad of index) {
-    if (rad.projectId === projectId && /_NEST(?:[_.]|$)/i.test(rad.filename || '') && nycklar.has(filnamnsNyckel(rad.filename))) {
+    if (rad.projectId === projectId && ECW_STRYKBAR.test(rad.filename || '') && nycklar.has(filnamnsNyckel(rad.filename))) {
       try { if (rad.filePath && fs.existsSync(rad.filePath)) fs.rmSync(rad.filePath, { force: true }); } catch {}
       borttagna++;
     } else {
@@ -186,6 +190,33 @@ app.post('/api/pdf-filer/intern', (req, res) => {
   beskarRegister(index, projectId, safeFilename + ext);
   _writeJSONEarly(_PDF_INDEX_EARLY, index);
   res.json({ ok: true });
+});
+
+// ASE60-generatorn stryker en INAKTUELL AWS 70.HI-beredning från kundkortet
+// (2026-10-22): gamla "<kund>_GLASKIL" och den egna "<kund>_AWS70HI" när
+// beredningen i stället ligger i projektets FLIP_SAW-pdf. Bara de namnen.
+const PDF_STRYKBAR = /_(GLASKIL|AWS70HI)$/i;
+app.post('/api/pdf-filer/intern/ta-bort', (req, res) => {
+  if (req.headers['x-intern-secret'] !== 'ase60-intern') return res.status(403).end();
+  const { projectId, filenames } = req.body || {};
+  const bas = (f) => String(f || '').replace(/\.(pdf|html)$/i, '').replace(/[^a-z0-9._åäöÅÄÖ -]/gi, '_');
+  const namn = Array.isArray(filenames) ? filenames.map(bas).filter((f) => PDF_STRYKBAR.test(f)) : [];
+  if (!projectId || namn.length === 0) return res.status(400).json({ error: 'Saknar data' });
+  const nycklar = new Set(namn.map((f) => f.toLowerCase()));
+  const index = _readJSONEarly(_PDF_INDEX_EARLY, []);
+  const kvar = [];
+  let borttagna = 0;
+  for (const rad of index) {
+    const b = bas(rad.filename);
+    if (rad.projectId === projectId && PDF_STRYKBAR.test(b) && nycklar.has(b.toLowerCase())) {
+      try { if (rad.filePath && fs.existsSync(rad.filePath)) fs.rmSync(rad.filePath, { force: true }); } catch {}
+      borttagna++;
+    } else {
+      kvar.push(rad);
+    }
+  }
+  if (borttagna > 0) _writeJSONEarly(_PDF_INDEX_EARLY, kvar);
+  res.json({ ok: true, borttagna });
 });
 
 // BTL-filer (takstolar/bärlina m.m.) från Uterum-Konfiguratorn, samma mönster
