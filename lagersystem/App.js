@@ -80,6 +80,20 @@ function tillMm(v) {
   return n < 100 ? Math.round(n * 1000) : Math.round(n * 10) / 10;
 }
 
+/**
+ * Längd i mm från GENERATORN (restlängder, bitlängder). Alltid mm — tillMm:s
+ * "under 100 = meter" gäller bara inmatade rullängder ("40" = 40 m). Med
+ * tillMm blev en rest på 85,4 mm en kapbit på 85 400 mm (Osbjer 2026-10-22),
+ * och hörnvinklar på 13,8 mm hade blivit 13,8 m.
+ */
+function mmFranGenerator(v) {
+  const n = parseFloat(String(v ?? '').replace(',', '.'));
+  return isFinite(n) && n > 0 ? Math.round(n * 10) / 10 : 0;
+}
+
+/** Enheten normaliserad för jämförelse: st/m/pak … (tom = st). */
+const enhetsNyckel = (e) => String(e || 'st').trim().toLowerCase().replace(/^(st|styck|pcs).?$/, 'st');
+
 /** Produktens stocklängd i mm ("6000 mm" i dimension), fallback 6 m. */
 function stangLangdMm(produkt) {
   const m = /(\d[\d\s]*)\s*mm/i.exec(String(produkt?.dimension || ''));
@@ -368,7 +382,7 @@ function simuleraKlart(produkter, rader, kundFarg) {
         .filter(r => r.mm >= stang && matcharFarg(r.farg, kundFarg));
       const finns = hela.reduce((sum, r) => sum + r.antal, 0);
       const tar = Math.min(st, finns);
-      const spill = (rad.spill || []).slice(0, tar).map(tillMm);
+      const spill = (rad.spill || []).slice(0, tar).map(mmFranGenerator);
       const sparade = spill.filter(v => v >= kapMinSpar(prod));
       if (tar > 0) {
         let kvar = tar;
@@ -380,7 +394,9 @@ function simuleraKlart(produkter, rader, kundFarg) {
           kvar -= n;
         }
         for (const langdKvar of sparade) {
-          farger = fyllPaLangd(farger, prod, hela[0]?.farg || '', langdKvar, 1);
+          // Resten i KUNDENS färg: stången som kapades var den färgen, även när
+          // lagret har stängerna ofärgade (bara ett antal). Krystian 2026-10-22.
+          farger = fyllPaLangd(farger, prod, kundFarg || hela[0]?.farg || '', langdKvar, 1);
         }
         nu.farger = farger;
         nu.rord = true;
@@ -397,7 +413,16 @@ function simuleraKlart(produkter, rader, kundFarg) {
       return;
     }
 
-    const langd = tillMm(rad.langdMm);
+    const langd = rad.typ === 'manuell' ? tillMm(rad.langdMm) : mmFranGenerator(rad.langdMm);
+    // Enheten måste stämma: materiallistan i m och lagret i st (eller 4 st mot
+    // 4 PAK) får aldrig dras — då blir saldot fel utan att någon märker det.
+    if (rad.genEnhet && enhetsNyckel(rad.genEnhet) !== enhetsNyckel(prod.enhet)) {
+      texter.set(i, {
+        text: `materiallistan: ${rad.antal} ${rad.genEnhet} — lagret räknar i ${prod.enhet || 'st'}`,
+        varning: `⚠️ olika enhet (${rad.genEnhet} / ${prod.enhet || 'st'}) — dras ej, rätta enheten på lagerposten`,
+      });
+      return;
+    }
     // Saknar artikeln färgrader helt (vanligast — de flesta profiler ligger som
     // bara ett antal) räknas hela saldot som stänger utan färg. Kapningen
     // handlar om LÄNGD; färgen är bara en extra uppdelning när den finns.
@@ -5592,6 +5617,9 @@ export default function App() {
           enhet: prod?.enhet || 'st',
           antal: p.antal,
           typ: 'profil',
+          // Materiallistans egen enhet (m för tätningar, st för beslag) — jämförs
+          // mot lagerpostens innan något dras (simuleraKlart).
+          genEnhet: p.enhet || null,
         };
       });
       // Materiallistan har en rad per ROLL: karm vänster och karm höger är två

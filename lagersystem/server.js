@@ -1068,6 +1068,9 @@ app.get('/api/ase60-optimering/:projectId', authMiddleware, async (req, res) => 
         beskrivning: l.desc,
         langdMm: l.lengthMm || null,
         antal: l.qty,
+        // ASE60:s materiallista räknar styck (profilbitar och beslag) — med
+        // enheten kan Klart vägra dra t.ex. 2 st mot en lagerpost i meter.
+        enhet: 'st',
       })));
     }
 
