@@ -5323,17 +5323,101 @@ export default function App() {
         await AsyncStorage.setItem(key, '1');
         console.log(`Tillägg ${t.artikel} ${t.namn}: ${t.antal} ${t.enhet}`);
       }
+      // Gemensamt lager redan hämtat → servern gäller, inte webbläsarens kopia.
+      if (lagerSync.current.initierad) return;
       setProdukter(lista);
       try { const od = await AsyncStorage.getItem(ORDRAR_KEY); setOrdrar(od ? JSON.parse(od) : []); } catch {}
     } catch {}
   };
 
+  // ── GEMENSAMT LAGER (server.js /api/lager, Krystian 2026-10-23 "något stämmer
+  // ju inte"): saldot låg bara i varje webbläsare. Innan servern är initierad
+  // skickar webbläsaren en kopia av sitt lager (slås ihop till startläget);
+  // därefter läses lagret därifrån och bara ändrade produkter/ordrar skickas.
+  // AsyncStorage blir en cache. prod/ord = senast synkade JSON per id.
+  const lagerSync = useRef({ initierad: false, version: 0, prod: new Map(), ord: new Map(), snapshotSkickad: false });
+  const tokenRef = useRef(null); tokenRef.current = token;
+  const produkterRef = useRef([]); produkterRef.current = produkter;
+  const ordrarRef = useRef([]); ordrarRef.current = ordrar;
+  const modalRef = useRef(false); modalRef.current = modalVisible;
+  const satSenast = (karta, lista) => { karta.clear(); for (const x of (lista || [])) karta.set(String(x.id), JSON.stringify(x)); };
+  const diffMot = (karta, lista) => {
+    const andrade = (lista || []).filter(x => karta.get(String(x.id)) !== JSON.stringify(x));
+    const ids = new Set((lista || []).map(x => String(x.id)));
+    return { andrade, borttagna: [...karta.keys()].filter(id => !ids.has(id)) };
+  };
+  const skickaLagerAndringar = async (body) => {
+    try {
+      const r = await fetch(`${API}/api/lager/andringar`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenRef.current}` }, body: JSON.stringify(body) });
+      if (r.ok) { lagerSync.current.version = (await r.json()).version; return true; }
+    } catch {}
+    return false;
+  };
   const sparaProdukter = async (lista) => {
     try { await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista)); } catch {}
+    const s = lagerSync.current;
+    if (!s.initierad || !tokenRef.current) return;
+    const { andrade, borttagna } = diffMot(s.prod, lista);
+    if (!andrade.length && !borttagna.length) return;
+    if (await skickaLagerAndringar({ produkter: andrade, borttagna })) {
+      for (const p of andrade) s.prod.set(String(p.id), JSON.stringify(p));
+      for (const id of borttagna) s.prod.delete(id);
+    }
   };
   const sparaOrdrar = async (lista) => {
     try { await AsyncStorage.setItem(ORDRAR_KEY, JSON.stringify(lista)); } catch {}
+    const s = lagerSync.current;
+    if (!s.initierad || !tokenRef.current) return;
+    const { andrade, borttagna } = diffMot(s.ord, lista);
+    if (!andrade.length && !borttagna.length) return;
+    if (await skickaLagerAndringar({ ordrar: andrade, ordrarBorttagna: borttagna })) {
+      for (const o of andrade) s.ord.set(String(o.id), JSON.stringify(o));
+      for (const id of borttagna) s.ord.delete(id);
+    }
   };
+  useEffect(() => {
+    if (!token) return undefined;
+    let stopp = false;
+    const enhetsId = async () => {
+      let id = null;
+      try { id = await AsyncStorage.getItem('lagersystem_enhet'); } catch {}
+      if (!id) { id = `enhet-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; try { await AsyncStorage.setItem('lagersystem_enhet', id); } catch {} }
+      return id;
+    };
+    const hamta = async () => {
+      const s = lagerSync.current;
+      try {
+        const r = await fetch(`${API}/api/lager${s.initierad ? `?version=${s.version}` : ''}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!r.ok || stopp) return;
+        const d = await r.json();
+        if (!d.initierad) {
+          // Lokalt läge tills servern är initierad — skicka en kopia en gång per session.
+          if (!s.snapshotSkickad && produkterRef.current.length) {
+            s.snapshotSkickad = true;
+            const enhet = await enhetsId();
+            fetch(`${API}/api/lager/snapshot`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ enhet, produkter: produkterRef.current, ordrar: ordrarRef.current }) })
+              .then(x => { if (!x.ok) s.snapshotSkickad = false; }).catch(() => { s.snapshotSkickad = false; });
+          }
+          return;
+        }
+        if (d.oforandrad) return;
+        // Osynkade lokala ändringar (nätet var nere) skickas först; nästa hämtning tar resten.
+        if (s.initierad && (diffMot(s.prod, produkterRef.current).andrade.length || diffMot(s.ord, ordrarRef.current).andrade.length)) {
+          await sparaProdukter(produkterRef.current); await sparaOrdrar(ordrarRef.current); return;
+        }
+        if (modalRef.current) return;   // inte mitt i en redigering — nästa runda
+        s.initierad = true; s.version = d.version;
+        satSenast(s.prod, d.produkter); satSenast(s.ord, d.ordrar);
+        setProdukter(d.produkter); setOrdrar(d.ordrar || []);
+        AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(d.produkter)).catch(() => {});
+        AsyncStorage.setItem(ORDRAR_KEY, JSON.stringify(d.ordrar || [])).catch(() => {});
+      } catch {}
+    };
+    hamta();
+    const iv = setInterval(hamta, 30000);
+    return () => { stopp = true; clearInterval(iv); };
+  }, [token]);
 
   // Lägg in en inköpsbeställning: kända artiklar fyller på lagersaldot, nya
   // artiklar skapas som produkter (auto-avläsning mot befintlig katalog).

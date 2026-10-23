@@ -880,6 +880,82 @@ app.delete('/api/push/subscribe', authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
+// --- GEMENSAMT LAGER (Krystian 2026-10-23 "något stämmer ju inte") ---
+// Produkter och ordrar låg bara i varje webbläsares AsyncStorage: Administratörs
+// 129 påfyllningar 21/10 syntes inte hos Krystian och tvärtom, medan den
+// gemensamma ändringsloggen visade allt. Nu: ETT lager på servern.
+//   1. Innan det är initierat skickar varje webbläsare en kopia (snapshot) av
+//      sitt lokala lager — inget går förlorat, och kopiorna slås ihop till
+//      startläget (POST /api/lager/initiera, admin).
+//   2. När det är initierat läser alla därifrån och skickar bara de produkter/
+//      ordrar som ändrats (per id — två personer på olika produkter krockar inte).
+const LAGER_FILE = path.join(DATA_DIR, 'lager-gemensamt.json');
+const LAGER_SNAP_DIR = path.join(DATA_DIR, 'lager-snapshots');
+const lasLager = () => readJSON(LAGER_FILE, { initierad: false, version: 0, produkter: [], ordrar: [] });
+
+app.get('/api/lager', authMiddleware, (req, res) => {
+  const l = lasLager();
+  if (l.initierad && req.query.version && Number(req.query.version) === l.version) return res.json({ initierad: true, version: l.version, oforandrad: true });
+  res.json({ initierad: !!l.initierad, version: l.version || 0, produkter: l.initierad ? l.produkter : [], ordrar: l.initierad ? l.ordrar : [] });
+});
+
+app.post('/api/lager/andringar', authMiddleware, (req, res) => {
+  const l = lasLager();
+  if (!l.initierad) return res.status(409).json({ error: 'Gemensamt lager ej initierat' });
+  const { produkter = [], borttagna = [], ordrar = [], ordrarBorttagna = [] } = req.body || {};
+  const upsert = (lista, nya) => {
+    const idx = new Map(lista.map((x, i) => [String(x.id), i]));
+    for (const n of nya) {
+      if (!n || n.id == null) continue;
+      const i = idx.get(String(n.id));
+      if (i === undefined) { idx.set(String(n.id), lista.length); lista.push(n); } else lista[i] = n;
+    }
+    return lista;
+  };
+  l.produkter = upsert(l.produkter || [], Array.isArray(produkter) ? produkter : []);
+  l.ordrar = upsert(l.ordrar || [], Array.isArray(ordrar) ? ordrar : []);
+  const bortP = new Set((borttagna || []).map(String)), bortO = new Set((ordrarBorttagna || []).map(String));
+  if (bortP.size) l.produkter = l.produkter.filter(p => !bortP.has(String(p.id)));
+  if (bortO.size) l.ordrar = l.ordrar.filter(o => !bortO.has(String(o.id)));
+  l.version = (l.version || 0) + 1;
+  l.uppdaterad = new Date().toISOString();
+  l.senastAv = req.user.username;
+  writeJSON(LAGER_FILE, l);
+  res.json({ ok: true, version: l.version });
+});
+
+app.post('/api/lager/snapshot', authMiddleware, (req, res) => {
+  const { enhet, produkter, ordrar } = req.body || {};
+  if (!enhet || !Array.isArray(produkter)) return res.status(400).json({ error: 'Saknar data' });
+  if (!fs.existsSync(LAGER_SNAP_DIR)) fs.mkdirSync(LAGER_SNAP_DIR, { recursive: true });
+  const fil = path.join(LAGER_SNAP_DIR, `${String(enhet).replace(/[^a-z0-9_-]/gi, '_').slice(0, 60)}.json`);
+  writeJSON(fil, { enhet: String(enhet), user: req.user.username, namn: req.user.namn, tid: new Date().toISOString(),
+    webblasare: String(req.headers['user-agent'] || '').slice(0, 140), produkter, ordrar: Array.isArray(ordrar) ? ordrar : [] });
+  res.json({ ok: true });
+});
+
+app.get('/api/lager/snapshots', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
+  if (!fs.existsSync(LAGER_SNAP_DIR)) return res.json([]);
+  const full = req.query.full === '1';
+  res.json(fs.readdirSync(LAGER_SNAP_DIR).filter(f => f.endsWith('.json')).map(f => {
+    const s = readJSON(path.join(LAGER_SNAP_DIR, f), {});
+    const summa = (s.produkter || []).reduce((a, p) => a + (Number(p.antal) || 0), 0);
+    return full ? s : { enhet: s.enhet, user: s.user, namn: s.namn, tid: s.tid, webblasare: s.webblasare, produkter: (s.produkter || []).length, ordrar: (s.ordrar || []).length, saldoSumma: summa };
+  }));
+});
+
+app.post('/api/lager/initiera', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
+  const { produkter, ordrar } = req.body || {};
+  if (!Array.isArray(produkter) || !produkter.length) return res.status(400).json({ error: 'Saknar produkter' });
+  const forra = lasLager();
+  if (forra.initierad && fs.existsSync(LAGER_FILE)) fs.copyFileSync(LAGER_FILE, `${LAGER_FILE}.bak-${Date.now()}`);
+  writeJSON(LAGER_FILE, { initierad: true, version: (forra.version || 0) + 1, produkter, ordrar: Array.isArray(ordrar) ? ordrar : [],
+    initierad_tid: new Date().toISOString(), initierad_av: req.user.username, uppdaterad: new Date().toISOString() });
+  res.json({ ok: true });
+});
+
 // --- ÄNDRINGSLOGG ---
 app.get('/api/changes', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Ej behörighet' });
