@@ -1457,12 +1457,14 @@ function StamplingVy({ token, inloggad }) {
     const iv = setInterval(hamtaNatverk, 60000);
     return () => clearInterval(iv);
   }, [hamtaNatverk]);
+  const [natverkIp, setNatverkIp] = useState('');
   const andraNatverk = async (metod, ip) => {
     const res = await fetch(`${API}/api/stampling/natverk${metod === 'DELETE' ? `/${encodeURIComponent(ip)}` : ''}`, {
       method: metod,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: metod === 'POST' ? JSON.stringify({ namn: natverkNamn }) : undefined,
+      body: metod === 'POST' ? JSON.stringify({ namn: natverkNamn, ...(ip ? { ip } : {}) }) : undefined,
     });
+    if (res.ok && metod === 'POST') setNatverkIp('');
     const d = await res.json().catch(() => ({}));
     if (!res.ok) { window.alert(d.error || 'Något gick fel'); return; }
     setNatverkNamn('');
@@ -1564,6 +1566,7 @@ function StamplingVy({ token, inloggad }) {
         <View style={{ backgroundColor: '#fef3c7', borderColor: '#d97706', borderWidth: 1, borderRadius: 8, padding: 14, marginBottom: 16 }}>
           <Text style={{ color: '#92400e', fontWeight: '700' }}>📶 Du är inte på företagets wifi/internet — stämpling är spärrad.</Text>
           <Text style={{ color: '#92400e', marginTop: 4 }}>Anslut till företagets wifi (stäng av mobildata om det behövs) och försök igen. Din adress nu: {natverk.ip || 'okänd'}</Text>
+          <Text style={{ color: '#92400e', marginTop: 4, fontSize: 12 }}>Är du redan på företagets wifi? Säg till admin — nätet godkänns under 🌐 Nätverk. På iPhone: stäng av "Begränsa IP-adresspårning" för wifi:t (Inställningar → Wi-Fi → ⓘ) och iCloud Privat reläservice.</Text>
         </View>
       ) : null}
 
@@ -1596,6 +1599,37 @@ function StamplingVy({ token, inloggad }) {
               </TouchableOpacity>
             </View>
           )}
+          {(natverk.nekade || []).length > 0 && (
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ color: c.textRubrik, fontWeight: '700', marginBottom: 4 }}>Nekade försök från andra nätverk</Text>
+              <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 6 }}>
+                Någon har öppnat stämplingen eller försökt stämpla härifrån. Är det företagets wifi (t.ex. Nordiska Office/Penthouse/Public) — skriv namnet ovan och tryck Godkänn.
+              </Text>
+              {natverk.nekade.map(n => (
+                <View key={n.ip} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4, flexWrap: 'wrap' }}>
+                  <Text style={{ color: c.text, fontWeight: '600' }}>{n.ip}</Text>
+                  <Text style={{ color: c.textMuted, fontSize: 12 }}>
+                    {new Date(n.tid).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })} · {n.vem} · {n.antal} gång{n.antal === 1 ? '' : 'er'}{/iPhone|iPad/.test(n.webblasare || '') ? ' · iPhone' : /Android/.test(n.webblasare || '') ? ' · Android' : ''}
+                  </Text>
+                  <TouchableOpacity onPress={() => andraNatverk('POST', n.ip)} style={{ backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
+                    <Text style={{ color: '#fff', fontWeight: '600', fontSize: 12 }}>✓ Godkänn</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <TextInput
+              value={natverkIp}
+              onChangeText={setNatverkIp}
+              placeholder="Adress eller intervall, t.ex. 83.145.53.0/24"
+              placeholderTextColor={c.textMuted}
+              style={{ backgroundColor: c.input, borderColor: c.inputBorder, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, color: c.text, minWidth: 240 }}
+            />
+            <TouchableOpacity onPress={() => natverkIp.trim() && andraNatverk('POST', natverkIp.trim())} style={{ backgroundColor: c.input, borderColor: c.inputBorder, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 }}>
+              <Text style={{ color: c.text, fontWeight: '600' }}>+ Lägg till adress</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : null}
 

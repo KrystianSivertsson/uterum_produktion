@@ -631,20 +631,48 @@ if (!fs.existsSync(STAMPLING_NATVERK_FILE)) {
 }
 const klientIp = (req) => String(req.ip || '').replace(/^::ffff:/, '');
 const stamplingNatverk = () => readJSON(STAMPLING_NATVERK_FILE, { tillatna: [] }).tillatna || [];
+// En regel är en exakt IPv4 ("83.145.53.74") eller ett intervall ("83.145.53.0/24").
+const ipTal = (ip) => ip.split('.').reduce((a, b) => a * 256 + (Number(b) & 255), 0);
+function ipMatchar(ip, regel) {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return false;
+  const [bas, bitar] = String(regel).split('/');
+  if (bitar === undefined) return bas === ip;
+  const n = Math.max(0, Math.min(32, Number(bitar)));
+  if (n === 0) return true;
+  return (ipTal(ip) >>> (32 - n)) === (ipTal(bas) >>> (32 - n));
+}
 function paForetagetsNatverk(req) {
   const tillatna = stamplingNatverk();
-  return !tillatna.length || tillatna.some(n => n.ip === klientIp(req));
+  return !tillatna.length || tillatna.some(n => ipMatchar(klientIp(req), n.ip));
+}
+// Nekade försök (Krystian 2026-10-23: "fungerar inte att stämpla med wifi Nordiska
+// Office, Penthouse, Penthouse LTO, Public") — adressen loggas så admin kan
+// godkänna nätet med ett tryck i 🌐 Nätverk. Ett inlägg per adress, senaste 30.
+function loggaNekad(req, vem) {
+  const ip = klientIp(req);
+  if (!ip) return;
+  const data = readJSON(STAMPLING_NATVERK_FILE, { tillatna: [] });
+  const nekade = (data.nekade || []).filter(n => n.ip !== ip);
+  const forra = (data.nekade || []).find(n => n.ip === ip);
+  // Sidan frågar varje minut — logga om högst var 10:e minut per adress.
+  if (forra && Date.now() - Date.parse(forra.tid) < 10 * 60 * 1000 && forra.vem === vem) return;
+  nekade.unshift({ ip, tid: new Date().toISOString(), vem, antal: (forra?.antal || 0) + 1,
+    webblasare: String(req.headers['user-agent'] || '').slice(0, 140) });
+  data.nekade = nekade.slice(0, 30);
+  writeJSON(STAMPLING_NATVERK_FILE, data);
 }
 
 app.get('/api/stampling/natverk', authMiddleware, (req, res) => {
-  const tillatna = stamplingNatverk();
-  res.json({ ip: klientIp(req), tillaten: paForetagetsNatverk(req), ...(req.user.roll === 'admin' ? { tillatna } : {}) });
+  const data = readJSON(STAMPLING_NATVERK_FILE, { tillatna: [] });
+  const tillaten = paForetagetsNatverk(req);
+  if (!tillaten) loggaNekad(req, req.user.namn || req.user.username || '?');
+  res.json({ ip: klientIp(req), tillaten, ...(req.user.roll === 'admin' ? { tillatna: data.tillatna || [], nekade: (data.nekade || []).filter(n => !(data.tillatna || []).some(t => ipMatchar(n.ip, t.ip))) } : {}) });
 });
 
 app.post('/api/stampling/natverk', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
   const ip = String(req.body?.ip || klientIp(req)).trim();
-  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return res.status(400).json({ error: `Ogiltig adress: ${ip}` });
+  if (!/^\d{1,3}(\.\d{1,3}){3}(\/([0-9]|[12][0-9]|3[0-2]))?$/.test(ip)) return res.status(400).json({ error: `Ogiltig adress: ${ip} (t.ex. 83.145.53.74 eller 83.145.53.0/24)` });
   const data = readJSON(STAMPLING_NATVERK_FILE, { tillatna: [] });
   data.tillatna = (data.tillatna || []).filter(n => n.ip !== ip);
   data.tillatna.push({ ip, namn: String(req.body?.namn || '').trim().slice(0, 60) || ip, tillagd: new Date().toISOString().slice(0, 10), av: req.user.username });
@@ -655,7 +683,8 @@ app.post('/api/stampling/natverk', authMiddleware, (req, res) => {
 app.delete('/api/stampling/natverk/:ip', authMiddleware, (req, res) => {
   if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
   const data = readJSON(STAMPLING_NATVERK_FILE, { tillatna: [] });
-  data.tillatna = (data.tillatna || []).filter(n => n.ip !== req.params.ip);
+  const ip = decodeURIComponent(req.params.ip);
+  data.tillatna = (data.tillatna || []).filter(n => n.ip !== ip);
   writeJSON(STAMPLING_NATVERK_FILE, data);
   res.json({ ok: true, tillatna: data.tillatna });
 });
@@ -663,6 +692,8 @@ app.delete('/api/stampling/natverk/:ip', authMiddleware, (req, res) => {
 app.post('/api/stampling/stampla', authMiddleware, (req, res) => {
   const { userId, pin, omrade, kundId, kundNamn } = req.body;
   if (!paForetagetsNatverk(req)) {
+    const u = readJSON(USERS_FILE, []).find(x => x.id === userId);
+    loggaNekad(req, `${u?.namn || '?'} (stämpla)`);
     return res.status(403).json({ error: `Stämpling går bara på företagets wifi/internet — anslut till wifi:t och försök igen (du är på ${klientIp(req) || 'okänt nät'}).`, natverk: false });
   }
   if (!userId || !pin) return res.status(400).json({ error: 'userId och pin krävs' });
