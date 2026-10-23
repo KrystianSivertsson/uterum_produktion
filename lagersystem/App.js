@@ -857,6 +857,83 @@ function AlufrasFlik({ ase60ProjectId, token, API, c, roll }) {
   );
 }
 
+// ─── AUF-filer (SBZ151-maskinprogram) — görs AUTOMATISKT av U-synken på
+// kontorsdatorn ur ECW:erna i kundens U-mapp (eluCads egen efterbehandlare,
+// Krystian 2026-10-23) och läggs både i U:\<kund>\AUF (Onyx) och här.
+function AufFlik({ ase60ProjectId, token, API, c, roll }) {
+  const [filer, setFiler] = useState([]);
+  const [laddar, setLaddar] = useState(true);
+
+  const laddaFiler = () => {
+    if (!ase60ProjectId || !token) { setLaddar(false); return; }
+    fetch(`${API}/api/auf-filer/${encodeURIComponent(ase60ProjectId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setFiler(Array.isArray(data) ? data : []); setLaddar(false); })
+      .catch(() => setLaddar(false));
+  };
+
+  useEffect(() => { laddaFiler(); }, [ase60ProjectId]);
+
+  const laddaNer = (fil) => {
+    const a = document.createElement('a');
+    a.href = `${API}/api/auf-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}/ladda-ner?token=${token}`;
+    a.download = fil.filename;
+    a.click();
+  };
+
+  const taBort = async (fil) => {
+    if (!window.confirm(`Ta bort "${fil.filename}"?`)) return;
+    await fetch(`${API}/api/auf-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    laddaFiler();
+  };
+
+  if (laddar) return (
+    <View style={{ padding: 16, alignItems: 'center' }}>
+      <Text style={{ color: c.textMuted }}>Hämtar AUF-filer...</Text>
+    </View>
+  );
+
+  if (filer.length === 0) return (
+    <View style={{ padding: 16, alignItems: 'center', marginBottom: 12 }}>
+      <Text style={{ color: c.textMuted, fontSize: 14, textAlign: 'center' }}>
+        Inga AUF-filer ännu.{'\n'}De görs automatiskt på kontorsdatorn när ECW-filerna kommit till U: och dyker upp här.
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      {filer.slice().sort((a, b) => a.filename.localeCompare(b.filename)).map(fil => (
+        <View
+          key={fil.id}
+          style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 12,
+            padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={{ fontSize: 22 }}>⚙️</Text>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => laddaNer(fil)}>
+            <Text style={{ color: c.textRubrik, fontWeight: '700', fontSize: 14 }}>{fil.filename}</Text>
+            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}>
+              {new Date(fil.skapad).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}
+              {fil.ecw ? ` · ur ${fil.ecw}` : ''}
+            </Text>
+            {fil.info ? <Text style={{ color: '#b45309', fontSize: 12, marginTop: 2 }}>{fil.info}</Text> : null}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => laddaNer(fil)}>
+            <Text style={{ color: '#2563eb', fontWeight: '600', fontSize: 13 }}>⬇ Ladda ner</Text>
+          </TouchableOpacity>
+          {roll === 'admin' && (
+            <TouchableOpacity onPress={() => taBort(fil)}>
+              <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 13 }}>🗑 Ta bort</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ─── Träfräs (BTL-filer från Uterum-Konfiguratorn) ───────────────────────────
 function BtlFlik({ ase60ProjectId, token, API, c, roll }) {
   const [filer, setFiler] = useState([]);
@@ -2141,6 +2218,8 @@ function KundAktivitet({ token, valdKund, aktivKundFlik, inloggad, uppdateraKund
                 <>
                   <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ECW-FILER</Text>
                   <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                  <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8, marginTop: 4 }}>AUF-FILER (SBZ151)</Text>
+                  <AufFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
                   {kundRuns.length > 0 && (
                     <View style={{ marginBottom: 12 }}>
                       <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 }}>ECW-KÖRNINGAR</Text>
@@ -6555,6 +6634,8 @@ export default function App() {
                         {aktivKundFlik === 'Alufräs' && (
                           <>
                             <AlufrasFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
+                            <Text style={{ color: c.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8, marginTop: 4 }}>AUF-FILER (SBZ151)</Text>
+                            <AufFlik ase60ProjectId={valdKund.ase60ProjectId || valdKund.id} token={token} API={API} c={c} roll={inloggad?.roll} />
                             {(() => {
                               const kundRuns = ecwRuns.filter(run =>
                                 run.projekt?.toLowerCase() === valdKund.namn?.toLowerCase() ||

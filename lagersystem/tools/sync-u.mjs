@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { aufForMapp, MAX_PER_RUNDA } from './auf-auto.mjs';
 
 const HAR = path.dirname(fileURLToPath(import.meta.url));
 const TORR = process.argv.includes('--torr');
@@ -323,7 +324,9 @@ export async function synkaEnGang({ tyst = false } = {}) {
     perMapp.get(mapp).push(k);
   }
 
-  let nya = 0, fanns = 0, mappar = 0, borttagna = 0;
+  let nya = 0, fanns = 0, mappar = 0, borttagna = 0, aufGjorda = 0;
+  // AUF automatiskt ur ECW:erna i kundmappen (auf-auto.mjs) — tak per runda.
+  const aufBudget = { kvar: MAX_PER_RUNDA };
   for (const [mapp, kort] of perMapp) {
     if (KUND && !mapp.toLowerCase().includes(KUND)) continue;
     if (skyddade.has(mapp.toLowerCase())) {
@@ -441,7 +444,7 @@ export async function synkaEnGang({ tyst = false } = {}) {
     }
 
     // Äldre versioner bort när den nya ligger på plats — aldrig mellan olika ordrar.
-    if (flerOrdrar || !fs.existsSync(mal)) continue;
+    if (!flerOrdrar && fs.existsSync(mal)) {
     const lokala = fs.readdirSync(mal, { withFileTypes: true }).filter((d) => d.isFile()).map((d) => d.name);
     const mfNyckel = (namn) => `${mapp}/${namn}`.toLowerCase();
     const mfSet = { has: (namnLower) => Object.prototype.hasOwnProperty.call(manifest, `${mapp}/${namnLower}`.toLowerCase()) };
@@ -463,11 +466,18 @@ export async function synkaEnGang({ tyst = false } = {}) {
         console.warn(`     ${mapp}\\${namn}  kunde inte tas bort (${e.code || e.message}) — försöker igen nästa runda`);
       }
     }
+    }
+
+    // AUF ur kundmappens ECW:er (även handredigerade) → AUF (Onyx) + kundkortet.
+    if (!TORR && !process.argv.includes('--utan-auf')) {
+      try { aufGjorda += (await aufForMapp({ mapp, mal, poster, bas, H, cfg, budget: aufBudget })).gjorda; }
+      catch (e) { console.warn(`  ${mapp}: AUF-steget misslyckades: ${e.message.split('\n')[0]}`); }
+    }
   }
   if (manifestAndrat && !TORR) sparaManifest(manifest);
   if (!tyst) console.log(`
 Klart: ${nya} ${TORR ? 'skulle hämtas' : 'nya filer'}, ${fanns} fanns redan, ${borttagna} ${TORR ? 'skulle tas bort' : 'äldre versioner borttagna'}, ${mappar} nya mappar.`);
-  return { nya, fanns, mappar, borttagna, aktiva: aktiva.length };
+  return { nya, fanns, mappar, borttagna, aufGjorda, aktiva: aktiva.length };
 }
 
 // Kör bara när filen startas direkt — annars går mappNamn() inte att testa.

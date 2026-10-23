@@ -60,4 +60,5 @@ data/stampling.json
 /android
 tools/sync-u.config.json
 tools/sync-u-manifest.json
+tools/auf-auto-manifest.json
 tools/sync-u-live.log

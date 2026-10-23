@@ -1320,6 +1320,62 @@ app.delete('/api/step-filer/:ase60ProjectId/:id', authMiddleware, (req, res) => 
   res.json({ ok: true });
 });
 
+// --- AUF-FILER (SBZ151-maskinprogram) — Krystian 2026-10-23 "auf filer auto
+// direkt till lagersystemet inte bara u". AUF:en görs med eluCads egen
+// efterbehandlare (ncx) på kontorsdatorn, ur ECW:n som ligger i kundens
+// U-mapp (även handredigerad), av U-synken (tools/auf-auto.mjs). Servern
+// (Linux) kan inte köra ncx — synken laddar upp hit med sin inloggning.
+// Bara senaste versionen per filnamn behålls (beskarRegister).
+const AUF_DIR = path.join(DATA_DIR, 'auf');
+const AUF_INDEX_FILE = path.join(DATA_DIR, 'auf.json');
+if (!fs.existsSync(AUF_DIR)) fs.mkdirSync(AUF_DIR, { recursive: true });
+if (!fs.existsSync(AUF_INDEX_FILE)) writeJSON(AUF_INDEX_FILE, []);
+
+app.post('/api/auf-filer/:ase60ProjectId', authMiddleware, (req, res) => {
+  const projectId = req.params.ase60ProjectId;
+  const { projectName, filename, aufBase64, ecw, ecwSha256, info } = req.body || {};
+  if (!aufBase64 || !/\.auf$/i.test(String(filename || ''))) return res.status(400).json({ error: 'Saknar AUF' });
+  const projDir = path.join(AUF_DIR, String(projectId).replace(/[^a-z0-9_-]/gi, '_'));
+  if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
+  const ts = Date.now();
+  const safeFilename = String(filename).replace(/[^a-z0-9._-]/gi, '_');
+  const filePath = path.join(projDir, `${ts}_${safeFilename}`);
+  fs.writeFileSync(filePath, Buffer.from(aufBase64, 'base64'));
+  const index = readJSON(AUF_INDEX_FILE, []);
+  index.push({ id: ts.toString(), projectId, projectName: projectName || projectId, filename: safeFilename, filePath,
+    skapad: new Date().toISOString(), ecw: ecw ? String(ecw) : null, ecwSha256: ecwSha256 ? String(ecwSha256) : null,
+    info: info ? String(info).slice(0, 500) : null });
+  beskarRegister(index, projectId, safeFilename);
+  writeJSON(AUF_INDEX_FILE, index);
+  res.json({ ok: true, id: ts.toString() });
+});
+
+app.get('/api/auf-filer/:ase60ProjectId', authMiddleware, (req, res) => {
+  const index = readJSON(AUF_INDEX_FILE, []);
+  res.json(index.filter(f => f.projectId === req.params.ase60ProjectId)
+    .map(f => ({ id: f.id, filename: f.filename, skapad: f.skapad, projectName: f.projectName, ecw: f.ecw, info: f.info })));
+});
+
+app.get('/api/auf-filer/:ase60ProjectId/:id/ladda-ner', authMiddleware, (req, res) => {
+  const index = readJSON(AUF_INDEX_FILE, []);
+  const fil = index.find(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (!fil || !fs.existsSync(fil.filePath)) return res.status(404).json({ error: 'Fil hittades ej' });
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${fil.filename}"`);
+  res.sendFile(path.resolve(fil.filePath));
+});
+
+app.delete('/api/auf-filer/:ase60ProjectId/:id', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
+  const index = readJSON(AUF_INDEX_FILE, []);
+  const idx = index.findIndex(f => f.projectId === req.params.ase60ProjectId && f.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Fil hittades ej' });
+  try { if (fs.existsSync(index[idx].filePath)) fs.unlinkSync(index[idx].filePath); } catch {}
+  index.splice(idx, 1);
+  writeJSON(AUF_INDEX_FILE, index);
+  res.json({ ok: true });
+});
+
 app.delete('/api/kunder/:id', authMiddleware, (req, res) => {
   const kunder = readJSON(KUNDER_FILE, []);
   const kvar = kunder.filter(k => k.id !== req.params.id);
