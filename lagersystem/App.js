@@ -6019,6 +6019,22 @@ export default function App() {
       meddela('Inget i lager', `Det finns 0 ${redigeraProdukt.enhet || 'st'} att ta ut.\nVälj ➕ Påfyllning för att lägga in i lagret.`);
       return;
     }
+    // Översta fältets antal på en produkt MED färgrader lades förut ingenstans:
+    // saldot (= färgradernas summa) stod still medan ändringsloggen skrev
+    // "+800" (Seal Bk 21/10, Krystian 23/10 "lagret har inte uppdaterats").
+    // En enda färgrad → antalet går dit; flera → välj rad; rullar i meter → ange längd.
+    const befintligaRader = redigeraProdukt ? farglistaRader(redigeraProdukt) : [];
+    const toppTillRad = redigeraProdukt && uttag > 0 && antalFranFarger === null && !(arPaket ? 0 : tillMm(formLangdPerBit))
+      && befintligaRader.length > 0 && !(enhet === 'm' && !arPafyllning);
+    let ensamRad = null;
+    if (toppTillRad) {
+      if (enhet === 'm') { meddela('Ange längd', `${redigeraProdukt.namn} har rullar/bitar — skriv längd per rulle (t.ex. 40 m) så läggs de in som egna rader.`); return; }
+      if (befintligaRader.length > 1) {
+        meddela('Välj färgrad', `${redigeraProdukt.namn} har ${befintligaRader.length} färgrader (${befintligaRader.map(r => r.farg || 'utan färg').join(', ')}) — skriv antalet på rätt färgrad i stället för i översta fältet.`);
+        return;
+      }
+      ensamRad = befintligaRader[0];
+    }
     const antal = redigeraProdukt
       ? (arPafyllning
           ? (redigeraProdukt.antal || 0) + uttag
@@ -6083,6 +6099,16 @@ export default function App() {
             else if (h.typ === 'slut') kapLogg.push(`${u.farg}: ${h.antal} st à ${kapLangd} mm kunde INTE tas ut — ingen bit så lång i lager`);
           });
         });
+        // Översta fältets antal på produktens enda färgrad (se ensamRad ovan).
+        if (ensamRad) {
+          if (arPafyllning) {
+            nyFarger = fyllPaLangd(nyFarger, redigeraProdukt, ensamRad.farg, ensamRad.mm, uttag);
+          } else {
+            const r = taUtLangd(nyFarger, redigeraProdukt, ensamRad.farg, ensamRad.mm, uttag);
+            nyFarger = r.farger;
+            r.handelser.forEach(h => { if (h.typ === 'slut') kapLogg.push(`${h.antal} st fanns inte i lager`); });
+          }
+        }
         nyFarger = nyFarger.filter(f => f.antal > 0);
         const gammal = redigeraProdukt;
         const andringar = [];
