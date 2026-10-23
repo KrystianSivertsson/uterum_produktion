@@ -1442,6 +1442,32 @@ function StamplingVy({ token, inloggad }) {
   const [bekraftelse, setBekraftelse] = useState('');
   const [skickar, setSkickar] = useState(false);
   const [visaLogg, setVisaLogg] = useState(false);
+  // Stämpling bara på företagets nätverk (servern avgör på IP — Krystian 2026-10-23).
+  const [natverk, setNatverk] = useState(null); // { ip, tillaten, tillatna? }
+  const [visaNatverk, setVisaNatverk] = useState(false);
+  const [natverkNamn, setNatverkNamn] = useState('');
+
+  const hamtaNatverk = useCallback(() => {
+    if (!token) return;
+    fetch(`${API}/api/stampling/natverk`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => { if (d && typeof d.tillaten === 'boolean') setNatverk(d); }).catch(() => {});
+  }, [token]);
+  useEffect(() => {
+    hamtaNatverk();
+    const iv = setInterval(hamtaNatverk, 60000);
+    return () => clearInterval(iv);
+  }, [hamtaNatverk]);
+  const andraNatverk = async (metod, ip) => {
+    const res = await fetch(`${API}/api/stampling/natverk${metod === 'DELETE' ? `/${encodeURIComponent(ip)}` : ''}`, {
+      method: metod,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: metod === 'POST' ? JSON.stringify({ namn: natverkNamn }) : undefined,
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { window.alert(d.error || 'Något gick fel'); return; }
+    setNatverkNamn('');
+    hamtaNatverk();
+  };
 
   const hamtaAnvandare = useCallback(() => {
     if (!token) return;
@@ -1519,13 +1545,59 @@ function StamplingVy({ token, inloggad }) {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <Text style={[styles.kategoriRubrik, { color: c.textRubrik }]}>⏱️ Stämpling</Text>
         {inloggad?.roll === 'admin' && (
-          <TouchableOpacity
-            onPress={() => setVisaLogg(v => !v)}
-            style={{ backgroundColor: visaLogg ? '#2563eb' : c.input, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: c.inputBorder }}>
-            <Text style={{ color: visaLogg ? '#fff' : c.text, fontWeight: '600' }}>{visaLogg ? '← Tillbaka' : '📋 Logg & rapport'}</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setVisaNatverk(v => !v)}
+              style={{ backgroundColor: visaNatverk ? '#2563eb' : c.input, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: c.inputBorder }}>
+              <Text style={{ color: visaNatverk ? '#fff' : c.text, fontWeight: '600' }}>🌐 Nätverk</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setVisaLogg(v => !v)}
+              style={{ backgroundColor: visaLogg ? '#2563eb' : c.input, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: c.inputBorder }}>
+              <Text style={{ color: visaLogg ? '#fff' : c.text, fontWeight: '600' }}>{visaLogg ? '← Tillbaka' : '📋 Logg & rapport'}</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
+
+      {natverk && !natverk.tillaten ? (
+        <View style={{ backgroundColor: '#fef3c7', borderColor: '#d97706', borderWidth: 1, borderRadius: 8, padding: 14, marginBottom: 16 }}>
+          <Text style={{ color: '#92400e', fontWeight: '700' }}>📶 Du är inte på företagets wifi/internet — stämpling är spärrad.</Text>
+          <Text style={{ color: '#92400e', marginTop: 4 }}>Anslut till företagets wifi (stäng av mobildata om det behövs) och försök igen. Din adress nu: {natverk.ip || 'okänd'}</Text>
+        </View>
+      ) : null}
+
+      {visaNatverk && inloggad?.roll === 'admin' && natverk ? (
+        <View style={{ backgroundColor: c.kort, borderColor: c.kortBorder, borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+          <Text style={{ color: c.textRubrik, fontWeight: '700', marginBottom: 6 }}>Nätverk där man får stämpla</Text>
+          <Text style={{ color: c.textMuted, fontSize: 12, marginBottom: 8 }}>
+            Stämpling går bara från de här adresserna (företagets internet/wifi). Står du på ett nätverk som ska godkännas — t.ex. verkstans wifi — tryck "Lägg till nätverket jag är på". Tom lista = alla nätverk tillåtna.
+          </Text>
+          {(natverk.tillatna || []).map(n => (
+            <View key={n.ip} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
+              <Text style={{ color: c.text, fontWeight: '600' }}>{n.namn}</Text>
+              <Text style={{ color: c.textMuted, fontSize: 12 }}>{n.ip}{n.ip === natverk.ip ? ' · du är här' : ''} · {n.tillagd}</Text>
+              <TouchableOpacity onPress={() => { if (window.confirm(`Ta bort ${n.namn} (${n.ip})?`)) andraNatverk('DELETE', n.ip); }}>
+                <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 12 }}>🗑 Ta bort</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+          {!(natverk.tillatna || []).some(n => n.ip === natverk.ip) && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <TextInput
+                value={natverkNamn}
+                onChangeText={setNatverkNamn}
+                placeholder="Namn, t.ex. Verkstan"
+                placeholderTextColor={c.textMuted}
+                style={{ backgroundColor: c.input, borderColor: c.inputBorder, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, color: c.text, minWidth: 160 }}
+              />
+              <TouchableOpacity onPress={() => andraNatverk('POST')} style={{ backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 }}>
+                <Text style={{ color: '#fff', fontWeight: '600' }}>+ Lägg till nätverket jag är på ({natverk.ip})</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      ) : null}
 
       {visaLogg && inloggad?.roll === 'admin' ? (
         <StamplingLogg token={token} anvandare={anvandare} kunder={kunder} c={c} />

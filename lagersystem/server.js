@@ -617,8 +617,54 @@ app.get('/api/stampling/anvandare', authMiddleware, (req, res) => {
   }));
 });
 
+// Stämpling BARA på företagets nätverk (Krystian 2026-10-23 "gör så man bara kan
+// stämpla med wifi igång eller företagets internet"). Servern ser klientens
+// publika IPv4 (nginx → trust proxy; three.nordiska.io har ingen IPv6): en
+// telefon på företagets wifi kommer ut med kontorets adress, på mobildata med
+// operatörens. Admin lägger till/tar bort nätverk i Stämpling → 🌐 Nätverk
+// (står man på nätverket läggs dess adress till). Tom lista = spärren av.
+// Gäller in/ut-stämplingen — inte admins manuella logg/frånvaro.
+const STAMPLING_NATVERK_FILE = path.join(DATA_DIR, 'stampling-natverk.json');
+if (!fs.existsSync(STAMPLING_NATVERK_FILE)) {
+  // Kontorets adress 2026-10-23 (KRYSTIAN-datorn, samma router som wifi:t).
+  writeJSON(STAMPLING_NATVERK_FILE, { tillatna: [{ ip: '83.145.53.74', namn: 'Kontoret', tillagd: '2026-10-23' }] });
+}
+const klientIp = (req) => String(req.ip || '').replace(/^::ffff:/, '');
+const stamplingNatverk = () => readJSON(STAMPLING_NATVERK_FILE, { tillatna: [] }).tillatna || [];
+function paForetagetsNatverk(req) {
+  const tillatna = stamplingNatverk();
+  return !tillatna.length || tillatna.some(n => n.ip === klientIp(req));
+}
+
+app.get('/api/stampling/natverk', authMiddleware, (req, res) => {
+  const tillatna = stamplingNatverk();
+  res.json({ ip: klientIp(req), tillaten: paForetagetsNatverk(req), ...(req.user.roll === 'admin' ? { tillatna } : {}) });
+});
+
+app.post('/api/stampling/natverk', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
+  const ip = String(req.body?.ip || klientIp(req)).trim();
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return res.status(400).json({ error: `Ogiltig adress: ${ip}` });
+  const data = readJSON(STAMPLING_NATVERK_FILE, { tillatna: [] });
+  data.tillatna = (data.tillatna || []).filter(n => n.ip !== ip);
+  data.tillatna.push({ ip, namn: String(req.body?.namn || '').trim().slice(0, 60) || ip, tillagd: new Date().toISOString().slice(0, 10), av: req.user.username });
+  writeJSON(STAMPLING_NATVERK_FILE, data);
+  res.json({ ok: true, tillatna: data.tillatna });
+});
+
+app.delete('/api/stampling/natverk/:ip', authMiddleware, (req, res) => {
+  if (req.user.roll !== 'admin') return res.status(403).json({ error: 'Kräver admin' });
+  const data = readJSON(STAMPLING_NATVERK_FILE, { tillatna: [] });
+  data.tillatna = (data.tillatna || []).filter(n => n.ip !== req.params.ip);
+  writeJSON(STAMPLING_NATVERK_FILE, data);
+  res.json({ ok: true, tillatna: data.tillatna });
+});
+
 app.post('/api/stampling/stampla', authMiddleware, (req, res) => {
   const { userId, pin, omrade, kundId, kundNamn } = req.body;
+  if (!paForetagetsNatverk(req)) {
+    return res.status(403).json({ error: `Stämpling går bara på företagets wifi/internet — anslut till wifi:t och försök igen (du är på ${klientIp(req) || 'okänt nät'}).`, natverk: false });
+  }
   if (!userId || !pin) return res.status(400).json({ error: 'userId och pin krävs' });
   const users = readJSON(USERS_FILE, []);
   const user = users.find(u => u.id === userId);
