@@ -1,0 +1,7 @@
+# Facit-samlingen (NCW + eluCads AUF, ~100 MB) och körningar stannar lokalt.
+par/
+uppsattning-*/
+index.json
+rapport.json
+*.log
+kor-motordump-uppsattning.json

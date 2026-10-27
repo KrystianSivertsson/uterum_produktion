@@ -1,0 +1,134 @@
+﻿System;Typ;Artikelnr;Benämning;Färg;Enhet;Behov;I lager;Saknas;Anmärkning
+ASE60;Profil;460640;Cover prof. 2/3-tr;Antracit;stänger à 5000;20;4;16;
+ASE60;Profil;460640;Cover prof. 2/3-tr;Svart;stänger à 5000;20;0;20;
+ASE60;Profil;460640;Cover prof. 2/3-tr;Vit;stänger à 5000;20;43;0;
+ASE60;Profil;487850;Outer frame 48/48 2-tr;Antracit;stänger à 6000;25;15;10;
+ASE60;Profil;487850;Outer frame 48/48 2-tr;Svart;stänger à 6000;25;10;15;
+ASE60;Profil;487850;Outer frame 48/48 2-tr;Vit;stänger à 6000;25;93;0;
+ASE60;Profil;490240;Cover prof. VF 60;Antracit;stänger à 5000;20;3;17;
+ASE60;Profil;490240;Cover prof. VF 60;Svart;stänger à 5000;20;0;20;
+ASE60;Profil;490240;Cover prof. VF 60;Vit;stänger à 5000;20;0;20;
+ASE60;Profil;517340;517340;Antracit;stänger à 6500;40;22;18;
+ASE60;Profil;517340;517340;Svart;stänger à 6500;40;2;38;
+ASE60;Profil;517340;517340;Vit;stänger à 6500;40;172;0;
+ASE60;Tillbehör;184020;Glzng bead 22-7;;st;180;0;180;
+ASE60;Tillbehör;201316;Track St 15;;st;120;0;120;
+ASE60;Tillbehör;203194;Guide profile;;st;120;0;120;
+ASE60;Tillbehör;203195;Insert prof.;;st;120;0;120;
+ASE60;Tillbehör;203196;Insert prof. v2;;st;60;0;60;
+ASE60;Tillbehör;203198;Cover profile, inside;;st;60;0;60;finns inte i lagerregistret
+ASE60;Tillbehör;205175;C/s screw ST3,9x38 ISR15;;st;240;660;0;
+ASE60;Tillbehör;205462;Cheese hd scrw ST3,9x16 ISR15;;st;2520;6565;0;
+ASE60;Tillbehör;218168;Cover cap 10/15;;st;240;1280;0;
+ASE60;Tillbehör;220777;Interlock prof. P-p;;st;120;0;120;
+ASE60;Tillbehör;220787;Cover prof.;;st;120;0;120;
+ASE60;Tillbehör;235236;Corner cleat;;st;120;504;0;
+ASE60;Tillbehör;235404;Corner cleat;;st;240;118;122;
+ASE60;Tillbehör;235406;Corner cleat;;st;180;251;0;
+ASE60;Tillbehör;244058;Gasket cord 2,5;;st;180;1600;0;lagret räknar i m
+ASE60;Tillbehör;244669;Centre gasket;;st;60;320;0;lagret räknar i m
+ASE60;Tillbehör;244670;244670 (2 × 50 m = 100 m);;st;300;150;150;
+ASE60;Tillbehör;245442;Glazing rebate insulation;;st;60;0;60;finns inte i lagerregistret
+ASE60;Tillbehör;265353;Screw sleeve;;st;240;548;0;
+ASE60;Tillbehör;265666;Cover cap 9005;;st;120;37;83;
+ASE60;Tillbehör;275911;Fixing accessories;;st;60;0;60;finns inte i lagerregistret
+ASE60;Tillbehör;276716;Anti-mishandling device;;st;60;0;60;finns inte i lagerregistret
+ASE60;Tillbehör;276725;Gearbox;;st;60;0;60;finns inte i lagerregistret
+ASE60;Tillbehör;276735;Roller carriage;;st;120;0;120;finns inte i lagerregistret
+ASE60;Tillbehör;276738;Crank handle (schiebegripp 9005);;st;60;0;60;finns inte i lagerregistret
+ASE60;Tillbehör;276850;Vent frame buffer;;st;120;0;120;finns inte i lagerregistret
+ASE60;Tillbehör;278419;Slider prof.;;st;360;0;360;
+ASE60;Tillbehör;278423;278423;;st;60;110;0;lagret räknar i PAK
+ASE60;Tillbehör;278425;Filler;;st;120;240;0;
+ASE60;Tillbehör;281596;PU End caps;;st;30;0;30;finns inte i lagerregistret
+ASE60;Tillbehör;281602;End cap Interlk Bk;;st;240;242;0;
+ASE60;Tillbehör;281632;Keep;;st;180;129;51;
+ASE60;Tillbehör;281697;Pr. ret. clp;;st;1680;3638;0;
+ASE60;Tillbehör;284321;Glazg rebate gaskt 6;;st;60;8;52;
+ASE60;Tillbehör;284834;Glazing gasket, inside;;st;60;0;60;finns inte i lagerregistret
+ASE60;Tillbehör;359700;Drip bar 36;;st;120;0;120;
+ASE60;Tillbehör;513000;Struct. prf.;;st;120;0;120;
+ASE60;Tillbehör;542000;Groove cover profile;;st;60;0;60;finns inte i lagerregistret
+ASS32;Profil;133720;Vent frame 68;Antracit;stänger à 6000;9;0;9;
+ASS32;Profil;133720;Vent frame 68;Svart;stänger à 6000;9;13;0;
+ASS32;Profil;133720;Vent frame 68;Vit;stänger à 6000;9;70;0;
+ASS32;Profil;133730;Vent frame 53;Antracit;stänger à 6500;20;3;17;
+ASS32;Profil;133730;Vent frame 53;Svart;stänger à 6500;20;8;12;
+ASS32;Profil;133730;Vent frame 53;Vit;stänger à 6500;20;31;0;
+ASS32;Profil;309330;Glzg br 50;Antracit;stänger à 6500;40;9;31;
+ASS32;Profil;309330;Glzg br 50;Svart;stänger à 6500;40;15;25;
+ASS32;Profil;309330;Glzg br 50;Vit;stänger à 6500;40;67;0;
+ASS32;Profil;376150;Outer frame 46;Antracit;stänger à 6000;20;4;16;
+ASS32;Profil;376150;Outer frame 46;Svart;stänger à 6000;20;21;0;
+ASS32;Profil;376150;Outer frame 46;Vit;stänger à 6000;20;122;0;
+ASS32;Tillbehör;178490;Corner cleat prof. 11,1;;st;120;0;120;
+ASS32;Tillbehör;205080;C/s screw ST3,9x13 ISR15;;st;240;480;0;
+ASS32;Tillbehör;205660;Cheese hd scrw ST4,2x38;;st;360;600;0;
+ASS32;Tillbehör;217332;Buffer stop;;st;60;128;0;
+ASS32;Tillbehör;223409;Roller;;st;180;396;0;
+ASS32;Tillbehör;224481;Glazing gskt 24;;m;729,3;1150;0;
+ASS32;Tillbehör;224497;Brush seal Centre bar 6,5;;m;1077;2000;0;
+ASS32;Tillbehör;224634;Cover prof. 9005;;stänger à 6000;90;0;90;
+ASS32;Tillbehör;227007;Seal Bk;;st;360;800;0;
+ASS32;Tillbehör;227009;Cover cap;;st;160;120;40;
+ASS32;Tillbehör;227017;Cover cap;;st;80;60;20;
+ASS32;Tillbehör;227018;Drainage cover cap;;st;40;172;0;
+ASS32;Tillbehör;227020;Drainage cover cap Wh;;st;20;100;0;
+ASS32;Tillbehör;227021;Drainage cover cap;;st;90;500;0;
+ASS32;Tillbehör;227027;Centre gasket;;st;60;130;0;
+ASS32;Tillbehör;227028;Centre gasket;;st;60;128;0;
+ASS32;Tillbehör;227105;Anti-lift lock;;st;60;0;60;
+ASS32;Tillbehör;227129;Cover cap;;st;80;400;0;
+ASS32;Tillbehör;227130;Cover cap;;st;40;200;0;
+ASS32;Tillbehör;227153;Buffer stop;;st;120;278;0;
+ASS32;Tillbehör;227565;Guide;;st;90;200;0;
+ASS32;Tillbehör;227783;Anti-lft-out dv.;;st;180;320;0;
+ASS32;Tillbehör;228048;Hook bolt;;st;60;65;0;
+ASS32;Tillbehör;234390;Lock 9005;;st;40;27;13;
+ASS32;Tillbehör;234391;Lock 9010;;st;20;0;20;
+ASS32;Tillbehör;284084;Interlock prof.;;stänger à 6500;120;0;120;
+ASS32;Tillbehör;284262;Cover gasket;;m;862,8;1560;0;
+ASS32;Tillbehör;308130;Track;;stänger à 6000;45;0;45;
+ASE60+Fasta;Tillbehör;203102;Glazing bead clip;;st;3000;493;2507;
+ASE60+Fasta;Tillbehör;218157;Connector nail 5x13,5 v2;;st;1800;0;1800;
+Fasta;Profil;358170;Outer frame 44/69;Antracit;stänger à 6000;10;0;10;4 ofärgade i lager (kan lackas)
+Fasta;Profil;358170;Outer frame 44/69;Svart;stänger à 6000;10;0;10;4 ofärgade i lager (kan lackas)
+Fasta;Profil;358170;Outer frame 44/69;Vit;stänger à 6000;10;0;10;4 ofärgade i lager (kan lackas)
+Fasta;Profil;358260;AWS 70.HI transom/mullion 44/94;Antracit;stänger à 6000;5;0;5;finns inte i lagerregistret
+Fasta;Profil;358260;AWS 70.HI transom/mullion 44/94;Svart;stänger à 6000;5;0;5;finns inte i lagerregistret
+Fasta;Profil;358260;AWS 70.HI transom/mullion 44/94;Vit;stänger à 6000;5;0;5;finns inte i lagerregistret
+Fasta;Tillbehör;184040;Glzng bead 22-17;;stänger à 6000;72;0;72;
+Fasta;Tillbehör;226943;Corner seal;;st;60;99;0;
+Fasta;Tillbehör;226945;Joint seal Kit 60;;st;60;100;0;
+Fasta;Tillbehör;236965;Punching screw M5x26 ISR20;;st;30;0;30;finns inte i lagerregistret
+Fasta;Tillbehör;242511;Jnt-seal pc 70;;st;30;0;30;finns inte i lagerregistret
+Fasta;Tillbehör;268221;Adhesve guide;;st;240;0;240;finns inte i lagerregistret
+Fasta;Tillbehör;284351;Glazing gasket outside;;m;271,5;0;271,5;lagret räknar i st
+Fasta;Tillbehör;284839;Glazing gasket inside;;m;272,3;0;272,3;lagret räknar i st
+Fasta;Tillbehör;288163;Glass support;;st;120;73;47;
+Fasta;Tillbehör;313570;T-cleat profile 16,7;;st;30;0;30;finns inte i lagerregistret
+Fasta;Tillbehör;467860;T-cleat profile 8,2;;st;30;0;30;finns inte i lagerregistret
+Fasta;Tillbehör;467910;Corner cleat prof. 30,3;;st;60;0;60;finns inte i lagerregistret
+Fasta;Tillbehör;467920;Corner cleat prof. 26,5;;st;60;0;60;finns inte i lagerregistret
+Tak AOC 50;Profil;161460;Cover cap;Svart;stänger à 6000;30;0;30;
+Tak AOC 50;Profil;161460;Cover cap;Vit;stänger à 6000;30;0;30;
+Tak AOC 50;Profil;493730;Cover cap 20;Svart;stänger à 6000;90;0;90;
+Tak AOC 50;Profil;493730;Cover cap 20;Vit;stänger à 6000;90;0;90;
+Tak AOC 50;Tillbehör;205436;Screw ST3,9x9,5 ISR15;;st;360;283;77;
+Tak AOC 50;Tillbehör;205893;Screw ST5,5x58 ISR25;;st;1920;0;1920;
+Tak AOC 50;Tillbehör;205894;Screw ST5,5x60 ISR25;;st;3420;1799;1621;
+Tak AOC 50;Tillbehör;225217;C/s screw ST4,6x40 ISR20;;st;15200;8495;6705;
+Tak AOC 50;Tillbehör;230727;Isolator C2C 22x33,5;;stänger à 6000;240;0;240;
+Tak AOC 50;Tillbehör;230757;Seal plate 50;;st;960;220;740;
+Tak AOC 50;Tillbehör;230771;Joint seal pc 50;;st;1320;353;967;
+Tak AOC 50;Tillbehör;230780;Seal Transm;;st;960;306;654;
+Tak AOC 50;Tillbehör;244396;Washer;;st;5340;1878;3462;
+Tak AOC 50;Tillbehör;245572;Glazg rebate gaskt 50 Bk;;m;1316,1;0;1316,1;
+Tak AOC 50;Tillbehör;268421;Glass carrier 38-40;;st;640;0;640;
+Tak AOC 50;Tillbehör;288538;Seal Transm v2;;st;480;0;480;
+Tak AOC 50;Tillbehör;288722;End cap 50x20;;st;360;69;291;
+Tak AOC 50;Tillbehör;298209;Glazing block 100x39x3;;st;640;220;420;
+Tak AOC 50;Tillbehör;477600;Pressure plte P-p;;stänger à 6000;180;0;180;finns inte i lagerregistret
+Tak AOC 50;Tillbehör;477720;Pressure plate P-p;;stänger à 6000;60;0;60;
+Tak AOC 50;Tillbehör;536950;Add-on prof. 50;;stänger à 6000;60;0;60;
+Tak AOC 50;Tillbehör;536960;Add-on prof. Pchd 50;;stänger à 6000;180;0;180;

@@ -1,0 +1,2241 @@
+{
+ "produkter": [
+  {
+   "id": "1001",
+   "namn": "Vent frame 68",
+   "artikel": "133720",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "6000 mm",
+   "farger": [
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6000,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "1002",
+   "namn": "Vent frame 53",
+   "artikel": "133730",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "6500 mm"
+  },
+  {
+   "id": "1004",
+   "namn": "Glzng bead 22-7",
+   "artikel": "184020",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "1005",
+   "namn": "End cap 50x20",
+   "artikel": "288722",
+   "antal": 69,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "1006",
+   "namn": "Glzng bead BS 15-7",
+   "artikel": "306300",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm",
+   "farger": [
+    {
+     "farg": "Grå",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6000,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "1007",
+   "namn": "Glzg br 50",
+   "artikel": "309330",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "6500 mm",
+   "farger": [
+    {
+     "farg": "Grå",
+     "langd": 6500,
+     "antal": 0
+    },
+    {
+     "farg": "Svart",
+     "langd": 6500,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6500,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "1008",
+   "namn": "Gutter prof. 47",
+   "artikel": "333480",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm",
+   "farger": [
+    {
+     "farg": "Grå",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6000,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "1009",
+   "namn": "Drip bar 36",
+   "artikel": "359700",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm",
+   "farger": [
+    {
+     "farg": "Grå",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6000,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "1010",
+   "namn": "Outer frame 46",
+   "artikel": "376150",
+   "antal": 147,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "6000 mm",
+   "farger": [
+    {
+     "farg": "Grå",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6000,
+     "antal": 0
+    }
+   ],
+   "enhet": "st",
+   "bild": null,
+   "langder": [],
+   "ihopslagenFran": [
+    "1017"
+   ]
+  },
+  {
+   "id": "1011",
+   "namn": "Cover prof. 2/3-tr",
+   "artikel": "460640",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm",
+   "farger": [
+    {
+     "farg": "Grå",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6000,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "1012",
+   "namn": "Outer frame 48/48 2-tr",
+   "artikel": "487850",
+   "antal": 118,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "1013",
+   "namn": "Cover prof. VF 60",
+   "artikel": "490240",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "5500 mm",
+   "farger": [
+    {
+     "farg": "Grå",
+     "langd": 5500,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "1014",
+   "namn": "Cover cap 20",
+   "artikel": "493730",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "1015",
+   "namn": "Vent frame 60/82",
+   "artikel": "504010",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6500 mm"
+  },
+  {
+   "id": "1016",
+   "namn": "Vent frame 60/82 (5m)",
+   "artikel": "504050",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "5000 mm"
+  },
+  {
+   "id": "2001",
+   "namn": "Seal Bk",
+   "artikel": "227007",
+   "antal": 800,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2002",
+   "namn": "Cover cap",
+   "artikel": "227009",
+   "antal": 120,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2003",
+   "namn": "Cover cap",
+   "artikel": "227017",
+   "antal": 60,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2004",
+   "namn": "Drainage cover cap",
+   "artikel": "227018",
+   "antal": 172,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2005",
+   "namn": "Drainage cover cap Wh",
+   "artikel": "227020",
+   "antal": 100,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2006",
+   "namn": "Drainage cover cap",
+   "artikel": "227021",
+   "antal": 500,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2007",
+   "namn": "Centre gasket",
+   "artikel": "227027",
+   "antal": 130,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2008",
+   "namn": "Centre gasket",
+   "artikel": "227028",
+   "antal": 128,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2009",
+   "namn": "Anti-lift lock",
+   "artikel": "227105",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2010",
+   "namn": "Cover cap",
+   "artikel": "227129",
+   "antal": 400,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2011",
+   "namn": "Cover cap",
+   "artikel": "227130",
+   "antal": 200,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2012",
+   "namn": "Buffer stop",
+   "artikel": "227153",
+   "antal": 278,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2013",
+   "namn": "Guide",
+   "artikel": "227565",
+   "antal": 200,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2014",
+   "namn": "Anti-lft-out dv.",
+   "artikel": "227783",
+   "antal": 320,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2015",
+   "namn": "Hook bolt",
+   "artikel": "228048",
+   "antal": 65,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2016",
+   "namn": "Flex injector",
+   "artikel": "230490",
+   "antal": 10,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "dimension": ""
+  },
+  {
+   "id": "2018",
+   "namn": "Glss carr. 38",
+   "artikel": "230743",
+   "antal": 136,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2022",
+   "namn": "Lock 9005",
+   "artikel": "234390",
+   "antal": 27,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2024",
+   "namn": "Lock 9010",
+   "artikel": "234391",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": "",
+   "enhet": "st",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2023"
+   ]
+  },
+  {
+   "id": "2025",
+   "namn": "Corner cleat",
+   "artikel": "235236",
+   "antal": 504,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2026",
+   "namn": "Corner cleat",
+   "artikel": "235404",
+   "antal": 118,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2027",
+   "namn": "Corner cleat",
+   "artikel": "235406",
+   "antal": 251,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2028",
+   "namn": "Seal",
+   "artikel": "242028",
+   "antal": 13,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2029",
+   "namn": "Gasket cord 2,5",
+   "artikel": "244058",
+   "antal": 1600,
+   "minAntal": 2,
+   "kategori": "Schueco ASE 60",
+   "dimension": "",
+   "enhet": "m"
+  },
+  {
+   "id": "2031",
+   "namn": "Centre gasket",
+   "artikel": "244669",
+   "antal": 320,
+   "minAntal": 2,
+   "kategori": "Schueco ASE 60",
+   "dimension": "",
+   "enhet": "m"
+  },
+  {
+   "id": "2032",
+   "namn": "Rebate gasket",
+   "artikel": "244829",
+   "antal": 1000,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "",
+   "enhet": "m"
+  },
+  {
+   "id": "2033",
+   "namn": "Rebate gasket",
+   "artikel": "244830",
+   "antal": 500,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "",
+   "enhet": "m"
+  },
+  {
+   "id": "2034",
+   "namn": "Seal kit",
+   "artikel": "244831",
+   "antal": 27,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2036",
+   "namn": "Brush seal Centre bar 8",
+   "artikel": "245770",
+   "antal": 500,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": "",
+   "enhet": "m"
+  },
+  {
+   "id": "2037",
+   "namn": "GLAZING CLIP",
+   "artikel": "246434",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6500 mm"
+  },
+  {
+   "id": "2039",
+   "namn": "Screw sleeve",
+   "artikel": "265353",
+   "antal": 548,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2040",
+   "namn": "Cover cap 9005",
+   "artikel": "265666",
+   "antal": 37,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "",
+   "enhet": "st",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "3006"
+   ]
+  },
+  {
+   "id": "2041",
+   "namn": "End cap",
+   "artikel": "265667",
+   "antal": 50,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2042",
+   "namn": "Centre gasket 2/3-tr",
+   "artikel": "265731",
+   "antal": 63,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2043",
+   "namn": "Crnr pce Insul. prof.",
+   "artikel": "265834",
+   "antal": 126,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2045",
+   "namn": "Lift/slide hndle P cy C0",
+   "artikel": "269406",
+   "antal": 125,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "",
+   "enhet": "st",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2044"
+   ]
+  },
+  {
+   "id": "2047",
+   "namn": "Lift/slide hndle P cy C0 v2",
+   "artikel": "269417",
+   "antal": 133,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "",
+   "enhet": "st",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2046"
+   ]
+  },
+  {
+   "id": "2048",
+   "namn": "Fixing kit Hndle",
+   "artikel": "269430",
+   "antal": 136,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2049",
+   "namn": "Gearbox 1-part",
+   "artikel": "275270",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2050",
+   "namn": "Rllr car. 200kg",
+   "artikel": "276882",
+   "antal": 689,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2051",
+   "namn": "Accessory Rllr carr. hge",
+   "artikel": "276884",
+   "antal": 121,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2052",
+   "namn": "Cover prof.",
+   "artikel": "278362",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2053",
+   "namn": "Clip-on pr. Magnetic gasket",
+   "artikel": "278368",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "3500 mm"
+  },
+  {
+   "id": "2054",
+   "namn": "Slider prof.",
+   "artikel": "278419",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2055",
+   "namn": "Filler",
+   "artikel": "278425",
+   "antal": 240,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2056",
+   "namn": "Double cylindr 45/45 30°",
+   "artikel": "279211",
+   "antal": 103,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2057",
+   "namn": "End cap Interlk Bk",
+   "artikel": "281602",
+   "antal": 242,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2058",
+   "namn": "Seal kit",
+   "artikel": "281604",
+   "antal": 71,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2059",
+   "namn": "Keep",
+   "artikel": "281632",
+   "antal": 129,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2060",
+   "namn": "Pr. ret. clp",
+   "artikel": "281697",
+   "antal": 3638,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2061",
+   "namn": "Chamber divsn",
+   "artikel": "281866",
+   "antal": 65,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2062",
+   "namn": "Interlock prof.",
+   "artikel": "284084",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "6500 mm"
+  },
+  {
+   "id": "2063",
+   "namn": "Cover gasket",
+   "artikel": "284262",
+   "antal": 1560,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "",
+   "enhet": "m"
+  },
+  {
+   "id": "2064",
+   "namn": "Glazg rebate gaskt 6",
+   "artikel": "284321",
+   "antal": 8,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2065",
+   "namn": "Glazing gskt 3-4",
+   "artikel": "284835",
+   "antal": 900,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": "",
+   "enhet": "m"
+  },
+  {
+   "id": "2067",
+   "namn": "Pressure plte Pre-ass.",
+   "artikel": "477620",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2068",
+   "namn": "Track",
+   "artikel": "308130",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2070",
+   "namn": "Struct. prf.",
+   "artikel": "513000",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2072",
+   "namn": "Corner cleat prof. 11,1",
+   "artikel": "178490",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2073",
+   "namn": "Track St 15",
+   "artikel": "201316",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2074",
+   "namn": "Glazing bead clip For coatng",
+   "artikel": "203111",
+   "antal": 5000,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2075",
+   "namn": "Guide profile",
+   "artikel": "203194",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2076",
+   "namn": "Insert prof.",
+   "artikel": "203195",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2077",
+   "namn": "Insert prof. v2",
+   "artikel": "203196",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2078",
+   "namn": "C/s screw ST3,9x13 ISR15",
+   "artikel": "205080",
+   "antal": 480,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2079",
+   "namn": "C/s screw ST3,9x38 ISR15",
+   "artikel": "205175",
+   "antal": 660,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2081",
+   "namn": "Cheese hd scrw ST3,9x16 ISR15",
+   "artikel": "205462",
+   "antal": 6565,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2082",
+   "namn": "Cheese hd scrw ST4,2x38",
+   "artikel": "205660",
+   "antal": 600,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2084",
+   "namn": "Buffer",
+   "artikel": "207047",
+   "antal": 104,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "",
+   "enhet": "st",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "3003"
+   ]
+  },
+  {
+   "id": "2085",
+   "namn": "Buffer stop",
+   "artikel": "217332",
+   "antal": 128,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2086",
+   "namn": "Connector nail 5x13,5",
+   "artikel": "225340",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "2087",
+   "namn": "Connector nail 5x13,5 v2",
+   "artikel": "218157",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2088",
+   "namn": "Cover cap 10/15",
+   "artikel": "218168",
+   "antal": 1280,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "",
+   "enhet": "st",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "3004"
+   ]
+  },
+  {
+   "id": "2089",
+   "namn": "Bar 8mm",
+   "artikel": "219657",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "2090",
+   "namn": "Interlock prof. P-p",
+   "artikel": "220777",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "5500 mm"
+  },
+  {
+   "id": "2091",
+   "namn": "Cover prof.",
+   "artikel": "220787",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "5500 mm"
+  },
+  {
+   "id": "2092",
+   "namn": "Roller",
+   "artikel": "223409",
+   "antal": 396,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": ""
+  },
+  {
+   "id": "2093",
+   "namn": "Glazing gskt 24",
+   "artikel": "224481",
+   "antal": 1150,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "",
+   "enhet": "m"
+  },
+  {
+   "id": "2094",
+   "namn": "Brush seal Centre bar 6,5",
+   "artikel": "224497",
+   "antal": 2000,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "",
+   "enhet": "m"
+  },
+  {
+   "id": "2095",
+   "namn": "Cover prof. 9005",
+   "artikel": "224634",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASS 32",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "2096",
+   "namn": "Socket head bolt ST5,5x27,5 ISR25",
+   "artikel": "225082",
+   "antal": 677,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "dimension": ""
+  },
+  {
+   "id": "3001",
+   "namn": "Outer shell 92/12,5",
+   "artikel": "460740",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6500 mm"
+  },
+  {
+   "id": "3002",
+   "namn": "Inner shell 70/20,8",
+   "artikel": "460760",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6500 mm"
+  },
+  {
+   "id": "3005",
+   "namn": "Corner cleat (komp)",
+   "artikel": "235362",
+   "antal": 8,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "3007",
+   "namn": "PA insul. bar 350kg 56",
+   "artikel": "278363",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "6500 mm"
+  },
+  {
+   "id": "3008",
+   "namn": "C/s screw ST4,8x90 ISR25",
+   "artikel": "286970",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "4001",
+   "namn": "Outer frame 44/69",
+   "artikel": "358170",
+   "antal": 4,
+   "minAntal": 5,
+   "kategori": "Schueco AWS/ADS 70 HI",
+   "enhet": "st",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "4002",
+   "namn": "Glazing bead 2232",
+   "artikel": "184070",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AWS/ADS 70 HI",
+   "enhet": "st",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "4003",
+   "namn": "Corner cleats, crimped",
+   "artikel": "236199",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AWS/ADS 70 HI",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "4004",
+   "namn": "Corner seal",
+   "artikel": "226943",
+   "antal": 99,
+   "minAntal": 5,
+   "kategori": "Schueco AWS/ADS 70 HI",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "4005",
+   "namn": "Glazing gasket outside",
+   "artikel": "284351",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AWS/ADS 70 HI",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "4006",
+   "namn": "Glazing gasket inside",
+   "artikel": "284839",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AWS/ADS 70 HI",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "4007",
+   "namn": "Glass support",
+   "artikel": "288163",
+   "antal": 73,
+   "minAntal": 5,
+   "kategori": "Schueco AWS/ADS 70 HI",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "4008",
+   "namn": "Glazing bead clip",
+   "artikel": "203102",
+   "antal": 493,
+   "minAntal": 5,
+   "kategori": "Schueco AWS/ADS 70 HI",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "5001",
+   "namn": "Add-on prof. 50",
+   "artikel": "536950",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "5002",
+   "namn": "Add-on prof. Pchd 50",
+   "artikel": "536960",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "6000 mm",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2071"
+   ]
+  },
+  {
+   "id": "5003",
+   "namn": "Pressure plate 50",
+   "artikel": "477590",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "5004",
+   "namn": "Pressure plate P-p",
+   "artikel": "477720",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "6000 mm",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2069"
+   ]
+  },
+  {
+   "id": "5005",
+   "namn": "Cover cap 25",
+   "artikel": "493740",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "6000 mm"
+  },
+  {
+   "id": "5006",
+   "namn": "Cover cap",
+   "artikel": "161460",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "6000 mm",
+   "bild": null,
+   "farger": [
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6000,
+     "antal": 0
+    }
+   ],
+   "langder": [],
+   "ihopslagenFran": [
+    "1003"
+   ]
+  },
+  {
+   "id": "5007",
+   "namn": "Glazg rebate gaskt 50 Bk",
+   "artikel": "245572",
+   "antal": 0,
+   "minAntal": 10,
+   "kategori": "Schueco AOC 50",
+   "enhet": "m",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2035"
+   ]
+  },
+  {
+   "id": "5008",
+   "namn": "Glazg rebate gaskt 5",
+   "artikel": "246476",
+   "antal": 300,
+   "minAntal": 10,
+   "kategori": "Schueco AOC 50",
+   "enhet": "m",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2038"
+   ]
+  },
+  {
+   "id": "5009",
+   "namn": "Seal plate 50",
+   "artikel": "230757",
+   "antal": 220,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2019"
+   ]
+  },
+  {
+   "id": "5010",
+   "namn": "Joint seal pc 50",
+   "artikel": "230771",
+   "antal": 353,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "5011",
+   "namn": "Seal Transm",
+   "artikel": "230780",
+   "antal": 306,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2020",
+    "2021"
+   ]
+  },
+  {
+   "id": "5012",
+   "namn": "Seal Transm v2",
+   "artikel": "288538",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "5013",
+   "namn": "Isolator C2C 22x33,5",
+   "artikel": "230727",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2017"
+   ]
+  },
+  {
+   "id": "5014",
+   "namn": "End cap 50x25",
+   "artikel": "288723",
+   "antal": 115,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "5015",
+   "namn": "Glass carrier 38-40",
+   "artikel": "268421",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "5016",
+   "namn": "Glazing block 100x39x3",
+   "artikel": "298209",
+   "antal": 220,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2066"
+   ]
+  },
+  {
+   "id": "5017",
+   "namn": "Washer",
+   "artikel": "244396",
+   "antal": 1878,
+   "minAntal": 10,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2030"
+   ]
+  },
+  {
+   "id": "5018",
+   "namn": "Screw ST3,9x9,5 ISR15",
+   "artikel": "205436",
+   "antal": 283,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2080"
+   ]
+  },
+  {
+   "id": "5019",
+   "namn": "Screw ST5,5x58 ISR25",
+   "artikel": "205893",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": ""
+  },
+  {
+   "id": "5020",
+   "namn": "Screw ST5,5x60 ISR25",
+   "artikel": "205894",
+   "antal": 1799,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2083"
+   ]
+  },
+  {
+   "id": "5021",
+   "namn": "C/s screw ST4,6x40 ISR20",
+   "artikel": "225217",
+   "antal": 8495,
+   "minAntal": 5,
+   "kategori": "Schueco AOC 50",
+   "enhet": "st",
+   "dimension": "",
+   "bild": null,
+   "farger": [],
+   "langder": [],
+   "ihopslagenFran": [
+    "2097"
+   ]
+  },
+  {
+   "id": "6001",
+   "namn": "Träbalk 140x140",
+   "artikel": "",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Trä balkar",
+   "enhet": "st",
+   "dimension": "140x140 mm"
+  },
+  {
+   "id": "6002",
+   "namn": "Träbalk 225x56",
+   "artikel": "",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Trä balkar",
+   "enhet": "st",
+   "dimension": "225x56 mm"
+  },
+  {
+   "id": "6003",
+   "namn": "Träbalk 270x56",
+   "artikel": "",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Trä balkar",
+   "enhet": "st",
+   "dimension": "270x56 mm"
+  },
+  {
+   "id": "6004",
+   "namn": "Träbalk 140x225",
+   "artikel": "",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Trä balkar",
+   "enhet": "st",
+   "dimension": "140x225 mm"
+  },
+  {
+   "id": "6005",
+   "namn": "Träbalk 140x270",
+   "artikel": "",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Trä balkar",
+   "enhet": "st",
+   "dimension": "140x270 mm"
+  },
+  {
+   "id": "lev2026_184040",
+   "namn": "Glzng bead 22-17",
+   "artikel": "184040",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_220888",
+   "namn": "Interlock prof. P-p",
+   "artikel": "220888",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "m"
+  },
+  {
+   "id": "lev2026_226945",
+   "namn": "Joint seal Kit 60",
+   "artikel": "226945",
+   "antal": 100,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_226976",
+   "namn": "Hinged corner cleat",
+   "artikel": "226976",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_234422",
+   "namn": "Dr pull 9016",
+   "artikel": "234422",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_235068",
+   "namn": "T-cleats",
+   "artikel": "235068",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "lev2026_235901",
+   "namn": "Corner cleat",
+   "artikel": "235901",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "lev2026_242509",
+   "namn": "Jnt-seal pc 70",
+   "artikel": "242509",
+   "antal": 105,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_264325",
+   "namn": "Cutting device",
+   "artikel": "264325",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_264326",
+   "namn": "Pliers",
+   "artikel": "264326",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_264352",
+   "namn": "Meas. bar For 264325",
+   "artikel": "264352",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_264443",
+   "namn": "Gasket shears",
+   "artikel": "264443",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_265326",
+   "namn": "Vnt safety dev.",
+   "artikel": "265326",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "lev2026_265599",
+   "namn": "Mix nzzle 288180",
+   "artikel": "265599",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "lev2026_269418",
+   "namn": "Lift/slide hndle P cy 9005",
+   "artikel": "269418",
+   "antal": 25,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_275271",
+   "namn": "Gearbox 1-part",
+   "artikel": "275271",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_278371",
+   "namn": "PA insul. bar 350kg 56",
+   "artikel": "278371",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "m"
+  },
+  {
+   "id": "lev2026_281603",
+   "namn": "End cap Interlk Bk",
+   "artikel": "281603",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "lev2026_282108",
+   "namn": "Mitre clampg set",
+   "artikel": "282108",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_282109",
+   "namn": "Adj. clamp",
+   "artikel": "282109",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_283814",
+   "namn": "Pneumatic gun",
+   "artikel": "283814",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_288073",
+   "namn": "Metal adhesive 2-comp. PUR Beige",
+   "artikel": "288073",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "lev2026_288180",
+   "namn": "Special adhesive Silicne",
+   "artikel": "288180",
+   "antal": 6,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "lev2026_293136",
+   "namn": "Gasket shears",
+   "artikel": "293136",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_296685",
+   "namn": "Sealant handgun",
+   "artikel": "296685",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_296813",
+   "namn": "Drift",
+   "artikel": "296813",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_298074",
+   "namn": "Adhesive F EPDM",
+   "artikel": "298074",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_298359",
+   "namn": "PVC trough & roller",
+   "artikel": "298359",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_298864",
+   "namn": "Mitre sealant",
+   "artikel": "298864",
+   "antal": 1,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_298869",
+   "namn": "Special adhesive Scrw lock",
+   "artikel": "298869",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_299450",
+   "namn": "Pneum. nail gun",
+   "artikel": "299450",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_299504",
+   "namn": "Machine base",
+   "artikel": "299504",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_358180",
+   "namn": "Outer frame 44/69",
+   "artikel": "358180",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "m"
+  },
+  {
+   "id": "lev2026_358250",
+   "namn": "Transm/mullion 34/84",
+   "artikel": "358250",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "m"
+  },
+  {
+   "id": "lev2026_460620",
+   "namn": "Threshld 2/3-tr",
+   "artikel": "460620",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_460800",
+   "namn": "Outer shell 92/12,5",
+   "artikel": "460800",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_460820",
+   "namn": "Inner shell 70/20,8",
+   "artikel": "460820",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "lev2026_M513080",
+   "namn": "Vent frame 60/82",
+   "artikel": "M513080",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_471620",
+   "namn": "471620",
+   "artikel": "471620",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_278308",
+   "namn": "278308",
+   "artikel": "278308",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_181020",
+   "namn": "181020",
+   "artikel": "181020",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st",
+   "farger": [
+    {
+     "farg": "Grå",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6000,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "inv2026_tak",
+   "namn": "tak",
+   "artikel": "",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st",
+   "farger": [
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Vit",
+     "langd": 6000,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "inv2026_487000",
+   "namn": "487000",
+   "artikel": "487000",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st",
+   "farger": [
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "inv2026_509010",
+   "namn": "509010",
+   "artikel": "509010",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st",
+   "farger": [
+    {
+     "farg": "Grå",
+     "langd": 6000,
+     "antal": 0
+    },
+    {
+     "farg": "Svart",
+     "langd": 6000,
+     "antal": 0
+    }
+   ]
+  },
+  {
+   "id": "inv2026_244634",
+   "namn": "244634",
+   "artikel": "244634",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_269411",
+   "namn": "269411",
+   "artikel": "269411",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_269400",
+   "namn": "269400",
+   "artikel": "269400",
+   "antal": 17,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_269428",
+   "namn": "269428",
+   "artikel": "269428",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_205469",
+   "namn": "205469",
+   "artikel": "205469",
+   "antal": 45,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "inv2026_205485",
+   "namn": "205485",
+   "artikel": "205485",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "inv2026_237064",
+   "namn": "237064",
+   "artikel": "237064",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "inv2026_METALLKLEBER_LIM_",
+   "namn": "Metal adhesive 2-comp. PUR Gr",
+   "artikel": "298736",
+   "antal": 1,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_FLEX_2",
+   "namn": "Seal. cmpd Schüco Flex 2 Bk",
+   "artikel": "298900",
+   "antal": 59,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_276870",
+   "namn": "276870",
+   "artikel": "276870",
+   "antal": 8,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_288120",
+   "namn": "288120",
+   "artikel": "288120",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_298444",
+   "namn": "298444",
+   "artikel": "298444",
+   "antal": 100,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_276871",
+   "namn": "276871",
+   "artikel": "276871",
+   "antal": 6,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_298611",
+   "namn": "298611",
+   "artikel": "298611",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "Liter"
+  },
+  {
+   "id": "inv2026_234262",
+   "namn": "234262",
+   "artikel": "234262",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_214952",
+   "namn": "214952",
+   "artikel": "214952",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_281637",
+   "namn": "281637",
+   "artikel": "281637",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_265660",
+   "namn": "265660",
+   "artikel": "265660",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "inv2026_265432",
+   "namn": "265432",
+   "artikel": "265432",
+   "antal": 20,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_281758",
+   "namn": "281758",
+   "artikel": "281758",
+   "antal": 50,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_278423",
+   "namn": "278423",
+   "artikel": "278423",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "PAK"
+  },
+  {
+   "id": "inv2026_245470",
+   "namn": "245470 (10 × 50 m = 500 m)",
+   "artikel": "245470",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_244670",
+   "namn": "244670 (2 × 50 m = 100 m)",
+   "artikel": "244670",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_278417",
+   "namn": "278417 (2 × 60 m = 120 m)",
+   "artikel": "278417",
+   "antal": 120,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "m"
+  },
+  {
+   "id": "inv2026_269407",
+   "namn": "269407",
+   "artikel": "269407",
+   "antal": 23,
+   "minAntal": 70,
+   "kategori": "Schueco ASE 60",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_281762",
+   "namn": "281762",
+   "artikel": "281762",
+   "antal": 92,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_247332",
+   "namn": "247332",
+   "artikel": "247332",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_265777",
+   "namn": "265777",
+   "artikel": "265777",
+   "antal": 36,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "inv2026_276726",
+   "namn": "276726",
+   "artikel": "276726",
+   "antal": 0,
+   "minAntal": 5,
+   "kategori": "Osorterat",
+   "enhet": "st"
+  },
+  {
+   "id": "5005-278423",
+   "namn": "Insulation profile (Fullstoff)",
+   "artikel": "278423",
+   "antal": 110,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": ""
+  },
+  {
+   "id": "5004-244670",
+   "namn": "Brush gasket Mittelsteg 8",
+   "artikel": "244670",
+   "antal": 150,
+   "minAntal": 5,
+   "kategori": "Schueco ASE 60",
+   "dimension": "",
+   "enhet": "m"
+  }
+ ],
+ "ordrar": []
+}

@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+const cfg = JSON.parse(fs.readFileSync('K:/Claude Projekt-Krystian Sivertsson/lagersystem/tools/sync-u.config.json', 'utf8'));
+const bas = cfg.url.replace(/\/+$/, '');
+const { token } = await (await fetch(`${bas}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: cfg.user, password: cfg.password ?? cfg.pass ?? cfg.losenord }) })).json();
+const H = { Authorization: `Bearer ${token}` };
+const logg = await (await fetch(`${bas}/api/changes`, { headers: H })).json();
+const kopior = await (await fetch(`${bas}/api/lager/snapshots?full=1`, { headers: H })).json();
+fs.writeFileSync('lager-logg.json', JSON.stringify(logg, null, 1));
+fs.writeFileSync('lager-kopior.json', JSON.stringify(kopior));
+const falt = {};
+for (const e of logg) for (const a of e.andringar || []) falt[a.falt] = (falt[a.falt] || 0) + 1;
+console.log('fält:', JSON.stringify(falt));
+console.log('exempel:', JSON.stringify(logg.find((e) => e.tid >= '2026-10-21' && e.user.startsWith('Krystian')), null, 0).slice(0, 600));
+for (const e of logg.filter((e) => e.tid >= '2026-09-14' && e.user.startsWith('Krystian'))) console.log(e.tid.slice(0, 16), e.produktNamn, (e.andringar || []).map((a) => `${a.falt}: ${a.fran} → ${a.till}`).join('; '));

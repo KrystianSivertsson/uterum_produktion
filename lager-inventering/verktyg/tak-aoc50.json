@@ -1,0 +1,229 @@
+{
+ "B": 6000,
+ "D": 5000,
+ "N": 10,
+ "sammanfattning": {
+  "linjer": 9,
+  "fack": 8,
+  "rader": 2,
+  "falt": 16,
+  "tAnslutningar": 48,
+  "langdMm": 5360.9,
+  "fackCc": [
+   743.2,
+   743.2,
+   743.2,
+   743.2,
+   743.2,
+   743.2,
+   743.2,
+   743.2
+  ],
+  "radCc": [
+   2680.4,
+   2680.4
+  ]
+ },
+ "profiler": [
+  {
+   "artikel": "536960",
+   "namn": "Add-on prof. Pchd 50",
+   "antal": 9,
+   "langdMm": 5360.9
+  },
+  {
+   "artikel": "245572",
+   "namn": "Glazg rebate gaskt 50 Bk",
+   "antal": 9,
+   "langdMm": 5382.4
+  },
+  {
+   "artikel": "230727",
+   "namn": "Isolator C2C 22x33,5",
+   "antal": 18,
+   "langdMm": 2680.4
+  },
+  {
+   "artikel": "477600",
+   "namn": "Pressure plte P-p",
+   "antal": 9,
+   "langdMm": 5360.9
+  },
+  {
+   "artikel": "493730",
+   "namn": "Cover cap 20",
+   "antal": 9,
+   "langdMm": 5360.9
+  },
+  {
+   "artikel": "536950",
+   "namn": "Add-on prof. 50",
+   "antal": 24,
+   "langdMm": 669.2
+  },
+  {
+   "artikel": "245572",
+   "namn": "Glazg rebate gaskt 50 Bk",
+   "antal": 24,
+   "langdMm": 723.5
+  },
+  {
+   "artikel": "230727",
+   "namn": "Isolator C2C 22x33,5",
+   "antal": 24,
+   "langdMm": 718.2
+  },
+  {
+   "artikel": "477720",
+   "namn": "Pressure plte P-p",
+   "antal": 24,
+   "langdMm": 669.2
+  },
+  {
+   "artikel": "161460",
+   "namn": "Cover cap",
+   "antal": 24,
+   "langdMm": 669.2
+  }
+ ],
+ "tillbehor": [
+  {
+   "artikel": "205436",
+   "namn": "Cheese hd scrw ST3,9x9,5 ISR15",
+   "antal": 18,
+   "enhet": "st"
+  },
+  {
+   "artikel": "205893",
+   "namn": "Cheese hd scrw C ST5,5x58 ISR25",
+   "antal": 96,
+   "enhet": "st"
+  },
+  {
+   "artikel": "205894",
+   "namn": "Cheese hd scrw C ST5,5x60 ISR25",
+   "antal": 171,
+   "enhet": "st"
+  },
+  {
+   "artikel": "225217",
+   "namn": "C/s screw ST4,6x40 ISR20",
+   "antal": 760,
+   "enhet": "st"
+  },
+  {
+   "artikel": "230757",
+   "namn": "Seal. plte 50",
+   "antal": 48,
+   "enhet": "st"
+  },
+  {
+   "artikel": "230771",
+   "namn": "Jnt-seal pc 50",
+   "antal": 66,
+   "enhet": "st"
+  },
+  {
+   "artikel": "230780",
+   "namn": "Seal Transm",
+   "antal": 48,
+   "enhet": "st"
+  },
+  {
+   "artikel": "244396",
+   "namn": "Washer",
+   "antal": 267,
+   "enhet": "st"
+  },
+  {
+   "artikel": "288538",
+   "namn": "Seal Transm",
+   "antal": 24,
+   "enhet": "st"
+  },
+  {
+   "artikel": "288722",
+   "namn": "End cap 50x20",
+   "antal": 18,
+   "enhet": "st"
+  },
+  {
+   "artikel": "268421",
+   "namn": "Glss Carr.38-40",
+   "antal": 32,
+   "enhet": "st"
+  },
+  {
+   "artikel": "298209",
+   "namn": "Glazing block plastic 100x39x3",
+   "antal": 32,
+   "enhet": "st"
+  }
+ ],
+ "glas": [
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  },
+  {
+   "b": 719,
+   "l": 2632
+  }
+ ]
+}

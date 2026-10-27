@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+const cfg = JSON.parse(fs.readFileSync('K:/Claude Projekt-Krystian Sivertsson/lagersystem/tools/sync-u.config.json', 'utf8'));
+const bas = cfg.url.replace(/\/+$/, '');
+const { token } = await (await fetch(`${bas}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: cfg.user, password: cfg.password ?? cfg.pass ?? cfg.losenord }) })).json();
+const l = await (await fetch(`${bas}/api/lager`, { headers: { Authorization: `Bearer ${token}` } })).json();
+const art = process.argv[2];
+console.log('servern version', l.version, l.uppdaterad || '');
+for (const p of l.produkter.filter((p) => String(p.artikel) === art)) console.log('SERVER', JSON.stringify(p));
+const kopior = JSON.parse(fs.readFileSync('lager-kopior.json', 'utf8'));
+for (const k of kopior) for (const p of k.produkter.filter((p) => String(p.artikel) === art)) console.log('KOPIA', k.namn, k.tid.slice(0, 16), JSON.stringify({ antal: p.antal, farger: p.farger, langder: p.langder }));
+const logg = JSON.parse(fs.readFileSync('lager-logg.json', 'utf8'));
+const ids = new Set(l.produkter.filter((p) => String(p.artikel) === art).map((p) => String(p.id)));
+for (const e of logg.filter((e) => ids.has(String(e.produktId)))) console.log('LOGG', e.tid.slice(0, 16), e.user, (e.andringar || []).map((a) => `${a.falt}: ${a.fran} → ${a.till}`).join('; '));

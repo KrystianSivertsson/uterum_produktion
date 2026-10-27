@@ -1,0 +1,104 @@
+// motordump.ncp — skriver NC-X-motorns värden vid varje händelse (körs som p2=
+// bredvid produktionens E151NUM_7M_LIFT.ncp som p1=). En rad per händelse:
+//   EV|<händelse>|nyckel=värde|...
+// :INIT är produktionens (samma konturer/händelser) utom radnummer och
+// decimaler. Bara för facit till vår egen efterbehandlare i ase60-generator.
+
+PPVersion = "Nordiska motordump V1 2026-10-27"
+
+:INIT
+
+PPNoINIConfig				= 0
+PPFileSeparator 		= ""
+
+PPInsertNumbers    	= 0
+PPZerobeginning    	= 0
+PPPrefixnumber     	= ""
+PPStartnumber   		= 0
+PPIncnumber     		= 1
+PPLengthNumber			= 0
+PPFormat        		= 0
+PPDezNumber        	= 0
+PPDezPoint					= 6
+PPSecurityDistance 	= 0
+
+PPBroachSide        = "1234567"
+PPGenRectbroach     = 1
+PPGenLongbroach     = 1
+PPGenCircBroach     = 1
+PPGenInterpol       = 1
+PPInterpolSide      = ""
+PPInterpolError     = 0.01
+PPInterpolMinWidth  = 0.2
+
+PPContourSide       = "1234567"
+PPGenRectContour    = 1
+PPGenLongContour    = 1
+PPGenCircContour    = 1
+PPGenLineContour    = 1
+
+PPGoDTCycles        = 1
+PPGoDTSteps					= 0
+PPGoDTIncSteps			= 0
+
+
+:PROG_INIT
+Out = "DUMP|[NCXVersion]|[NCXStepping]"
+
+:PROG_HEADER
+Out = "EV|HEADER"
+
+:PROG_JOB
+Out = "EV|JOB|JIdentNo=[JIdentNo]"
+
+:PROG_BAR
+Out = "EV|BAR|BIdentNo=[BIdentNo]|BLength=[BLength]|BWidth=[BWidth]|BHeight=[BHeight]|BCutWorking=[BCutWorking]|BRestLength=[BRestLength]"
+
+:PROG_START
+Out = "EV|START|CNo=[CNo]|CPartNo=[CPartNo]|CLength=[CLength]|CStation=[CStation]|CRotation=[CRotation]|Rotation=[Rotation]|CWidth=[CWidth]|CHeight=[CHeight]|COffsetX=[COffsetX]|COffsetY=[COffsetY]|COffsetZ=[COffsetZ]|CReqMachSpaceLeft=[CReqMachSpaceLeft]|CReqMachSpaceRight=[CReqMachSpaceRight]|CClampCount=[CClampCount]|UsedToolCount=[UsedToolCount]"
+Out = "EV|MASKIN|MMaxClampHeight=[MMaxClampHeight]|MMaxClampWidth=[MMaxClampWidth]|MGearBoxDistABottom=[MGearBoxDistABottom]|MSpindleDiameter=[MSpindleDiameter]|MSpindleDistATop=[MSpindleDistATop]|MSpindleDisplacementA=[MSpindleDisplacementA]|MZMachineMax=[MZMachineMax]|MFixOffsetY=[MFixOffsetY]|MFixOffsetZ=[MFixOffsetZ]|MStation1.ClampCount=[MStation1.ClampCount]|MStation2.ClampCount=[MStation2.ClampCount]|MStation3.ClampCount=[MStation3.ClampCount]|MStation1.Offset=[MStation1.Offset]|MStation3.Offset=[MStation3.Offset]"
+Out = "EV|VERKTYG|n=[UsedToolCount]|0=[UsedTool0TPlace]:[UsedTool0TIdent]|1=[UsedTool1TPlace]:[UsedTool1TIdent]|2=[UsedTool2TPlace]:[UsedTool2TIdent]|3=[UsedTool3TPlace]:[UsedTool3TIdent]|4=[UsedTool4TPlace]:[UsedTool4TIdent]|5=[UsedTool5TPlace]:[UsedTool5TIdent]"
+
+:PROG_ROTATIONCHANGE
+Out = "EV|ROTATIONCHANGE|CNo=[CNo]|Rotation=[Rotation]|DiffRotation=[DiffRotation]|CStation=[CStation]|CReqMachSpaceLeft=[CReqMachSpaceLeft]|CReqMachSpaceRight=[CReqMachSpaceRight]|CWidth=[CWidth]|CHeight=[CHeight]|BFTHeightM=[BFTHeightM]|BFTHeightS=[BFTHeightS]|BFTTransZM=[BFTTransZM]|BFTTransZS=[BFTTransZS]"
+
+:PROG_CLAMP
+Out = "EV|CLAMP|WorkCounter=[WorkCounter]|WClampCount=[WClampCount]|CClampCount=[CClampCount]|P=[WClamp0Pos],[WClamp1Pos],[WClamp2Pos],[WClamp3Pos],[WClamp4Pos],[WClamp5Pos],[WClamp6Pos],[WClamp7Pos]|C=[WClamp0Change],[WClamp1Change],[WClamp2Change],[WClamp3Change],[WClamp4Change],[WClamp5Change],[WClamp6Change],[WClamp7Change]|CStation=[CStation]"
+
+:PROG_TOOLCHANGE
+Out = "EV|TOOLCHANGE|WorkCounter=[WorkCounter]|TPlace=[TPlace]|TIdent=[TIdent]|TType=[TType]|TDiameter=[TDiameter]|TLength_Total=[TLength_Total]|TAngleHead=[TAngleHead]|TAngleH_Z=[TAngleH_Z]"
+
+:PROG_SIDECHANGE
+Out = "EV|SIDECHANGE|WorkCounter=[WorkCounter]|WSide=[WSide]|WPrevSide=[WPrevSide]|WPAngleX=[WPAngleX]|WPAngleZ=[WPAngleZ]"
+
+:PROG_G00_XY
+Out = "EV|G00_XY|WorkCounter=[WorkCounter]|WType=[WType]|WSide=[WSide]|WPrevSide=[WPrevSide]|WNextSide=[WNextSide]|TPlace=[TPlace]|SawCycleActive=[SawCycleActive]|WPAngleX=[WPAngleX]|WPAngleZ=[WPAngleZ]|WAbsX1=[WAbsX1]|WAbsY1=[WAbsY1]|WAbsZ1=[WAbsZ1]|WAbsX2=[WAbsX2]|WX1=[WX1]|WY1=[WY1]|WX2=[WX2]|WY2=[WY2]|WW1=[WW1]|WW5=[WW5]|WAngle=[WAngle]|WBroach=[WBroach]|WMillCorr=[WMillCorr]|WDepth=[WDepth]|WHeight=[WHeight]|WYExpMin=[WYExpMin]|WYExpMax=[WYExpMax]|NextWYExpMin=[NextWYExpMin]|NextWYExpMax=[NextWYExpMax]|WorkExist=[WorkExist]|NextWorkExist=[NextWorkExist]"
+Out = "EV|MACHSIT|WorkCounter=[WorkCounter]|n=[WMachSituationCount]|A=[WMachSituation0AngleA],[WMachSituation1AngleA],[WMachSituation2AngleA],[WMachSituation3AngleA],[WMachSituation4AngleA],[WMachSituation5AngleA],[WMachSituation6AngleA],[WMachSituation7AngleA]|C=[WMachSituation0AngleC],[WMachSituation1AngleC],[WMachSituation2AngleC],[WMachSituation3AngleC],[WMachSituation4AngleC],[WMachSituation5AngleC],[WMachSituation6AngleC],[WMachSituation7AngleC]"
+Out = "EV|SAGPUNKTER|WorkCounter=[WorkCounter]|WTXInit=[WTXInit]|WTYInit=[WTYInit]|WTZInit=[WTZInit]|WTX2=[WTX2]|WTY2=[WTY2]|WTZ2=[WTZ2]"
+
+:PROG_G00_Z_INIT
+Out = "EV|G00_Z_INIT|WorkCounter=[WorkCounter]|WAbsX1=[WAbsX1]|WAbsY1=[WAbsY1]|WAbsZ1=[WAbsZ1]|WTXInit=[WTXInit]|WTYInit=[WTYInit]|WTZInit=[WTZInit]|WX1=[WX1]|WY1=[WY1]"
+
+:PROG_G01_Z_INIT
+Out = "EV|G01_Z_INIT|WorkCounter=[WorkCounter]|WDTWorkLayer=[WDTWorkLayer]|WDTActDepth=[WDTActDepth]|D=[WDT0D],[WDT1D],[WDT2D],[WDT3D],[WDT4D],[WDT5D]|F=[WDT0F],[WDT1F],[WDT2F],[WDT3F],[WDT4F],[WDT5F]|M=[WDT0M],[WDT1M],[WDT2M],[WDT3M],[WDT4M],[WDT5M]"
+
+:PROG_G01_XY
+Out = "EV|G01_XY|WorkCounter=[WorkCounter]|X1=[WX1]|Y1=[WY1]|X2=[WX2]|Y2=[WY2]|F=[FirstContour]|L=[LastContour]|WDTActDepth=[WDTActDepth]"
+
+:PROG_G02_XY
+Out = "EV|G02_XY|WorkCounter=[WorkCounter]|X1=[WX1]|Y1=[WY1]|X2=[WX2]|Y2=[WY2]|XM=[WXM]|YM=[WYM]|F=[FirstContour]|L=[LastContour]|WDTActDepth=[WDTActDepth]"
+
+:PROG_G03_XY
+Out = "EV|G03_XY|WorkCounter=[WorkCounter]|X1=[WX1]|Y1=[WY1]|X2=[WX2]|Y2=[WY2]|XM=[WXM]|YM=[WYM]|F=[FirstContour]|L=[LastContour]|WDTActDepth=[WDTActDepth]"
+
+:PROG_G01_Z_BACK
+Out = "EV|G01_Z_BACK|WorkCounter=[WorkCounter]|WDTActDepth=[WDTActDepth]"
+
+:PROG_G00_Z_BACK
+Out = "EV|G00_Z_BACK|WorkCounter=[WorkCounter]"
+
+:PROG_CYCLE_TAP
+Out = "EV|CYCLE_TAP|WorkCounter=[WorkCounter]"
+
+:PROG_END
+Out = "EV|END|CNo=[CNo]"
