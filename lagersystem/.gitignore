@@ -35,6 +35,7 @@ yarn-error.*
 
 # runtime data / secrets
 data/users.json
+data/editor-koppling.json
 data/tokens.json
 data/messages.json
 data/vapid.json
