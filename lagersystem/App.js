@@ -594,6 +594,64 @@ const SIMULERING_URL = typeof window !== 'undefined'
   ? `${window.location.origin}${BAS}/simulator/?embed=true&controls=1`
   : 'https://three.nordiska.io/UterumLager/simulator/?embed=true&controls=1';
 
+// ─── Öppna i editor ───────────────────────────────────────────────────────
+// Kundkortets ECW/AUF öppnas i 3d-simulatorns editor (redigera, postprocessa,
+// simulera) i ett eget fönster. Filen hämtas HÄR med inloggningen och lämnas
+// över som bytes med postMessage — varken token eller filadress lämnar lagret.
+// Protokollet står i 3d-simulator/apps/editor/src/handoff/handoff.ts.
+//
+// Editorn körs tills vidare på den egna datorn mot Krystians maskininställningar
+// (3d-simulator: npm run server:krystian → port 3009). Annan adress:
+// localStorage 'uterum.editorUrl'. EDITOR_MASKIN är eluCad-målet filerna körs mot.
+const EDITOR_URL_STANDARD = 'http://localhost:3009/';
+const EDITOR_MASKIN = 'SBZ151-2008-7m';
+
+function editorUrl() {
+  try { return window.localStorage.getItem('uterum.editorUrl') || EDITOR_URL_STANDARD; } catch { return EDITOR_URL_STANDARD; }
+}
+
+function oppnaIEditor(filUrl, filename, token) {
+  let adress;
+  try { adress = new URL(editorUrl()); } catch { window.alert(`Ogiltig editoradress: ${editorUrl()}`); return; }
+  adress.searchParams.set('handoff', '1');
+  // Lagret kört lokalt: editorn släpper bara in three.nordiska.io och adresser
+  // på den egna datorn, och de senare måste anges.
+  if (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) adress.searchParams.set('origin', window.location.origin);
+  // Fönstret öppnas direkt i klicket (annars blockerar webbläsaren det).
+  const fonster = window.open(adress.toString(), '_blank');
+  if (!fonster) { window.alert('Webbläsaren blockerade editorfönstret. Tillåt popup-fönster för den här sidan.'); return; }
+  const bytes = fetch(filUrl, { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => { if (!r.ok) throw new Error(`Kunde inte hämta ${filename} (${r.status})`); return r.arrayBuffer(); });
+  bytes.catch(() => {});   // felet visas när editorn är redo, eller av tidsgränsen
+  let skickad = false;
+  let klar = false;
+  const stada = () => { klar = true; window.removeEventListener('message', taEmot); };
+  async function taEmot(e) {
+    if (e.source !== fonster || e.origin !== adress.origin || !e.data) return;
+    if (e.data.type === 'EDITOR_READY' && !skickad) {
+      skickad = true;
+      try {
+        fonster.postMessage({ type: 'OPEN_FILE', name: filename, bytes: await bytes, target: EDITOR_MASKIN }, adress.origin);
+      } catch (err) {
+        stada();
+        window.alert(err.message);
+      }
+    } else if (e.data.type === 'FILE_OPENED') {
+      stada();
+    } else if (e.data.type === 'FILE_ERROR') {
+      stada();
+      window.alert(`Editorn kunde inte öppna ${filename}: ${e.data.error}`);
+    }
+  }
+  window.addEventListener('message', taEmot);
+  setTimeout(() => {
+    if (klar || skickad) return;
+    stada();
+    window.alert(`Editorn svarar inte på ${adress.origin}.\nStarta den på den här datorn (3d-simulator: npm run server:krystian) och försök igen.`);
+  }, 20000);
+  setTimeout(() => { if (!klar) stada(); }, 120000);
+}
+
 // Slug som tål svenska kundnamn. Både namnen och segmenten ur adressen körs
 // genom samma funktion, så matchningen blir okänslig för hur webbläsaren råkar
 // procent-koda tecknen.
@@ -843,6 +901,11 @@ function AlufrasFlik({ ase60ProjectId, token, API, c, roll }) {
               {new Date(fil.skapad).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}
             </Text>
           </TouchableOpacity>
+          {roll === 'admin' && (
+            <TouchableOpacity onPress={() => oppnaIEditor(`${API}/api/ecw-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}/ladda-ner`, fil.filename, token)}>
+              <Text style={{ color: '#ea580c', fontWeight: '600', fontSize: 13 }}>✎ Öppna i editor</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={() => laddaNer(fil)}>
             <Text style={{ color: '#2563eb', fontWeight: '600', fontSize: 13 }}>⬇ Ladda ner</Text>
           </TouchableOpacity>
@@ -920,6 +983,11 @@ function AufFlik({ ase60ProjectId, token, API, c, roll }) {
             </Text>
             {fil.info ? <Text style={{ color: '#b45309', fontSize: 12, marginTop: 2 }}>{fil.info}</Text> : null}
           </TouchableOpacity>
+          {roll === 'admin' && (
+            <TouchableOpacity onPress={() => oppnaIEditor(`${API}/api/auf-filer/${encodeURIComponent(ase60ProjectId)}/${fil.id}/ladda-ner`, fil.filename, token)}>
+              <Text style={{ color: '#ea580c', fontWeight: '600', fontSize: 13 }}>▶ Öppna i simulator</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={() => laddaNer(fil)}>
             <Text style={{ color: '#2563eb', fontWeight: '600', fontSize: 13 }}>⬇ Ladda ner</Text>
           </TouchableOpacity>
