@@ -600,56 +600,74 @@ const SIMULERING_URL = typeof window !== 'undefined'
 // över som bytes med postMessage — varken token eller filadress lämnar lagret.
 // Protokollet står i 3d-simulator/apps/editor/src/handoff/handoff.ts.
 //
-// Editorn körs tills vidare på den egna datorn mot Krystians maskininställningar
-// (3d-simulator: npm run server:krystian → port 3009). Annan adress:
-// localStorage 'uterum.editorUrl'. EDITOR_MASKIN är eluCad-målet filerna körs mot.
-const EDITOR_URL_STANDARD = 'http://localhost:3009/';
+// Servern lämnar editorns adress och ett intyg som loggar in användaren där
+// (GET /api/editor-intyg, se server.js). Intyget gäller en gång i en minut och
+// är inte lagrets egen token. Är editorn inte kopplad på servern används en
+// editor på den egna datorn (3d-simulator: npm run server:krystian, port 3009,
+// eller adressen i localStorage 'uterum.editorUrl').
+// EDITOR_MASKIN är eluCad-målet filerna körs mot.
+const EDITOR_URL_LOKAL = 'http://localhost:3009/';
 const EDITOR_MASKIN = 'SBZ151-2008-7m';
 
-function editorUrl() {
-  try { return window.localStorage.getItem('uterum.editorUrl') || EDITOR_URL_STANDARD; } catch { return EDITOR_URL_STANDARD; }
+function editorUrlLokal() {
+  try { return window.localStorage.getItem('uterum.editorUrl') || EDITOR_URL_LOKAL; } catch { return EDITOR_URL_LOKAL; }
 }
 
 function oppnaIEditor(filUrl, filename, token) {
-  let adress;
-  try { adress = new URL(editorUrl()); } catch { window.alert(`Ogiltig editoradress: ${editorUrl()}`); return; }
-  adress.searchParams.set('handoff', '1');
-  // Lagret kört lokalt: editorn släpper bara in three.nordiska.io och adresser
-  // på den egna datorn, och de senare måste anges.
-  if (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) adress.searchParams.set('origin', window.location.origin);
-  // Fönstret öppnas direkt i klicket (annars blockerar webbläsaren det).
-  const fonster = window.open(adress.toString(), '_blank');
+  // Fönstret öppnas direkt i klicket (annars blockerar webbläsaren det) och
+  // skickas vidare när adressen och intyget är hämtade.
+  const fonster = window.open('', '_blank');
   if (!fonster) { window.alert('Webbläsaren blockerade editorfönstret. Tillåt popup-fönster för den här sidan.'); return; }
-  const bytes = fetch(filUrl, { headers: { Authorization: `Bearer ${token}` } })
+  try { fonster.document.title = 'Öppnar editorn'; fonster.document.body.textContent = `Öppnar ${filename} i editorn …`; } catch { /* tomt fönster duger */ }
+  const auth = { headers: { Authorization: `Bearer ${token}` } };
+  const bytes = fetch(filUrl, auth)
     .then(r => { if (!r.ok) throw new Error(`Kunde inte hämta ${filename} (${r.status})`); return r.arrayBuffer(); });
   bytes.catch(() => {});   // felet visas när editorn är redo, eller av tidsgränsen
-  let skickad = false;
-  let klar = false;
-  const stada = () => { klar = true; window.removeEventListener('message', taEmot); };
-  async function taEmot(e) {
-    if (e.source !== fonster || e.origin !== adress.origin || !e.data) return;
-    if (e.data.type === 'EDITOR_READY' && !skickad) {
-      skickad = true;
-      try {
-        fonster.postMessage({ type: 'OPEN_FILE', name: filename, bytes: await bytes, target: EDITOR_MASKIN }, adress.origin);
-      } catch (err) {
+  const koppling = fetch(`${API}/api/editor-intyg`, auth)
+    .then(r => (r.ok ? r.json() : null))
+    .catch(() => null);
+
+  koppling.then((k) => {
+    let adress;
+    try { adress = new URL(k && k.editorUrl ? k.editorUrl : editorUrlLokal()); }
+    catch { fonster.close(); window.alert('Ogiltig editoradress.'); return; }
+    adress.searchParams.set('handoff', '1');
+    if (k && k.intyg) adress.searchParams.set('intyg', k.intyg);
+    // Lagret kört lokalt: editorn släpper bara in three.nordiska.io och adresser
+    // på den egna datorn, och de senare måste anges.
+    if (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) adress.searchParams.set('origin', window.location.origin);
+
+    let skickad = false;
+    let klar = false;
+    const stada = () => { klar = true; window.removeEventListener('message', taEmot); };
+    async function taEmot(e) {
+      if (e.source !== fonster || e.origin !== adress.origin || !e.data) return;
+      if (e.data.type === 'EDITOR_READY' && !skickad) {
+        skickad = true;
+        try {
+          fonster.postMessage({ type: 'OPEN_FILE', name: filename, bytes: await bytes, target: EDITOR_MASKIN }, adress.origin);
+        } catch (err) {
+          stada();
+          window.alert(err.message);
+        }
+      } else if (e.data.type === 'FILE_OPENED') {
         stada();
-        window.alert(err.message);
+      } else if (e.data.type === 'FILE_ERROR') {
+        stada();
+        window.alert(`Editorn kunde inte öppna ${filename}: ${e.data.error}`);
       }
-    } else if (e.data.type === 'FILE_OPENED') {
-      stada();
-    } else if (e.data.type === 'FILE_ERROR') {
-      stada();
-      window.alert(`Editorn kunde inte öppna ${filename}: ${e.data.error}`);
     }
-  }
-  window.addEventListener('message', taEmot);
-  setTimeout(() => {
-    if (klar || skickad) return;
-    stada();
-    window.alert(`Editorn svarar inte på ${adress.origin}.\nStarta den på den här datorn (3d-simulator: npm run server:krystian) och försök igen.`);
-  }, 20000);
-  setTimeout(() => { if (!klar) stada(); }, 120000);
+    window.addEventListener('message', taEmot);
+    fonster.location.href = adress.toString();
+    setTimeout(() => {
+      if (klar || skickad) return;
+      stada();
+      window.alert(k && k.editorUrl
+        ? `Editorn svarar inte på ${adress.origin}. Försök igen om en stund.`
+        : `Editorn svarar inte på ${adress.origin}.\nStarta den på den här datorn (3d-simulator: npm run server:krystian) och försök igen.`);
+    }, 20000);
+    setTimeout(() => { if (!klar) stada(); }, 120000);
+  });
 }
 
 // Slug som tål svenska kundnamn. Både namnen och segmenten ur adressen körs

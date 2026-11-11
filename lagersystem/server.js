@@ -418,6 +418,37 @@ app.post('/api/login', (req, res) => {
   res.json({ token, user: { id: user.id, username: user.username, roll: user.role, namn: user.namn, avatar: user.avatar || null } });
 });
 
+// --- EDITORN (3d-simulatorn på egen adress) ---
+// Kundkortets "Öppna i editor" hämtar editorns adress och ett intyg här. Intyget
+// loggar in användaren i editorn utan att lagrets token lämnar lagret: det gäller
+// en gång i en minut och är underskrivet med en nyckel som bara lagret och
+// editorn har (3d-simulator/server/auth.js). Kopplingen läses ur miljön
+// (EDITOR_URL, EDITOR_INTYG_SECRET) eller ur data/editor-koppling.json
+// ({ "url": "...", "secret": "..." }), som inte ligger i git.
+function editorKoppling() {
+  let url = process.env.EDITOR_URL || '';
+  let secret = process.env.EDITOR_INTYG_SECRET || '';
+  if (!url || !secret) {
+    const fil = readJSON(path.join(DATA_DIR, 'editor-koppling.json'), null);
+    if (fil) { url = url || fil.url || ''; secret = secret || fil.secret || ''; }
+  }
+  return url && secret.length >= 32 ? { url, secret } : null;
+}
+
+app.get('/api/editor-intyg', authMiddleware, (req, res) => {
+  const k = editorKoppling();
+  if (!k) return res.status(501).json({ error: 'Editorn är inte kopplad på den här servern' });
+  const body = Buffer.from(JSON.stringify({
+    aud: 'elu',
+    sub: req.user.username,
+    admin: req.user.roll === 'admin',
+    exp: Math.floor(Date.now() / 1000) + 60,
+    jti: crypto.randomBytes(16).toString('hex'),
+  })).toString('base64url');
+  const mac = crypto.createHmac('sha256', k.secret).update(body).digest('base64url');
+  res.json({ editorUrl: k.url, intyg: `${body}.${mac}` });
+});
+
 app.post('/api/logout', authMiddleware, (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   const tokens = readJSON(TOKENS_FILE, {});
